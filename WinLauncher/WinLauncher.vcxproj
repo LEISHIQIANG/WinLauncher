@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}</ProjectGuid>
+    <RootNamespace>WinLauncher</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WIN32_WINNT=0x0601;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 /std:c++17 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WIN32_WINNT=0x0601;NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 /std:c++17 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0601;_DEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 /std:c++17 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0601;NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/utf-8 /std:c++17 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="App\Application.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="MouseHook.cpp" />
+    <ClCompile Include="ShortcutManager.cpp" />
+    <ClCompile Include="GlassWindow.cpp" />
+    <ClCompile Include="PopupWindow.cpp" />
+    <ClCompile Include="TrayMenuWindow.cpp" />
+    <ClCompile Include="Config\ConfigWindow.cpp" />
+    <ClCompile Include="Config\CategoryList.cpp" />
+    <ClCompile Include="Config\ContextMenu.cpp" />
+    <ClCompile Include="Config\ShortcutPage.cpp" />
+    <ClCompile Include="Config\SettingsPage.cpp" />
+    <ClCompile Include="Config\DropDownMenu.cpp" />
+    <ClCompile Include="Config\PromptWindow.cpp" />
+    <ClCompile Include="Config\ConfirmWindow.cpp" />
+    <ClCompile Include="Config\ShortcutDialog.cpp" />
+    <ClCompile Include="Config\ShortcutEditForm.cpp" />
+    <ClCompile Include="Config\TextBox.cpp" />
+    <ClCompile Include="Services\FolderWatcher.cpp" />
+    <ClCompile Include="Services\SyncFolderService.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="MouseHook.h" />
+    <ClInclude Include="AutoStartHelper.h" />
+    <ClInclude Include="ShortcutManager.h" />
+    <ClInclude Include="BaseWindow.h" />
+    <ClInclude Include="GlassWindow.h" />
+    <ClInclude Include="PopupWindow.h" />
+    <ClInclude Include="TrayMenuWindow.h" />
+    <ClInclude Include="DpiHelper.h" />
+    <ClInclude Include="resource.h" />
+    <!-- App Layer -->
+    <ClInclude Include="App\AppMessages.h" />
+    <ClInclude Include="App\Application.h" />
+    <ClInclude Include="App\AppContext.h" />
+    <ClInclude Include="App\EventBus.h" />
+    <ClInclude Include="App\Logger.h" />
+    <ClInclude Include="App\PluginHost.h" />
+    <!-- Model Layer -->
+    <ClInclude Include="Model\AppearanceSettings.h" />
+    <ClInclude Include="Model\ShortcutInfo.h" />
+    <!-- Services Layer -->
+    <ClInclude Include="Services\IConfigService.h" />
+    <ClInclude Include="Services\ConfigPath.h" />
+    <ClInclude Include="Services\IIconService.h" />
+    <ClInclude Include="Services\IniConfigRepository.h" />
+    <ClInclude Include="Services\FolderWatcher.h" />
+    <ClInclude Include="Services\SyncFolderService.h" />
+    <ClInclude Include="Services\SystemIconService.h" />
+    <!-- ViewModel Layer -->
+    <ClInclude Include="ViewModel\PopupViewModel.h" />
+    <ClInclude Include="ViewModel\ConfigViewModel.h" />
+    <!-- UI Controls -->
+    <ClInclude Include="UI\Controls\IControl.h" />
+    <ClInclude Include="UI\Controls\Button.h" />
+    <ClInclude Include="UI\Controls\IconRenderer.h" />
+    <!-- UI Render Pipeline -->
+    <ClInclude Include="UI\Render\IRenderLayer.h" />
+    <ClInclude Include="UI\Render\BackgroundLayer.h" />
+    <ClInclude Include="UI\Render\OverlayLayer.h" />
+    <ClInclude Include="UI\Render\Compositor.h" />
+    <!-- Config UI -->
+    <ClInclude Include="Config\ConfigWindow.h" />
+    <ClInclude Include="Config\CategoryList.h" />
+    <ClInclude Include="Config\ContextMenu.h" />
+    <ClInclude Include="Config\ConfigPage.h" />
+    <ClInclude Include="Config\ShortcutPage.h" />
+    <ClInclude Include="Config\SettingsPage.h" />
+    <ClInclude Include="Config\DropDownMenu.h" />
+    <ClInclude Include="Config\IConfigWindow.h" />
+    <ClInclude Include="Config\PromptWindow.h" />
+    <ClInclude Include="Config\ConfirmWindow.h" />
+    <ClInclude Include="Config\ShortcutDialog.h" />
+    <ClInclude Include="Config\ShortcutEditForm.h" />
+    <ClInclude Include="Config\TextBox.h" />
+    <ClInclude Include="Config\UIStyle.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="resource.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
