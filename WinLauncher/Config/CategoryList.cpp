@@ -66,8 +66,8 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     bool isShortcutDragTarget = isHovered && m_owner->IsDraggingShortcut();
 
     // Background Card
-    float alphaBg = isActive ? 0.12f : (isHovered ? 0.065f : 0.018f);
-    float alphaBorder = isActive ? 0.22f : (isHovered ? 0.115f : 0.045f);
+    float alphaBg = isActive ? 0.18f : (isHovered ? 0.08f : 0.018f);
+    float alphaBorder = isActive ? 0.40f : (isHovered ? 0.14f : 0.045f);
 
     if (isDragging)
     {
@@ -81,15 +81,11 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     }
 
     ID2D1SolidColorBrush* bgBrush = nullptr;
-    if (isDragging || isShortcutDragTarget)
+    if (isDragging || isShortcutDragTarget || isActive)
     {
-        rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &bgBrush);
-        if (bgBrush)
-        {
-            D2D1_COLOR_F color = bgBrush->GetColor();
-            color.a = alphaBg;
-            bgBrush->SetColor(color);
-        }
+        D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
+        accentClr.a = alphaBg;
+        rt->CreateSolidColorBrush(accentClr, &bgBrush);
     }
     else
     {
@@ -103,15 +99,11 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     }
 
     ID2D1SolidColorBrush* borderBrush = nullptr;
-    if (isDragging || isShortcutDragTarget)
+    if (isDragging || isShortcutDragTarget || isActive)
     {
-        rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &borderBrush);
-        if (borderBrush)
-        {
-            D2D1_COLOR_F color = borderBrush->GetColor();
-            color.a = alphaBorder;
-            borderBrush->SetColor(color);
-        }
+        D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
+        accentClr.a = isActive ? 0.55f : alphaBorder;
+        rt->CreateSolidColorBrush(accentClr, &borderBrush);
     }
     else
     {
@@ -120,7 +112,9 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
 
     if (borderBrush)
     {
-        float strokeWidth = isShortcutDragTarget ? UIStyle::Metrics::EmphasisStroke() : UIStyle::Metrics::ControlStroke();
+        float strokeWidth = UIStyle::Metrics::ControlStroke();
+        if (isShortcutDragTarget) strokeWidth = UIStyle::Metrics::EmphasisStroke();
+        else if (isActive) strokeWidth = UIStyle::Metrics::HairlineStroke();
         rt->DrawRoundedRectangle(roundedItem, borderBrush, strokeWidth);
         borderBrush->Release();
     }
@@ -214,8 +208,8 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         D2D1_RECT_F addCatRect = D2D1::RectF(10, rect.bottom - 42.0f, 140, rect.bottom - 10.0f);
         D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addCatRect, 6.0f, 6.0f);
 
-        float alphaBg = m_hoveredAddCategory ? 0.085f : 0.018f;
-        float alphaBorder = m_hoveredAddCategory ? 0.15f : 0.055f;
+        float alphaBg = m_hoveredAddCategory ? 0.08f : 0.018f;
+        float alphaBorder = m_hoveredAddCategory ? 0.14f : 0.055f;
 
         ID2D1SolidColorBrush* bgBrush = nullptr;
         rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &bgBrush);
@@ -412,7 +406,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
         std::vector<ContextMenu::Item> menuItems;
         menuItems.push_back({ L"删除", [this, hc]() {
             HWND hwnd = m_owner->GetWindowHWND();
-            if (ConfirmWindow::Show(hwnd, L"确认删除", L"确定要删除该分类及其所有快捷方式吗？"))
+            if (ConfirmWindow::Show(hwnd, L"确认删除", L"确定要删除该分类及其所有快捷方式吗？", m_owner->GetAppContext()))
             {
                 if (hc < (int)m_categoryStates.size())
                 {
@@ -439,7 +433,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
         menuItems.push_back({ L"重命名", [this, hc]() {
             HWND hwnd = m_owner->GetWindowHWND();
             std::wstring name = m_owner->GetCategoryName(hc);
-            if (PromptWindow::Show(hwnd, L"重命名分类", L"输入新分类的名称:", name, name.c_str(), nullptr))
+            if (PromptWindow::Show(hwnd, L"重命名分类", L"输入新分类的名称:", name, name.c_str(), m_owner->GetAppContext()))
             {
                 m_owner->RenameCategory(hc, name);
                 InvalidateRect(hwnd, nullptr, FALSE);
@@ -495,7 +489,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
             // Regular categories (no folderPath) get neither option
         }
 
-        ContextMenu::Show(hwnd, screenPt, menuItems);
+        ContextMenu::Show(hwnd, screenPt, menuItems, m_owner->GetAppContext());
     }
 }
 

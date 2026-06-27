@@ -52,6 +52,7 @@ public:
     virtual void ReorderCategories(int fromIndex, int toIndex) override;
     virtual RendPopupPage* GetPageByIndex(int index) override;
 
+    virtual AppContext* GetAppContext() override { return m_appCtx; }
     virtual bool IsSettingsMode() override { return m_showSettings; }
     virtual bool IsDraggingShortcut() override { return m_shortcutPage.IsDragging(); }
     virtual int GetTriggerType() override;

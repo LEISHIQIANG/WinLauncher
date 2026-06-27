@@ -4,6 +4,7 @@
 #include <dwrite.h>
 #include <string>
 
+struct AppContext;
 struct RendPopupPage;
 
 class IConfigWindow
@@ -60,6 +61,7 @@ public:
     virtual void SetThemeColor(int colorIndex) = 0;
     virtual int GetWindowMode() = 0;
     virtual void SetWindowMode(int mode) = 0;
+    virtual AppContext* GetAppContext() = 0;
     virtual int GetDockHeight() = 0;
     virtual void SetDockHeight(int height) = 0;
 };

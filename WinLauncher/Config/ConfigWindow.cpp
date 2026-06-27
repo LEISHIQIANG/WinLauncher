@@ -1096,16 +1096,18 @@ void ConfigWindow::DrawAddButton(ID2D1HwndRenderTarget* rt)
     D2D1_RECT_F addRect = D2D1::RectF(430, 36, 510, 56);
     D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addRect, 4.0f, 4.0f);
 
-    if (m_hoveredAddBtn || DropDownMenu::IsVisible())
-    {
-        auto btnBg = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d);
-        if (btnBg) rt->FillRoundedRectangle(roundedAdd, btnBg.Get());
-    }
+    bool isActive = m_hoveredAddBtn || DropDownMenu::IsVisible();
 
-    // Border: always use theme accent color; brighter on hover / when open
-    auto btnBorder = GetOrCreateBrush((m_hoveredAddBtn || DropDownMenu::IsVisible()) ?
-        UIStyle::ThemeColor::AccentHover().d2d : UIStyle::ThemeColor::Accent().d2d);
-    if (btnBorder) rt->DrawRoundedRectangle(roundedAdd, btnBorder.Get(), UIStyle::Metrics::ControlStroke());
+    D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
+    D2D1_COLOR_F bgClr = accentClr;
+    bgClr.a = isActive ? 0.22f : 0.18f;
+    auto btnBg = GetOrCreateBrush(bgClr);
+    if (btnBg) rt->FillRoundedRectangle(roundedAdd, btnBg.Get());
+
+    D2D1_COLOR_F borderClr = accentClr;
+    borderClr.a = 0.55f;
+    auto btnBorder = GetOrCreateBrush(borderClr);
+    if (btnBorder) rt->DrawRoundedRectangle(roundedAdd, btnBorder.Get(), UIStyle::Metrics::HairlineStroke());
 
     if (m_tfLeft)
     {

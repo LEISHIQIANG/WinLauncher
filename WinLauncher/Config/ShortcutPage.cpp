@@ -71,7 +71,7 @@ void ShortcutPage::ShowAddShortcutDialog()
     if (!m_pageData) return;
     HWND hWnd = m_owner->GetWindowHWND();
     ShortcutDialogResult result;
-    if (ShortcutDialog::Show(hWnd, L"添加快捷方式", result, nullptr, nullptr))
+    if (ShortcutDialog::Show(hWnd, L"添加快捷方式", result, nullptr, m_owner->GetAppContext()))
     {
         if (!result.targetPath.empty())
         {
@@ -726,7 +726,7 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
             HWND hWnd = m_owner->GetWindowHWND();
             if (hs < (int)m_pageData->shortcuts.size())
             {
-                if (ConfirmWindow::Show(hWnd, L"确认删除", L"确定要删除该快捷方式吗？"))
+                if (ConfirmWindow::Show(hWnd, L"确认删除", L"确定要删除该快捷方式吗？", m_owner->GetAppContext()))
                 {
                     if (hs < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[hs])
                         m_pageData->iconBitmaps[hs]->Release();
@@ -763,7 +763,7 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
         menuItems.push_back({ L"重命名", [this, hs]() {
             HWND hWnd = m_owner->GetWindowHWND();
             std::wstring name = m_pageData->shortcuts[hs].name;
-            if (PromptWindow::Show(hWnd, L"重命名快捷方式", L"输入新的名称:", name, name.c_str(), nullptr))
+            if (PromptWindow::Show(hWnd, L"重命名快捷方式", L"输入新的名称:", name, name.c_str(), m_owner->GetAppContext()))
             {
                 while (!name.empty() && (name.back() == L' ' || name.back() == L'\t'))
                     name.pop_back();
@@ -781,7 +781,7 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
             }
         } });
 
-        ContextMenu::Show(hWnd, screenPt, menuItems);
+        ContextMenu::Show(hWnd, screenPt, menuItems, m_owner->GetAppContext());
     }
 }
 
@@ -1253,7 +1253,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
     init.iconPath   = sc.iconPath;
 
     ShortcutDialogResult result;
-    if (ShortcutDialog::Show(hWnd, L"编辑快捷方式", result, &init, nullptr))
+    if (ShortcutDialog::Show(hWnd, L"编辑快捷方式", result, &init, m_owner->GetAppContext()))
     {
         bool changed = false;
 
