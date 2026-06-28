@@ -313,6 +313,16 @@ LRESULT ShortcutDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
         return 0;
     }
 
+    case WM_LBUTTONDBLCLK:
+    {
+        float scale = GetWindowScale(hWnd);
+        POINT pt    { (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        bool repaint = false;
+        m_form.OnLButtonDblClk(hWnd, pt, scale, repaint);
+        if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    }
+
     case WM_LBUTTONUP:
     {
         float scale = GetWindowScale(hWnd);

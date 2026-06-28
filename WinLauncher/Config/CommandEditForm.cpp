@@ -62,7 +62,7 @@ static const float Y_CB_ROW2         = 238.0f; // "捕获输出"
 static const float Y_LBL_ICON        = 268.0f; // Icon Path
 static const float Y_BOX_ICON        = 284.0f; // Textbox + Select button
 static const float Y_ICON_INVERT     = 314.0f; // Theme inversion checkboxes
-static const float Y_PREVIEW         = 284.0f; // Preview aligns with Y_BOX_ICON on right (W-70 to W-20)
+static const float Y_PREVIEW         = 272.0f; // Preview bottom aligns with icon box bottom
 
 CommandEditForm::CommandEditForm()
 {
@@ -127,7 +127,7 @@ bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, con
 
     // Icon Box
     m_iconBox.SetStyle(style);
-    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 145, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
+    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
 
     m_focusedBox = &m_nameBox;
     m_nameBox.SetFocus(true);
@@ -171,7 +171,7 @@ void CommandEditForm::UpdateLayout(const D2D1_RECT_F& logicalBounds, float scale
     m_commandBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_CMD, m_bounds.left + W - 20, m_bounds.top + Y_BOX_CMD + 24));
     m_commandBox.UpdateLayout(scale);
 
-    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 145, m_bounds.top + Y_BOX_ICON + 24));
+    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24));
     m_iconBox.UpdateLayout(scale);
 }
 
@@ -221,7 +221,7 @@ bool CommandEditForm::HitTestSelectBuiltinButton(POINT pt)
 bool CommandEditForm::HitTestBrowseIconButton(POINT pt)
 {
     float W = m_bounds.right - m_bounds.left;
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 140, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 85, m_bounds.top + Y_BOX_ICON + 24));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24));
 }
 
 bool CommandEditForm::HitTestRunAsAdminCheckbox(POINT pt)
@@ -346,6 +346,27 @@ void CommandEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repa
     if (tryFocus(m_iconBox))    return;
 
     if (m_focusedBox) { m_focusedBox->SetFocus(false); m_focusedBox = nullptr; repaint = true; }
+}
+
+void CommandEditForm::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint)
+{
+    POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+
+    auto tryWordSelect = [&](TextBox& tb) -> bool {
+        if (tb.HitTest(pt))
+        {
+            if (m_focusedBox && m_focusedBox != &tb) m_focusedBox->SetFocus(false);
+            m_focusedBox = &tb;
+            tb.SetFocus(true);
+            tb.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+            return true;
+        }
+        return false;
+    };
+
+    if (tryWordSelect(m_nameBox))    return;
+    if (tryWordSelect(m_commandBox)) return;
+    if (tryWordSelect(m_iconBox))    return;
 }
 
 void CommandEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
@@ -597,7 +618,7 @@ void CommandEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (lblBrush) rt->DrawTextW(L"自定义图标路径", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_ICON, m_bounds.left + W - 150, m_bounds.top + Y_LBL_ICON + 16), lblBrush.Get());
     }
     m_iconBox.Paint(rt, scale);
-    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 135, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
+    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
 
     DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_ICON_INVERT, m_bounds.left + 104, m_bounds.top + Y_ICON_INVERT + 22), m_iconInvertLight, m_hoveredInvertLight);
     if (m_tfLabel)

@@ -106,6 +106,8 @@ public:
 
     void OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint);
 
+    void OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint);
+
     void OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint);
 
     void OnChar(HWND hWnd, WPARAM wParam, bool& repaint);

@@ -3,6 +3,7 @@
 #include "../DpiHelper.h"
 #include <commctrl.h>
 #include <vector>
+#include <cwctype>
 #include <imm.h>
 #include <algorithm>
 
@@ -315,6 +316,27 @@ void TextBox::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint)
     m_caretIndex = GetCaretIndexFromPoint(pt, scale);
     m_selStart = m_caretIndex;
     m_selEnd = m_caretIndex;
+    ResetCaretBlink();
+    UpdateImeWindowPosition(hWnd, scale);
+    repaint = true;
+}
+
+void TextBox::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint)
+{
+    m_caretIndex = GetCaretIndexFromPoint(pt, scale);
+
+    size_t start = m_caretIndex;
+    while (start > 0 && !iswspace(m_text[start - 1]))
+        start--;
+
+    size_t end = m_caretIndex;
+    while (end < m_text.size() && !iswspace(m_text[end]))
+        end++;
+
+    m_selStart = start;
+    m_selEnd = end;
+    m_caretIndex = end;
+    m_dragSelecting = false;
     ResetCaretBlink();
     UpdateImeWindowPosition(hWnd, scale);
     repaint = true;

@@ -47,6 +47,7 @@ public:
     // Event handlers
     void OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint);
+    void OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnChar(HWND hWnd, WPARAM wParam, bool& repaint);
     void OnKeyDown(HWND hWnd, WPARAM wParam, LPARAM lParam, bool& repaint);

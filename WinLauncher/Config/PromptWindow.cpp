@@ -300,6 +300,21 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         return 0;
     }
+    case WM_LBUTTONDBLCLK:
+    {
+        float scale = GetWindowScale(hWnd);
+        POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        POINT pt{ (int)(rawPt.x / scale), (int)(rawPt.y / scale) };
+        if (m_textBox.HitTest(pt))
+        {
+            m_textBox.SetFocus(true);
+            bool repaint = false;
+            m_textBox.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        }
+        return 0;
+    }
+
     case WM_LBUTTONUP:
     {
         float scale = GetWindowScale(hWnd);

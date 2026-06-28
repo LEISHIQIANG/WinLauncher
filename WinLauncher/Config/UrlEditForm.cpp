@@ -64,7 +64,7 @@ static const float Y_SEC_ICON        = 236.0f; // "图标" separator
 static const float Y_LBL_ICON        = 252.0f;
 static const float Y_BOX_ICON        = 268.0f;
 static const float Y_AUTO_ICON_ROW   = 298.0f; // Buttons "自动获取", invert check boxes
-static const float Y_PREVIEW         = 252.0f; // Preview aligns with Y_BOX_ICON on right (W-70 to W-20)
+static const float Y_PREVIEW         = 256.0f; // Preview bottom aligns with icon box bottom
 
 UrlEditForm::UrlEditForm()
 {
@@ -110,7 +110,7 @@ bool UrlEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D
 
     // Icon Box
     m_iconBox.SetStyle(style);
-    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 145, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
+    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
 
     m_focusedBox = &m_nameBox;
     m_nameBox.SetFocus(true);
@@ -162,7 +162,7 @@ void UrlEditForm::UpdateLayout(const D2D1_RECT_F& logicalBounds, float scale)
     m_argsBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_BARGS, m_bounds.left + W - 20, m_bounds.top + Y_BOX_BARGS + 24));
     m_argsBox.UpdateLayout(scale);
 
-    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 145, m_bounds.top + Y_BOX_ICON + 24));
+    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24));
     m_iconBox.UpdateLayout(scale);
 }
 
@@ -222,7 +222,7 @@ bool UrlEditForm::HitTestClearBrowserButton(POINT pt)
 bool UrlEditForm::HitTestBrowseIconButton(POINT pt)
 {
     float W = m_bounds.right - m_bounds.left;
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 135, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON + 24));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24));
 }
 
 bool UrlEditForm::HitTestAutoIconButton(POINT pt)
@@ -344,6 +344,29 @@ void UrlEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint)
     if (tryFocus(m_iconBox))    return;
 
     if (m_focusedBox) { m_focusedBox->SetFocus(false); m_focusedBox = nullptr; repaint = true; }
+}
+
+void UrlEditForm::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint)
+{
+    POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+
+    auto tryWordSelect = [&](TextBox& tb) -> bool {
+        if (tb.HitTest(pt))
+        {
+            if (m_focusedBox && m_focusedBox != &tb) m_focusedBox->SetFocus(false);
+            m_focusedBox = &tb;
+            tb.SetFocus(true);
+            tb.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+            return true;
+        }
+        return false;
+    };
+
+    if (tryWordSelect(m_nameBox))    return;
+    if (tryWordSelect(m_urlBox))     return;
+    if (tryWordSelect(m_browserBox)) return;
+    if (tryWordSelect(m_argsBox))    return;
+    if (tryWordSelect(m_iconBox))    return;
 }
 
 void UrlEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
@@ -701,7 +724,7 @@ void UrlEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (lblBrush) rt->DrawTextW(L"自定义图标路径", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_ICON, m_bounds.left + W - 150, m_bounds.top + Y_LBL_ICON + 16), lblBrush.Get());
     }
     m_iconBox.Paint(rt, scale);
-    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 135, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
+    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
 
     // Draw preview icon
     DrawIconPreview(rt);

@@ -58,7 +58,7 @@ static const float Y_SEC_ADV       = 148.0f;
 static const float Y_AFTERCLOSE_CB = 164.0f; // trigger mode checkbox
 static const float Y_INVERT_LIGHT  = Y_AFTERCLOSE_CB; // light invert checkbox
 static const float Y_INVERT_DARK   = Y_AFTERCLOSE_CB; // dark invert checkbox
-static const float Y_PREVIEW       = 174.0f; // preview on the right (x range W - 70 to W - 20)
+static const float Y_PREVIEW       = 108.0f; // preview bottom aligns with icon box bottom
 
 static std::wstring GetKeyName(WPARAM vk)
 {
@@ -174,7 +174,7 @@ bool HotkeyEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, cons
 
     // Icon Box
     m_iconBox.SetStyle(style);
-    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 85, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
+    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
 
     m_focusedBox = &m_nameBox;
     m_nameBox.SetFocus(true);
@@ -210,7 +210,7 @@ void HotkeyEditForm::UpdateLayout(const D2D1_RECT_F& logicalBounds, float scale)
     m_hotkeyBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_HOTKEY, m_bounds.left + W - 145, m_bounds.top + Y_BOX_HOTKEY + 24));
     m_hotkeyBox.UpdateLayout(scale);
 
-    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 85, m_bounds.top + Y_BOX_ICON + 24));
+    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24));
     m_iconBox.UpdateLayout(scale);
 }
 
@@ -260,7 +260,7 @@ bool HotkeyEditForm::HitTestClearButton(POINT pt)
 bool HotkeyEditForm::HitTestBrowseIconButton(POINT pt)
 {
     float W = m_bounds.right - m_bounds.left;
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 20, m_bounds.top + Y_BOX_ICON + 24));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24));
 }
 
 bool HotkeyEditForm::HitTestAfterCloseCheckbox(POINT pt)
@@ -366,6 +366,29 @@ void HotkeyEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repai
     if (tryFocus(m_iconBox))    return;
 
     if (m_focusedBox) { m_focusedBox->SetFocus(false); m_focusedBox = nullptr; repaint = true; }
+}
+
+void HotkeyEditForm::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint)
+{
+    POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+
+    if (m_recording) return;
+
+    auto tryWordSelect = [&](TextBox& tb) -> bool {
+        if (tb.HitTest(pt))
+        {
+            if (m_focusedBox && m_focusedBox != &tb) m_focusedBox->SetFocus(false);
+            m_focusedBox = &tb;
+            tb.SetFocus(true);
+            tb.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+            return true;
+        }
+        return false;
+    };
+
+    if (tryWordSelect(m_nameBox))   return;
+    if (tryWordSelect(m_hotkeyBox)) return;
+    if (tryWordSelect(m_iconBox))   return;
 }
 
 void HotkeyEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
@@ -655,7 +678,7 @@ void HotkeyEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (lblBrush) rt->DrawTextW(L"自定义图标路径 (可选)", 13, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_ICON, m_bounds.left + W - 20, m_bounds.top + Y_LBL_ICON + 16), lblBrush.Get());
     }
     m_iconBox.Paint(rt, scale);
-    DrawButton(rt, L"浏览...", D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 20, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
+    DrawButton(rt, L"浏览...", D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24), m_hoveredBrowseIcon);
 
     // "高级选项" Separator
     DrawSectionLabel(rt, L"高级选项", D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_SEC_ADV, m_bounds.left + W - 20, m_bounds.top + Y_SEC_ADV + 16));

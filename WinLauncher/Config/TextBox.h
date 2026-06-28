@@ -24,6 +24,7 @@ public:
     void OnChar(HWND hWnd, WPARAM wParam, bool& repaint);
 
     void OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint);
+    void OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint);
 

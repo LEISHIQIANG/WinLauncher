@@ -144,7 +144,7 @@ bool KeyboardHook::StartRecording(HWND hTargetWnd, DWORD timeoutMs)
     }
     s_hRecordWnd.store(hTargetWnd);
     s_timeoutMs.store(timeoutMs);
-    s_recordModifiers = 0;
+    s_recordModifiers = CurrentModifiers();
     s_hadNonModifier  = false;
     s_pressedCount    = 0;
     s_recording.store(true);
@@ -258,20 +258,32 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
                     s_timerId = SetTimer(nullptr, 0, tms, TimerCallback);
             }
 
-            DWORD mods = CurrentModifiers();
-            s_recordModifiers |= mods;
-
             if (IsModifierVk(vk))
             {
+                // Track modifier keys explicitly from the actual key event rather
+                // than relying on GetAsyncKeyState, which is unreliable inside a
+                // suppressed low-level keyboard hook.
+                switch (vk)
+                {
+                case VK_SHIFT:    case VK_LSHIFT:    case VK_RSHIFT:
+                    s_recordModifiers |= RecordModifiers::Shift; break;
+                case VK_CONTROL:  case VK_LCONTROL:  case VK_RCONTROL:
+                    s_recordModifiers |= RecordModifiers::Ctrl;  break;
+                case VK_MENU:     case VK_LMENU:     case VK_RMENU:
+                    s_recordModifiers |= RecordModifiers::Alt;   break;
+                case VK_LWIN:     case VK_RWIN:
+                    s_recordModifiers |= RecordModifiers::Win;   break;
+                }
+
                 // Modifier-only press: update display via KeyCaptured(vk=0)
-                if (hWnd) PostMessageW(hWnd, KeyboardHookMsg::KeyCaptured, 0, (LPARAM)mods);
+                if (hWnd) PostMessageW(hWnd, KeyboardHookMsg::KeyCaptured, 0, (LPARAM)s_recordModifiers);
             }
             else
             {
                 s_hadNonModifier = true;
                 s_pressedCount++;
                 // Post the main captured key
-                if (hWnd) PostMessageW(hWnd, KeyboardHookMsg::KeyCaptured, vk, (LPARAM)mods);
+                if (hWnd) PostMessageW(hWnd, KeyboardHookMsg::KeyCaptured, vk, (LPARAM)s_recordModifiers);
             }
         }
         else if (isUp && s_hadNonModifier)

@@ -134,7 +134,7 @@ static const float Y_INVERT_LIGHT = Y_ADMIN_CB;  // light invert checkbox
 
 static const float Y_INVERT_DARK  = Y_ADMIN_CB;  // dark invert checkbox
 
-static const float Y_PREVIEW    = 253.0f;  // icon preview (right side)
+static const float Y_PREVIEW    = 108.0f;  // icon preview bottom aligns with icon box bottom
 
 
 
@@ -214,7 +214,7 @@ bool ShortcutEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, co
 
     m_iconBox.SetStyle(style);
 
-    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 85, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
+    m_iconBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24), m_init.iconPath);
 
 
 
@@ -310,7 +310,7 @@ void ShortcutEditForm::UpdateLayout(const D2D1_RECT_F& logicalBounds, float scal
 
 
 
-    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 85, m_bounds.top + Y_BOX_ICON + 24));
+    m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24));
 
     m_iconBox.UpdateLayout(scale);
 
@@ -410,7 +410,7 @@ bool ShortcutEditForm::HitTestBrowseIconButton(POINT pt)
 
     float W = m_bounds.right - m_bounds.left;
 
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 20, m_bounds.top + Y_BOX_ICON + 24));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24));
 
 }
 
@@ -597,6 +597,46 @@ void ShortcutEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& rep
 }
 
 
+
+void ShortcutEditForm::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint)
+
+{
+
+    POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+
+    auto tryWordSelect = [&](TextBox& tb) -> bool {
+
+        if (tb.HitTest(pt))
+
+        {
+
+            if (m_focusedBox && m_focusedBox != &tb) m_focusedBox->SetFocus(false);
+
+            m_focusedBox = &tb;
+
+            tb.SetFocus(true);
+
+            tb.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+
+            return true;
+
+        }
+
+        return false;
+
+    };
+
+    if (tryWordSelect(m_nameBox))    return;
+
+    if (tryWordSelect(m_targetBox))  return;
+
+    if (tryWordSelect(m_iconBox))    return;
+
+    if (tryWordSelect(m_argsBox))    return;
+
+    if (tryWordSelect(m_workdirBox)) return;
+
+}
 
 void ShortcutEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
 
@@ -1439,7 +1479,7 @@ void ShortcutEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
 
     m_iconBox.Paint(rt, scale);
 
-    DrawButton(rt, L"浏览...", D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 20, m_bounds.top + Y_BOX_ICON + 24),
+    DrawButton(rt, L"浏览...", D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24),
 
                m_hoveredBrowseIcon);
 

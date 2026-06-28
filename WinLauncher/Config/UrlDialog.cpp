@@ -242,6 +242,19 @@ LRESULT UrlDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         return 0;
     }
 
+    case WM_LBUTTONDBLCLK:
+    {
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        float scale = DpiHelper::GetWindowScale(hWnd);
+        pt.x = (int)(pt.x / scale);
+        pt.y = (int)(pt.y / scale);
+
+        bool repaint = false;
+        m_form.OnLButtonDblClk(hWnd, pt, scale, repaint);
+        if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    }
+
     case WM_LBUTTONUP:
     {
         POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
