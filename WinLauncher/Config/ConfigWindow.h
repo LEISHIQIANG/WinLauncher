@@ -34,13 +34,15 @@ public:
     virtual HWND GetWindowHWND() override;
     virtual std::wstring GetConfigDir() override;
     virtual std::wstring GetConfigFilePath() override;
+    virtual void OpenConfigFile() override;
+    virtual void OpenLogFile() override;
     virtual void OpenConfigDir() override;
     virtual void StartAnimation() override;
     virtual IDWriteTextFormat* GetLeftFont() override { return m_tfLeft.Get(); }
     virtual IDWriteTextFormat* GetTitleFont() override { return m_tfTitle.Get(); }
     virtual IDWriteTextFormat* GetHeaderFont() override { return m_tfHeader.Get(); }
     virtual IDWriteTextFormat* GetDefaultFont() override { return m_tf.Get(); }
-    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon) override;
+    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"") override;
 
     virtual size_t GetCategoryCount() override;
     virtual std::wstring GetCategoryName(size_t index) override;

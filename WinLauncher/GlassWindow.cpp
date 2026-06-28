@@ -144,17 +144,15 @@ bool GlassWindow::EnsureD2D()
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), &m_dw);
         if (m_dw && !m_tf)
         {
-            m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL, 11, L"", &m_tf);
+            UIStyle::Typography::CreateTextFormat(
+                m_dw.Get(),
+                &m_tf,
+                11.0f,
+                DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_TEXT_ALIGNMENT_CENTER,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             if (m_tf)
             {
-                m_tf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                m_tf->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-
-                DWRITE_TRIMMING trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-                m_tf->SetTrimming(&trimming, nullptr);
-                m_tf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
             }
         }
     }
@@ -176,7 +174,7 @@ bool GlassWindow::EnsureD2D()
     float scale = GetWindowScale(m_hWnd);
     float dpi = scale * 96.0f;
     m_rt->SetDpi(dpi, dpi);
-    m_rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
     m_brushCache.clear();
 
     // Link background layer to render target
@@ -571,6 +569,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_DWMCOMPOSITIONCHANGED:
+        if (m_appCtx && m_appCtx->logger)
+            LOG_INFO(m_appCtx->logger, L"GlassWindow: DWM composition changed");
         ApplySystemBackdrop();
         m_bgCap.Reset();
         m_bgDirty = true;
@@ -603,9 +603,12 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     {
         float newDpiX = (float)LOWORD(wParam);
         float newDpiY = (float)HIWORD(wParam);
+        if (m_appCtx && m_appCtx->logger)
+            LOG_INFO(m_appCtx->logger, L"GlassWindow: DPI changed: newDpiX = %.2f, newDpiY = %.2f", newDpiX, newDpiY);
         if (m_rt)
         {
             m_rt->SetDpi(newDpiX, newDpiY);
+            UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
             m_bgDirty = true;
         }
         RECT* const prcNewWindow = (RECT*)lParam;
@@ -621,6 +624,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_DESTROY:
+        if (m_appCtx && m_appCtx->logger)
+            LOG_INFO(m_appCtx->logger, L"GlassWindow: destroying window and releasing resources");
         KillTimer(hWnd, 0x888);
         ReleaseD2D();
         return 0;

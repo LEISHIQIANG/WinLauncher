@@ -6,6 +6,7 @@
 #include "PluginHost.h"
 #include "../Services/IConfigService.h"
 #include "../Services/IIconService.h"
+#include "../Services/ConfigPath.h"
 
 struct AppContext
 {
@@ -21,7 +22,7 @@ struct AppContext
 
     AppContext()
         : eventBus(std::make_shared<EventBus>())
-        , logger(std::make_shared<Logger>())
+        , logger(std::make_shared<Logger>(ConfigPath::PrepareUserConfigDirectory() + L"\\winlauncher.log"))
         , pluginHost(std::make_unique<PluginHost>(eventBus))
     {
     }

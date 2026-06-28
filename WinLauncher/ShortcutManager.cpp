@@ -75,7 +75,10 @@ std::vector<RendShortcutInfo> ShortcutManager::LoadShortcuts(const std::wstring&
             psl->Release();
         }
 
-        info.hIcon = GetShortcutIcon(info.targetPath.empty() ? fullPath : info.targetPath);
+        info.type = Model::ShortcutType::File;
+        info.targetKind = InferTargetKind(fullPath);
+        info.iconSource = Model::IconSource::Auto;
+        info.hIcon = GetShortcutIcon(info);
 
         result.push_back(info);
     } while (FindNextFileW(hFind, &ffd));
@@ -127,6 +130,183 @@ static bool WriteStringToFile(const std::wstring& path, const std::wstring& wstr
     return true;
 }
 
+static HICON GetAssociatedIcon(const std::wstring& sampleName, DWORD attributes)
+{
+    SHFILEINFOW sfi{};
+    if (SHGetFileInfoW(sampleName.c_str(), attributes, &sfi, sizeof(sfi),
+        SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES))
+    {
+        return sfi.hIcon;
+    }
+    return nullptr;
+}
+
+static std::wstring GetSystemFilePath(const wchar_t* fileName)
+{
+    wchar_t sysDir[MAX_PATH]{};
+    if (GetSystemDirectoryW(sysDir, MAX_PATH) == 0)
+        return L"";
+    std::wstring path = sysDir;
+    path += L"\\";
+    path += fileName;
+    return path;
+}
+
+static HICON GetBuiltinIconById(const std::wstring& iconId)
+{
+    if (iconId == L"folder")
+        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+    if (iconId == L"link")
+        return GetAssociatedIcon(L"WinLauncher.lnk", FILE_ATTRIBUTE_NORMAL);
+    if (iconId == L"exe")
+        return GetAssociatedIcon(L"WinLauncher.exe", FILE_ATTRIBUTE_NORMAL);
+    if (iconId == L"url")
+        return GetAssociatedIcon(L"WinLauncher.url", FILE_ATTRIBUTE_NORMAL);
+    if (iconId == L"command")
+        return ShortcutManager::GetShortcutIcon(GetSystemFilePath(L"cmd.exe"));
+    if (iconId == L"hotkey")
+        return ShortcutManager::GetShortcutIcon(GetSystemFilePath(L"osk.exe"));
+    if (iconId == L"macro")
+        return ShortcutManager::GetShortcutIcon(GetSystemFilePath(L"wscript.exe"));
+    if (iconId == L"batch")
+        return GetAssociatedIcon(L"WinLauncher.bat", FILE_ATTRIBUTE_NORMAL);
+
+    return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+}
+
+static HICON GetDefaultIconForType(Model::ShortcutType type, Model::ShortcutTargetKind targetKind)
+{
+    if (type == Model::ShortcutType::File)
+    {
+        switch (targetKind)
+        {
+        case Model::ShortcutTargetKind::Folder:
+            return GetBuiltinIconById(L"folder");
+        case Model::ShortcutTargetKind::Link:
+            return GetBuiltinIconById(L"link");
+        case Model::ShortcutTargetKind::Exe:
+            return GetBuiltinIconById(L"exe");
+        case Model::ShortcutTargetKind::File:
+            return GetAssociatedIcon(L"WinLauncher.file", FILE_ATTRIBUTE_NORMAL);
+        default:
+            return GetBuiltinIconById(L"app");
+        }
+    }
+
+    switch (type)
+    {
+    case Model::ShortcutType::Hotkey:
+        return GetBuiltinIconById(L"hotkey");
+    case Model::ShortcutType::Url:
+        return GetBuiltinIconById(L"url");
+    case Model::ShortcutType::Command:
+        return GetBuiltinIconById(L"command");
+    case Model::ShortcutType::Macro:
+        return GetBuiltinIconById(L"macro");
+    case Model::ShortcutType::Batch:
+        return GetBuiltinIconById(L"batch");
+    case Model::ShortcutType::BuiltinIcon:
+        return GetBuiltinIconById(L"app");
+    default:
+        return GetBuiltinIconById(L"app");
+    }
+}
+
+static Model::IconSource NormalizeIconSource(Model::IconSource source, const std::wstring& iconPath, const std::wstring& builtinIconId)
+{
+    if (source == Model::IconSource::CustomPath && iconPath.empty())
+        return Model::IconSource::Auto;
+    if (source == Model::IconSource::Builtin && builtinIconId.empty())
+        return Model::IconSource::Auto;
+    return source;
+}
+
+static std::vector<std::wstring> Split(const std::wstring& s, wchar_t delim)
+{
+    std::vector<std::wstring> result;
+    std::wstring current;
+    for (wchar_t ch : s)
+    {
+        if (ch == delim)
+        {
+            result.push_back(current);
+            current.clear();
+        }
+        else
+        {
+            current.push_back(ch);
+        }
+    }
+    result.push_back(current);
+    return result;
+}
+
+static std::wstring EscapeConfigValue(const std::wstring& value)
+{
+    std::wstring result;
+    result.reserve(value.size());
+    for (wchar_t ch : value)
+    {
+        switch (ch)
+        {
+        case L'\\': result += L"\\\\"; break;
+        case L'\r': result += L"\\r"; break;
+        case L'\n': result += L"\\n"; break;
+        case L'\t': result += L"\\t"; break;
+        default: result.push_back(ch); break;
+        }
+    }
+    return result;
+}
+
+static std::wstring UnescapeConfigValue(const std::wstring& value)
+{
+    std::wstring result;
+    result.reserve(value.size());
+    bool escaping = false;
+    for (wchar_t ch : value)
+    {
+        if (!escaping)
+        {
+            if (ch == L'\\')
+            {
+                escaping = true;
+            }
+            else
+            {
+                result.push_back(ch);
+            }
+            continue;
+        }
+
+        switch (ch)
+        {
+        case L'\\': result.push_back(L'\\'); break;
+        case L'r': result.push_back(L'\r'); break;
+        case L'n': result.push_back(L'\n'); break;
+        case L't': result.push_back(L'\t'); break;
+        default:
+            result.push_back(L'\\');
+            result.push_back(ch);
+            break;
+        }
+        escaping = false;
+    }
+    if (escaping)
+        result.push_back(L'\\');
+    return result;
+}
+
+static void TrimConfigLine(std::wstring& line)
+{
+    while (!line.empty() && (line.back() == L'\r' || line.back() == L'\n' || line.back() == L' ' || line.back() == L'\t'))
+        line.pop_back();
+    size_t start = 0;
+    while (start < line.size() && (line[start] == L' ' || line[start] == L'\t'))
+        start++;
+    if (start > 0)
+        line = line.substr(start);
+}
 
 std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& configDir)
 {
@@ -154,18 +334,13 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
     std::wstringstream wss(content);
     std::wstring line;
     RendPopupPage* currentPage = nullptr;
-
-
+    RendShortcutInfo* currentItem = nullptr;
+    int currentPageIndex = -1;
+    int currentItemIndex = -1;
 
     while (std::getline(wss, line))
     {
-        while (!line.empty() && (line.back() == L'\r' || line.back() == L'\n' || line.back() == L' ' || line.back() == L'\t'))
-            line.pop_back();
-        size_t start = 0;
-        while (start < line.size() && (line[start] == L' ' || line[start] == L'\t'))
-            start++;
-        if (start > 0)
-            line = line.substr(start);
+        TrimConfigLine(line);
 
         if (line.empty()) continue;
 
@@ -174,67 +349,100 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
             std::wstring sec = line.substr(1, line.size() - 2);
             if (sec.rfind(L"Page:", 0) == 0)
             {
-                RendPopupPage page;
-                page.name = sec.substr(5);
-                page.isSyncFolder = false;
-                page.folderPath = L"";
-                pages.push_back(page);
-                currentPage = &pages.back();
+                currentPage = nullptr;
+                currentItem = nullptr;
+                currentPageIndex = -1;
+                currentItemIndex = -1;
+                try { currentPageIndex = std::stoi(sec.substr(5)); } catch (...) { currentPageIndex = -1; }
+                if (currentPageIndex >= 0)
+                {
+                    if ((int)pages.size() <= currentPageIndex)
+                        pages.resize(currentPageIndex + 1);
+                    currentPage = &pages[currentPageIndex];
+                }
+            }
+            else if (sec.rfind(L"Item:", 0) == 0)
+            {
+                currentPage = nullptr;
+                currentItem = nullptr;
+                currentPageIndex = -1;
+                currentItemIndex = -1;
+                std::wstring rest = sec.substr(5);
+                size_t colon = rest.find(L':');
+                if (colon != std::wstring::npos)
+                {
+                    try
+                    {
+                        currentPageIndex = std::stoi(rest.substr(0, colon));
+                        currentItemIndex = std::stoi(rest.substr(colon + 1));
+                    }
+                    catch (...)
+                    {
+                        currentPageIndex = -1;
+                        currentItemIndex = -1;
+                    }
+                }
+                if (currentPageIndex >= 0 && currentItemIndex >= 0)
+                {
+                    if ((int)pages.size() <= currentPageIndex)
+                        pages.resize(currentPageIndex + 1);
+                    currentPage = &pages[currentPageIndex];
+                    if ((int)currentPage->shortcuts.size() <= currentItemIndex)
+                        currentPage->shortcuts.resize(currentItemIndex + 1);
+                    currentItem = &currentPage->shortcuts[currentItemIndex];
+                }
+            }
+        }
+        else if (currentItem)
+        {
+            size_t eq = line.find(L'=');
+            if (eq != std::wstring::npos)
+            {
+                std::wstring key = line.substr(0, eq);
+                std::wstring val = UnescapeConfigValue(line.substr(eq + 1));
+                TrimConfigLine(key); TrimConfigLine(val);
+
+                if (key == L"Name") currentItem->name = val;
+                else if (key == L"Type") currentItem->type = Model::ShortcutTypeFromKey(val);
+                else if (key == L"TargetKind") currentItem->targetKind = Model::ShortcutTargetKindFromKey(val);
+                else if (key == L"TargetPath") currentItem->targetPath = val;
+                else if (key == L"Arguments") currentItem->arguments = val;
+                else if (key == L"RunAsAdmin") currentItem->runAsAdmin = (val == L"1");
+                else if (key == L"IconSource") currentItem->iconSource = Model::IconSourceFromKey(val);
+                else if (key == L"IconPath") currentItem->iconPath = val;
+                else if (key == L"BuiltinIconId") currentItem->builtinIconId = val;
+                else if (key == L"IconInvertLight") currentItem->iconInvertLight = (val == L"1");
+                else if (key == L"IconInvertDark") currentItem->iconInvertDark = (val == L"1");
             }
         }
         else if (currentPage)
         {
-            if (line.rfind(L"IsSyncFolder=", 0) == 0)
+            size_t eq = line.find(L'=');
+            if (eq != std::wstring::npos)
             {
-                try { currentPage->isSyncFolder = (std::stoi(line.substr(13)) != 0); } catch (...) {}
-            }
-            else if (line.rfind(L"FolderPath=", 0) == 0)
-            {
-                currentPage->folderPath = line.substr(11);
-            }
-            else if (line.rfind(L"Shortcut=", 0) == 0)
-            {
-                std::wstring val = line.substr(9);
-                size_t p1 = val.find(L'|');
-                if (p1 != std::wstring::npos)
+                std::wstring key = line.substr(0, eq);
+                std::wstring val = UnescapeConfigValue(line.substr(eq + 1));
+                TrimConfigLine(key); TrimConfigLine(val);
+
+                if (key == L"Name") currentPage->name = val;
+                else if (key == L"IsSyncFolder")
                 {
-                    std::wstring name = val.substr(0, p1);
-                    std::wstring rest = val.substr(p1 + 1);
-                    size_t p2 = rest.find(L'|');
-                    std::wstring targetPath;
-                    std::wstring arguments;
-                    std::wstring iconPath;
-                    if (p2 != std::wstring::npos)
-                    {
-                        targetPath = rest.substr(0, p2);
-                        std::wstring rest2 = rest.substr(p2 + 1);
-                        size_t p3 = rest2.find(L'|');
-                        if (p3 != std::wstring::npos)
-                        {
-                            arguments = rest2.substr(0, p3);
-                            iconPath = rest2.substr(p3 + 1);
-                        }
-                        else
-                        {
-                            arguments = rest2;
-                        }
-                    }
-                    else
-                    {
-                        targetPath = rest;
-                    }
-
-                    RendShortcutInfo info;
-                    info.name = name;
-                    info.targetPath = targetPath;
-                    info.arguments = arguments;
-                    info.iconPath = iconPath;
-
-                    info.hIcon = GetShortcutIcon(iconPath.empty() ? targetPath : iconPath);
-
-                    currentPage->shortcuts.push_back(info);
+                    currentPage->isSyncFolder = (val == L"1");
                 }
+                else if (key == L"FolderPath") currentPage->folderPath = val;
             }
+        }
+    }
+
+    for (auto& page : pages)
+    {
+        for (auto& sc : page.shortcuts)
+        {
+            if (sc.targetKind == Model::ShortcutTargetKind::Unknown)
+                sc.targetKind = ShortcutManager::InferTargetKind(sc.targetPath);
+            if (sc.iconSource == Model::IconSource::Auto && !sc.iconPath.empty())
+                sc.iconSource = Model::IconSource::CustomPath;
+            sc.hIcon = GetShortcutIcon(sc);
         }
     }
 
@@ -270,7 +478,6 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
         }
     }
 
-
     return pages;
 }
 
@@ -280,36 +487,107 @@ void ShortcutManager::SaveConfig(const std::wstring& configDir, const std::vecto
     std::wstring configFilePath = configDir + L"\\launcher_config.ini";
     std::wstring content;
 
+    int pageIndex = 0;
     for (const auto& page : pages)
     {
-        content += L"[Page:" + page.name + L"]\r\n";
+        content += L"[Page:" + std::to_wstring(pageIndex) + L"]\r\n";
+        content += L"Name=" + EscapeConfigValue(page.name) + L"\r\n";
+        content += L"ShortcutCount=" + std::to_wstring(page.shortcuts.size()) + L"\r\n";
         if (!page.folderPath.empty())
         {
             content += L"IsSyncFolder=" + std::to_wstring(page.isSyncFolder ? 1 : 0) + L"\r\n";
-            content += L"FolderPath=" + page.folderPath + L"\r\n";
-        }
-        for (const auto& sc : page.shortcuts)
-        {
-            content += L"Shortcut=" + sc.name + L"|" + sc.targetPath + L"|" + sc.arguments + L"|" + sc.iconPath + L"\r\n";
+            content += L"FolderPath=" + EscapeConfigValue(page.folderPath) + L"\r\n";
         }
         content += L"\r\n";
+
+        int shortcutIndex = 0;
+        for (const auto& sc : page.shortcuts)
+        {
+            content += L"[Item:" + std::to_wstring(pageIndex) + L":" + std::to_wstring(shortcutIndex) + L"]\r\n";
+            content += L"Name=" + EscapeConfigValue(sc.name) + L"\r\n";
+            content += L"Type=" + std::wstring(Model::ShortcutTypeKey(sc.type)) + L"\r\n";
+            content += L"TargetKind=" + std::wstring(Model::ShortcutTargetKindKey(sc.targetKind)) + L"\r\n";
+            content += L"TargetPath=" + EscapeConfigValue(sc.targetPath) + L"\r\n";
+            content += L"Arguments=" + EscapeConfigValue(sc.arguments) + L"\r\n";
+            content += L"RunAsAdmin=" + std::to_wstring(sc.runAsAdmin ? 1 : 0) + L"\r\n";
+            content += L"IconSource=" + std::wstring(Model::IconSourceKey(sc.iconSource)) + L"\r\n";
+            content += L"IconPath=" + EscapeConfigValue(sc.iconPath) + L"\r\n";
+            content += L"BuiltinIconId=" + EscapeConfigValue(sc.builtinIconId) + L"\r\n";
+            content += L"IconInvertLight=" + std::to_wstring(sc.iconInvertLight ? 1 : 0) + L"\r\n";
+            content += L"IconInvertDark=" + std::to_wstring(sc.iconInvertDark ? 1 : 0) + L"\r\n\r\n";
+            shortcutIndex++;
+        }
+        pageIndex++;
     }
 
     WriteStringToFile(configFilePath, content);
 }
 
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
+
+class GdiPlusManager
+{
+public:
+    static void EnsureInitialized()
+    {
+        static GdiPlusManager instance;
+    }
+private:
+    GdiPlusManager()
+    {
+        Gdiplus::GdiplusStartupInput si;
+        Gdiplus::GdiplusStartup(&m_token, &si, nullptr);
+    }
+    ~GdiPlusManager()
+    {
+        Gdiplus::GdiplusShutdown(m_token);
+    }
+    ULONG_PTR m_token = 0;
+};
+
+static HICON LoadIconViaGdiplus(const std::wstring& path)
+{
+    GdiPlusManager::EnsureInitialized();
+    Gdiplus::Bitmap* bmp = Gdiplus::Bitmap::FromFile(path.c_str());
+    HICON hIcon = nullptr;
+    if (bmp)
+    {
+        if (bmp->GetLastStatus() == Gdiplus::Ok)
+        {
+            bmp->GetHICON(&hIcon);
+        }
+        delete bmp;
+    }
+    return hIcon;
+}
+
 HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
 {
+    if (targetPath.empty()) return nullptr;
+
     bool isDir = false;
+    bool isFile = false;
     if (!targetPath.empty())
     {
         DWORD attr = GetFileAttributesW(targetPath.c_str());
-        isDir = (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY));
+        if (attr != INVALID_FILE_ATTRIBUTES)
+        {
+            isDir = (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            isFile = !isDir;
+        }
     }
 
     if (isDir)
     {
         HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+        if (hIcon)
+            return hIcon;
+    }
+
+    if (isFile)
+    {
+        HICON hIcon = LoadIconViaGdiplus(targetPath);
         if (hIcon)
             return hIcon;
     }
@@ -333,4 +611,67 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
     }
 
     return hIcon;
+}
+
+Model::ShortcutTargetKind ShortcutManager::InferTargetKind(const std::wstring& path)
+{
+    if (path.empty())
+        return Model::ShortcutTargetKind::Unknown;
+
+    DWORD attr = GetFileAttributesW(path.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+        return Model::ShortcutTargetKind::Folder;
+
+    const wchar_t* ext = PathFindExtensionW(path.c_str());
+    if (ext && *ext)
+    {
+        if (_wcsicmp(ext, L".lnk") == 0) return Model::ShortcutTargetKind::Link;
+        if (_wcsicmp(ext, L".exe") == 0) return Model::ShortcutTargetKind::Exe;
+        return Model::ShortcutTargetKind::File;
+    }
+
+    return Model::ShortcutTargetKind::Unknown;
+}
+
+HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
+{
+    Model::IconSource source = NormalizeIconSource(shortcut.iconSource, shortcut.iconPath, shortcut.builtinIconId);
+    if (source == Model::IconSource::CustomPath)
+    {
+        HICON hIcon = GetShortcutIcon(shortcut.iconPath);
+        if (hIcon) return hIcon;
+    }
+    else if (source == Model::IconSource::Builtin)
+    {
+        HICON hIcon = GetBuiltinIconById(shortcut.builtinIconId);
+        if (hIcon) return hIcon;
+    }
+
+    if (shortcut.type == Model::ShortcutType::File && !shortcut.targetPath.empty())
+    {
+        HICON hIcon = GetShortcutIcon(shortcut.targetPath);
+        if (hIcon) return hIcon;
+    }
+
+    Model::ShortcutTargetKind kind = shortcut.targetKind;
+    if (kind == Model::ShortcutTargetKind::Unknown)
+        kind = InferTargetKind(shortcut.targetPath);
+    return GetDefaultIconForType(shortcut.type, kind);
+}
+
+HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)
+{
+    RendShortcutInfo renderInfo;
+    renderInfo.name = shortcut.name;
+    renderInfo.targetPath = shortcut.targetPath;
+    renderInfo.arguments = shortcut.arguments;
+    renderInfo.iconPath = shortcut.iconPath;
+    renderInfo.runAsAdmin = shortcut.runAsAdmin;
+    renderInfo.type = shortcut.type;
+    renderInfo.targetKind = shortcut.targetKind;
+    renderInfo.iconSource = shortcut.iconSource;
+    renderInfo.builtinIconId = shortcut.builtinIconId;
+    renderInfo.iconInvertLight = shortcut.iconInvertLight;
+    renderInfo.iconInvertDark = shortcut.iconInvertDark;
+    return GetShortcutIcon(renderInfo);
 }

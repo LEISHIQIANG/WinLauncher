@@ -10,6 +10,7 @@
 #include <wtsapi32.h>
 #include <string>
 #include <vector>
+#include "App/Logger.h"
 
 #pragma comment(lib, "taskschd.lib")
 #pragma comment(lib, "ole32.lib")
@@ -390,6 +391,8 @@ inline void CleanupRegistryRunValue() {
 
 // Public interface: Enable autostart
 inline bool SetEnabled(bool enable) {
+    LOG_G_INFO(L"AutoStartHelper::SetEnabled(%s) called", enable ? L"true" : L"false");
+
     // Make sure registry run key is cleaned up
     CleanupRegistryRunValue();
 
@@ -397,12 +400,11 @@ inline bool SetEnabled(bool enable) {
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
     bool isCurrentAccountAdmin = IsCurrentUserAdminAccount();
+    LOG_G_INFO(L"AutoStartHelper::SetEnabled: exePath=%s, isAdminAccount=%s", exePath, isCurrentAccountAdmin ? L"true" : L"false");
 
     if (enable) {
         if (isCurrentAccountAdmin) {
-            // Admin path: launch helper elevated to create de-elevated task
-            // We use cmd.exe to call ourselves, with ShellExecuteEx "runas" verb.
-            // This will prompt UAC if the current process is not elevated.
+            LOG_G_INFO(L"AutoStartHelper::SetEnabled: attempting elevated task creation");
             std::wstring cmdLine = L"/c start \"\" /b \"" +
                 std::wstring(exePath) + L"\" --autostart-helper enable --target-exe \"" +
                 std::wstring(exePath) + L"\"";
@@ -419,16 +421,25 @@ inline bool SetEnabled(bool enable) {
                     WaitForSingleObject(sei.hProcess, 30000);
                     CloseHandle(sei.hProcess);
                 }
+                LOG_G_INFO(L"AutoStartHelper::SetEnabled: elevated task creation succeeded");
                 return true;
             }
+            LOG_G_ERRA(L"AutoStartHelper::SetEnabled: ShellExecuteExW runas cmd.exe failed (error=%d)", GetLastError());
             return false;
         } else {
-            // Standard user path: register directly
-            return EnableTaskDirect(exePath, L"", L"") == 0;
+            LOG_G_INFO(L"AutoStartHelper::SetEnabled: standard user path direct task creation");
+            int res = EnableTaskDirect(exePath, L"", L"");
+            if (res == 0) {
+                LOG_G_INFO(L"AutoStartHelper::SetEnabled: Direct task creation succeeded");
+                return true;
+            } else {
+                LOG_G_ERRA(L"AutoStartHelper::SetEnabled: Direct task creation failed (res=%d)", res);
+                return false;
+            }
         }
     } else {
         if (isCurrentAccountAdmin) {
-            // Admin path: launch helper elevated to delete task (via schtasks /Delete /TN ... /F)
+            LOG_G_INFO(L"AutoStartHelper::SetEnabled: attempting elevated task deletion");
             wchar_t sysDir[MAX_PATH];
             GetSystemDirectoryW(sysDir, MAX_PATH);
             std::wstring cmdPath = std::wstring(sysDir) + L"\\cmd.exe";
@@ -446,11 +457,21 @@ inline bool SetEnabled(bool enable) {
                     WaitForSingleObject(sei.hProcess, 15000);
                     CloseHandle(sei.hProcess);
                 }
+                LOG_G_INFO(L"AutoStartHelper::SetEnabled: elevated task deletion succeeded");
                 return true;
             }
+            LOG_G_ERRA(L"AutoStartHelper::SetEnabled: ShellExecuteExW runas schtasks failed (error=%d)", GetLastError());
             return false;
         } else {
-            return DisableTaskDirect() == 0;
+            LOG_G_INFO(L"AutoStartHelper::SetEnabled: standard user path direct task deletion");
+            int res = DisableTaskDirect();
+            if (res == 0) {
+                LOG_G_INFO(L"AutoStartHelper::SetEnabled: Direct task deletion succeeded");
+                return true;
+            } else {
+                LOG_G_ERRA(L"AutoStartHelper::SetEnabled: Direct task deletion failed (res=%d)", res);
+                return false;
+            }
         }
     }
 }
@@ -557,4 +578,150 @@ inline bool HandleCommandLine() {
     return handled;
 }
 
+// Helper to compare paths (case-insensitive and ignores surrounding quotes)
+inline bool ComparePaths(const std::wstring& path1, const std::wstring& path2) {
+    std::wstring p1 = path1;
+    std::wstring p2 = path2;
+    // Trim quotes
+    if (!p1.empty() && p1.front() == L'"') p1.erase(0, 1);
+    if (!p1.empty() && p1.back() == L'"') p1.pop_back();
+    if (!p2.empty() && p2.front() == L'"') p2.erase(0, 1);
+    if (!p2.empty() && p2.back() == L'"') p2.pop_back();
+    // Trim trailing backslashes/spaces
+    while(!p1.empty() && (p1.back() == L' ' || p1.back() == L'\\')) p1.pop_back();
+    // Trim leading spaces
+    while(!p1.empty() && p1.front() == L' ') p1.erase(0, 1);
+    while(!p2.empty() && (p2.back() == L' ' || p2.back() == L'\\')) p2.pop_back();
+    while(!p2.empty() && p2.front() == L' ') p2.erase(0, 1);
+    return (_wcsicmp(p1.c_str(), p2.c_str()) == 0);
+}
+
+// Perform validation and self-check of the autostart task
+inline bool ValidateAndSelfCheck() {
+    LOG_G_INFO(L"AutoStartHelper::ValidateAndSelfCheck called");
+    // Ensure registry run key is cleaned up
+    CleanupRegistryRunValue();
+
+    HRESULT hrCom = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    bool needsUninit = (hrCom == S_OK || hrCom == S_FALSE);
+
+    ITaskService* pService = NULL;
+    HRESULT hr = InitTaskService(&pService);
+    if (FAILED(hr) || !pService) {
+        LOG_G_ERRA(L"AutoStartHelper::ValidateAndSelfCheck: InitTaskService failed (HRESULT=0x%08X)", hr);
+        if (needsUninit) CoUninitialize();
+        return false;
+    }
+
+    ITaskFolder* pFolder = NULL;
+    IRegisteredTask* pTask = NULL;
+    hr = pService->GetFolder(_bstr_t(L"\\"), &pFolder);
+    bool isValid = true;
+    bool exists = false;
+    if (SUCCEEDED(hr) && pFolder) {
+        hr = pFolder->GetTask(_bstr_t(TASK_NAME), &pTask);
+        if (SUCCEEDED(hr) && pTask) {
+            exists = true;
+            ITaskDefinition* pDefinition = NULL;
+            hr = pTask->get_Definition(&pDefinition);
+            if (SUCCEEDED(hr) && pDefinition) {
+                IActionCollection* pActions = NULL;
+                hr = pDefinition->get_Actions(&pActions);
+                if (SUCCEEDED(hr) && pActions) {
+                    long count = 0;
+                    pActions->get_Count(&count);
+                    if (count > 0) {
+                        IAction* pAction = NULL;
+                        hr = pActions->get_Item(1, &pAction);
+                        if (SUCCEEDED(hr) && pAction) {
+                            IExecAction* pExecAction = NULL;
+                            hr = pAction->QueryInterface(IID_IExecAction, (void**)&pExecAction);
+                            if (SUCCEEDED(hr) && pExecAction) {
+                                BSTR bstrPath = NULL;
+                                BSTR bstrArgs = NULL;
+                                pExecAction->get_Path(&bstrPath);
+                                pExecAction->get_Arguments(&bstrArgs);
+
+                                std::wstring taskPath = bstrPath ? bstrPath : L"";
+                                std::wstring taskArgs = bstrArgs ? bstrArgs : L"";
+
+                                if (bstrPath) SysFreeString(bstrPath);
+                                if (bstrArgs) SysFreeString(bstrArgs);
+
+                                wchar_t currentExe[MAX_PATH];
+                                GetModuleFileNameW(nullptr, currentExe, MAX_PATH);
+
+                                // Check path match
+                                bool pathMatch = ComparePaths(taskPath, currentExe);
+                                bool argsMatch = true;
+
+                                if (!taskArgs.empty()) {
+                                    size_t pos = taskArgs.find(L"--target-exe");
+                                    if (pos != std::wstring::npos) {
+                                        std::wstring targetPart = taskArgs.substr(pos + 12);
+                                        while (!targetPart.empty() && targetPart.front() == L' ') targetPart.erase(0, 1);
+                                        if (!targetPart.empty() && targetPart.front() == L'"') {
+                                            size_t endQuote = targetPart.find(L'"', 1);
+                                            if (endQuote != std::wstring::npos) {
+                                                targetPart = targetPart.substr(1, endQuote - 1);
+                                            }
+                                        }
+                                        if (!ComparePaths(targetPart, currentExe)) {
+                                            argsMatch = false;
+                                        }
+                                    } else {
+                                        argsMatch = false;
+                                    }
+                                }
+
+                                if (!pathMatch || !argsMatch) {
+                                    LOG_G_WORNING(L"AutoStartHelper::ValidateAndSelfCheck: task target mismatch! PathMatch=%d, ArgsMatch=%d", pathMatch, argsMatch);
+                                    isValid = false;
+                                }
+
+                                pExecAction->Release();
+                            } else {
+                                isValid = false;
+                            }
+                            pAction->Release();
+                        } else {
+                            isValid = false;
+                        }
+                    } else {
+                        isValid = false;
+                    }
+                    pActions->Release();
+                } else {
+                    isValid = false;
+                }
+                pDefinition->Release();
+            } else {
+                isValid = false;
+            }
+            pTask->Release();
+        }
+        pFolder->Release();
+    }
+    pService->Release();
+    if (needsUninit) CoUninitialize();
+
+    if (exists && !isValid) {
+        LOG_G_WORNING(L"AutoStartHelper::ValidateAndSelfCheck: autostart task exists but is invalid, recreating...");
+        // Mismatch detected! Try to delete directly first.
+        if (DisableTaskDirect() != 0) {
+            // Fallback to UAC-enabled delete if direct delete fails.
+            SetEnabled(false);
+        }
+        return false;
+    }
+
+    if (exists) {
+        LOG_G_INFO(L"AutoStartHelper::ValidateAndSelfCheck: task is valid");
+    } else {
+        LOG_G_INFO(L"AutoStartHelper::ValidateAndSelfCheck: task does not exist");
+    }
+    return true;
+}
+
 } // namespace AutoStartHelper
+

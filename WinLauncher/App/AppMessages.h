@@ -8,4 +8,6 @@ namespace AppMessages
     constexpr UINT ConfigChanged = WM_APP + 3;
     constexpr UINT ShowConfigWindow = WM_APP + 4;
     constexpr UINT ShowSettingsWindow = WM_APP + 5;
+    constexpr UINT KeyboardHookKeyCaptured = WM_APP + 0x80;
+    constexpr UINT KeyboardHookChordComplete = WM_APP + 0x81;
 }

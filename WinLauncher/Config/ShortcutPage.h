@@ -19,6 +19,9 @@ public:
     // Caller must ensure vector stability — re-obtain after any m_pages mutation
     void SetPageData(RendPopupPage* page, bool preserveScroll = false);
     void ShowAddShortcutDialog();
+    void ShowAddHotkeyDialog();
+    void ShowAddUrlDialog();
+    void ShowAddCommandDialog();
 
     virtual void OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect) override;
     virtual void OnMouseMove(POINT pt, bool& repaint) override;

@@ -54,20 +54,16 @@ void TextBox::RecreateTextLayout()
     if (!m_dwFactory) return;
 
     ComPtr<IDWriteTextFormat> tf;
-    HRESULT hr = m_dwFactory->CreateTextFormat(
-        m_style.fontFamily.c_str(),
-        nullptr,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL,
-        (FLOAT)m_style.fontSize,
-        L"",
-        &tf
-    );
+    HRESULT hr = UIStyle::Typography::CreateTextFormat(
+        m_dwFactory,
+        &tf,
+        m_style.fontSize,
+        m_style.fontWeight,
+        DWRITE_TEXT_ALIGNMENT_LEADING,
+        DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+        DWRITE_WORD_WRAPPING_NO_WRAP);
     if (SUCCEEDED(hr))
     {
-        tf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-
         float maxW = m_bounds.right - m_bounds.left - (m_style.paddingLeft + m_style.paddingRight);
         float maxH = m_bounds.bottom - m_bounds.top - (m_style.paddingTop + m_style.paddingBottom);
 

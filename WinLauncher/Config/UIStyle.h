@@ -2,6 +2,8 @@
 #include "../Model/AppearanceSettings.h"
 #include <windows.h>
 #include <d2d1.h>
+#include <dwrite.h>
+#include <cmath>
 #include <string>
 
 namespace UIStyle
@@ -148,6 +150,81 @@ namespace UIStyle
             alpha);
     }
 
+    inline float RelativeLuminance(const D2D1_COLOR_F& color)
+    {
+        return color.r * 0.2126f + color.g * 0.7152f + color.b * 0.0722f;
+    }
+
+    namespace Typography
+    {
+        inline const wchar_t* FontFamily()
+        {
+            return L"Microsoft YaHei UI";
+        }
+
+        inline const wchar_t* LocaleName()
+        {
+            return L"zh-cn";
+        }
+
+        inline DWRITE_FONT_WEIGHT NormalizeWeight(DWRITE_FONT_WEIGHT weight)
+        {
+            if (weight <= DWRITE_FONT_WEIGHT_LIGHT)
+                return DWRITE_FONT_WEIGHT_NORMAL;
+            if (weight >= DWRITE_FONT_WEIGHT_BOLD)
+                return DWRITE_FONT_WEIGHT_SEMI_BOLD;
+            return weight;
+        }
+
+        inline HRESULT CreateTextFormat(
+            IDWriteFactory* factory,
+            IDWriteTextFormat** format,
+            float size,
+            DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_TEXT_ALIGNMENT textAlignment = DWRITE_TEXT_ALIGNMENT_LEADING,
+            DWRITE_PARAGRAPH_ALIGNMENT paragraphAlignment = DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+            DWRITE_WORD_WRAPPING wrapping = DWRITE_WORD_WRAPPING_NO_WRAP,
+            bool trimCharacters = true)
+        {
+            if (!factory || !format)
+                return E_INVALIDARG;
+
+            *format = nullptr;
+            HRESULT hr = factory->CreateTextFormat(
+                FontFamily(),
+                nullptr,
+                NormalizeWeight(weight),
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                size,
+                LocaleName(),
+                format);
+
+            if (SUCCEEDED(hr) && *format)
+            {
+                (*format)->SetTextAlignment(textAlignment);
+                (*format)->SetParagraphAlignment(paragraphAlignment);
+                (*format)->SetWordWrapping(wrapping);
+
+                if (trimCharacters)
+                {
+                    DWRITE_TRIMMING trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+                    (*format)->SetTrimming(&trimming, nullptr);
+                }
+            }
+
+            return hr;
+        }
+
+        inline void ApplyRenderTargetTextDefaults(ID2D1RenderTarget* rt)
+        {
+            if (!rt)
+                return;
+            rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        }
+    }
+
     inline D2D1_COLOR_F HslToRgb(float h, float s, float l, float a)
     {
         float c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;
@@ -170,11 +247,11 @@ namespace UIStyle
     {
         static inline Color TextNormal()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.15f, 0.15f, 0.2f, 1.0f) : Color(0.92f, 0.92f, 0.95f, 1.0f);
+            return (g_ThemeMode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 1.0f) : Color(0.94f, 0.95f, 0.97f, 1.0f);
         }
         static inline Color TextMuted()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.15f, 0.15f, 0.2f, 0.6f) : Color(0.92f, 0.92f, 0.95f, 0.6f);
+            return (g_ThemeMode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 0.72f) : Color(0.94f, 0.95f, 0.97f, 0.68f);
         }
         static inline Color Accent()
         {
@@ -197,7 +274,13 @@ namespace UIStyle
         }
         static inline Color TextOnAccent()
         {
-            return Color(1.0f, 1.0f, 1.0f, 1.0f);
+            return RelativeLuminance(Accent().d2d) > 0.46f
+                ? Color(0.035f, 0.045f, 0.06f, 1.0f)
+                : Color(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        static inline Color ThemeBase()
+        {
+            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 1.0f) : Color(1.0f, 1.0f, 1.0f, 1.0f);
         }
         static inline Color CardBg()
         {
@@ -329,7 +412,8 @@ namespace UIStyle
         float paddingBottom;
 
         std::wstring fontFamily;
-        int fontSize; // Logical font size (unscaled pt)
+        float fontSize; // DIPs; DirectWrite scales these through the render target DPI
+        DWRITE_FONT_WEIGHT fontWeight;
 
         // Explicit default constructor to guarantee initialization across all compilers/modes
         TextBoxStyle()
@@ -344,8 +428,9 @@ namespace UIStyle
             , paddingTop(6.0f)
             , paddingRight(8.0f)
             , paddingBottom(6.0f)
-            , fontFamily(L"Microsoft YaHei UI")
-            , fontSize(14)
+            , fontFamily(Typography::FontFamily())
+            , fontSize(12.0f)
+            , fontWeight(DWRITE_FONT_WEIGHT_NORMAL)
         {
         }
     };

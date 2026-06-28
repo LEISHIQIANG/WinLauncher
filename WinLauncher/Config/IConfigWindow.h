@@ -16,6 +16,8 @@ public:
     virtual HWND GetWindowHWND() = 0;
     virtual std::wstring GetConfigDir() = 0;
     virtual std::wstring GetConfigFilePath() = 0;
+    virtual void OpenConfigFile() = 0;
+    virtual void OpenLogFile() = 0;
     virtual void OpenConfigDir() = 0;
     virtual void StartAnimation() = 0;
     virtual IDWriteTextFormat* GetLeftFont() = 0;
@@ -23,7 +25,7 @@ public:
     virtual IDWriteTextFormat* GetHeaderFont() = 0;
     virtual IDWriteTextFormat* GetDefaultFont() = 0;
 
-    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon) = 0;
+    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"") = 0;
 
     virtual size_t GetCategoryCount() = 0;
     virtual std::wstring GetCategoryName(size_t index) = 0;

@@ -79,14 +79,13 @@ void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, A
 
     if (s_instance->m_dw && !s_instance->m_tfMenu)
     {
-        s_instance->m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 12, L"", &s_instance->m_tfMenu);
-        if (s_instance->m_tfMenu)
-        {
-            s_instance->m_tfMenu->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            s_instance->m_tfMenu->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
+        UIStyle::Typography::CreateTextFormat(
+            s_instance->m_dw.Get(),
+            &s_instance->m_tfMenu,
+            12.0f,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_TEXT_ALIGNMENT_CENTER,
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
 
     s_instance->m_hovered = -1;

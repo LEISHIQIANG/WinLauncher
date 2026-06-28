@@ -66,7 +66,10 @@ public:
         std::wstringstream wss(content);
         std::wstring line;
         Model::PopupPage* currentPage = nullptr;
+        Model::ShortcutInfo* currentItem = nullptr;
         bool inSettings = false;
+        int currentPageIndex = -1;
+        int currentItemIndex = -1;
 
         while (std::getline(wss, line))
         {
@@ -80,19 +83,75 @@ public:
                 {
                     inSettings = true;
                     currentPage = nullptr;
+                    currentItem = nullptr;
+                    currentPageIndex = -1;
+                    currentItemIndex = -1;
                 }
                 else if (sec.rfind(L"Page:", 0) == 0)
                 {
                     inSettings = false;
-                    Model::PopupPage page;
-                    page.name = sec.substr(5);
-                    pages.push_back(std::move(page));
-                    currentPage = &pages.back();
+                    currentItem = nullptr;
+                    currentItemIndex = -1;
+                    currentPage = nullptr;
+                    currentPageIndex = -1;
+
+                    try
+                    {
+                        currentPageIndex = std::stoi(sec.substr(5));
+                    }
+                    catch (...)
+                    {
+                        currentPageIndex = -1;
+                    }
+
+                    if (currentPageIndex >= 0)
+                    {
+                        if ((int)pages.size() <= currentPageIndex)
+                            pages.resize(currentPageIndex + 1);
+                        currentPage = &pages[currentPageIndex];
+                    }
+                }
+                else if (sec.rfind(L"Item:", 0) == 0)
+                {
+                    inSettings = false;
+                    currentPage = nullptr;
+                    currentItem = nullptr;
+                    currentPageIndex = -1;
+                    currentItemIndex = -1;
+
+                    std::wstring rest = sec.substr(5);
+                    size_t colon = rest.find(L':');
+                    if (colon != std::wstring::npos)
+                    {
+                        try
+                        {
+                            currentPageIndex = std::stoi(rest.substr(0, colon));
+                            currentItemIndex = std::stoi(rest.substr(colon + 1));
+                        }
+                        catch (...)
+                        {
+                            currentPageIndex = -1;
+                            currentItemIndex = -1;
+                        }
+                    }
+
+                    if (currentPageIndex >= 0 && currentItemIndex >= 0)
+                    {
+                        if ((int)pages.size() <= currentPageIndex)
+                            pages.resize(currentPageIndex + 1);
+                        currentPage = &pages[currentPageIndex];
+                        if ((int)currentPage->shortcuts.size() <= currentItemIndex)
+                            currentPage->shortcuts.resize(currentItemIndex + 1);
+                        currentItem = &currentPage->shortcuts[currentItemIndex];
+                    }
                 }
                 else
                 {
                     inSettings = false;
                     currentPage = nullptr;
+                    currentItem = nullptr;
+                    currentPageIndex = -1;
+                    currentItemIndex = -1;
                 }
             }
             else if (inSettings)
@@ -101,7 +160,7 @@ public:
                 if (eq != std::wstring::npos)
                 {
                     std::wstring key = line.substr(0, eq);
-                    std::wstring val = line.substr(eq + 1);
+                    std::wstring val = UnescapeValue(line.substr(eq + 1));
                     Trim(key); Trim(val);
                     if (key == L"TriggerType")
                     {
@@ -233,23 +292,59 @@ public:
                     }
                 }
             }
-            else if (currentPage)
+            else if (currentItem)
             {
-                if (line.rfind(L"IsSyncFolder=", 0) == 0)
+                size_t eq = line.find(L'=');
+                if (eq != std::wstring::npos)
                 {
-                    try { currentPage->isSyncFolder = (std::stoi(line.substr(13)) != 0); } catch (...) {}
-                }
-                else if (line.rfind(L"FolderPath=", 0) == 0)
-                {
-                    currentPage->folderPath = line.substr(11);
-                }
-                else if (line.rfind(L"Shortcut=", 0) == 0)
-                {
-                    Model::ShortcutInfo info;
-                    ParseShortcutLine(line.substr(9), info);
-                    currentPage->shortcuts.push_back(std::move(info));
+                    std::wstring key = line.substr(0, eq);
+                    std::wstring val = UnescapeValue(line.substr(eq + 1));
+                    Trim(key); Trim(val);
+
+                    if (key == L"Name") currentItem->name = val;
+                    else if (key == L"Type") currentItem->type = Model::ShortcutTypeFromKey(val);
+                    else if (key == L"TargetKind") currentItem->targetKind = Model::ShortcutTargetKindFromKey(val);
+                    else if (key == L"TargetPath") currentItem->targetPath = val;
+                    else if (key == L"Arguments") currentItem->arguments = val;
+                    else if (key == L"RunAsAdmin")
+                    {
+                        try { currentItem->runAsAdmin = (std::stoi(val) != 0); } catch (...) { currentItem->runAsAdmin = false; }
+                    }
+                    else if (key == L"IconSource") currentItem->iconSource = Model::IconSourceFromKey(val);
+                    else if (key == L"IconPath") currentItem->iconPath = val;
+                    else if (key == L"BuiltinIconId") currentItem->builtinIconId = val;
+                    else if (key == L"IconInvertLight")
+                    {
+                        try { currentItem->iconInvertLight = (std::stoi(val) != 0); } catch (...) { currentItem->iconInvertLight = false; }
+                    }
+                    else if (key == L"IconInvertDark")
+                    {
+                        try { currentItem->iconInvertDark = (std::stoi(val) != 0); } catch (...) { currentItem->iconInvertDark = false; }
+                    }
                 }
             }
+            else if (currentPage)
+            {
+                size_t eq = line.find(L'=');
+                if (eq != std::wstring::npos)
+                {
+                    std::wstring key = line.substr(0, eq);
+                    std::wstring val = UnescapeValue(line.substr(eq + 1));
+                    Trim(key); Trim(val);
+
+                    if (key == L"Name") currentPage->name = val;
+                    else if (key == L"IsSyncFolder")
+                    {
+                        try { currentPage->isSyncFolder = (std::stoi(val) != 0); } catch (...) { currentPage->isSyncFolder = false; }
+                    }
+                    else if (key == L"FolderPath") currentPage->folderPath = val;
+                }
+            }
+        }
+
+        if (pages.empty())
+        {
+            return CreateDefaultConfig();
         }
 
         // Load and reconcile shortcuts for synchronized folders
@@ -353,20 +448,38 @@ public:
         content += L"AcrylicLightHighlight=" + std::to_wstring(m_appearance.acrylicLight.highlight) + L"\r\n";
         content += L"AcrylicLightBrightness=" + std::to_wstring(m_appearance.acrylicLight.brightness) + L"\r\n\r\n";
 
+        int pageIndex = 0;
         for (const auto& page : pages)
         {
-            content += L"[Page:" + page.name + L"]\r\n";
+            content += L"[Page:" + std::to_wstring(pageIndex) + L"]\r\n";
+            content += L"Name=" + EscapeValue(page.name) + L"\r\n";
+            content += L"ShortcutCount=" + std::to_wstring(page.shortcuts.size()) + L"\r\n";
             if (!page.folderPath.empty())
             {
                 // Write IsSyncFolder=1 for active sync, IsSyncFolder=0 for paused
                 content += L"IsSyncFolder=" + std::to_wstring(page.isSyncFolder ? 1 : 0) + L"\r\n";
-                content += L"FolderPath=" + page.folderPath + L"\r\n";
-            }
-            for (const auto& sc : page.shortcuts)
-            {
-                content += L"Shortcut=" + sc.name + L"|" + sc.targetPath + L"|" + sc.arguments + L"\r\n";
+                content += L"FolderPath=" + EscapeValue(page.folderPath) + L"\r\n";
             }
             content += L"\r\n";
+
+            int shortcutIndex = 0;
+            for (const auto& sc : page.shortcuts)
+            {
+                content += L"[Item:" + std::to_wstring(pageIndex) + L":" + std::to_wstring(shortcutIndex) + L"]\r\n";
+                content += L"Name=" + EscapeValue(sc.name) + L"\r\n";
+                content += L"Type=" + std::wstring(Model::ShortcutTypeKey(sc.type)) + L"\r\n";
+                content += L"TargetKind=" + std::wstring(Model::ShortcutTargetKindKey(sc.targetKind)) + L"\r\n";
+                content += L"TargetPath=" + EscapeValue(sc.targetPath) + L"\r\n";
+                content += L"Arguments=" + EscapeValue(sc.arguments) + L"\r\n";
+                content += L"RunAsAdmin=" + std::to_wstring(sc.runAsAdmin ? 1 : 0) + L"\r\n";
+                content += L"IconSource=" + std::wstring(Model::IconSourceKey(sc.iconSource)) + L"\r\n";
+                content += L"IconPath=" + EscapeValue(sc.iconPath) + L"\r\n";
+                content += L"BuiltinIconId=" + EscapeValue(sc.builtinIconId) + L"\r\n";
+                content += L"IconInvertLight=" + std::to_wstring(sc.iconInvertLight ? 1 : 0) + L"\r\n";
+                content += L"IconInvertDark=" + std::to_wstring(sc.iconInvertDark ? 1 : 0) + L"\r\n\r\n";
+                shortcutIndex++;
+            }
+            pageIndex++;
         }
         ConfigPath::EnsureDirectoryExists(m_configDir);
         if (WriteFile(m_configFilePath, content))
@@ -431,6 +544,26 @@ public:
     }
 
 private:
+    static std::vector<std::wstring> Split(const std::wstring& s, wchar_t delim)
+    {
+        std::vector<std::wstring> result;
+        std::wstring current;
+        for (wchar_t ch : s)
+        {
+            if (ch == delim)
+            {
+                result.push_back(current);
+                current.clear();
+            }
+            else
+            {
+                current.push_back(ch);
+            }
+        }
+        result.push_back(current);
+        return result;
+    }
+
     static void Trim(std::wstring& s)
     {
         while (!s.empty() && (s.back() == L'\r' || s.back() == L'\n' || s.back() == L' ' || s.back() == L'\t'))
@@ -441,23 +574,78 @@ private:
         if (start > 0) s = s.substr(start);
     }
 
+    static std::wstring EscapeValue(const std::wstring& value)
+    {
+        std::wstring result;
+        result.reserve(value.size());
+        for (wchar_t ch : value)
+        {
+            switch (ch)
+            {
+            case L'\\': result += L"\\\\"; break;
+            case L'\r': result += L"\\r"; break;
+            case L'\n': result += L"\\n"; break;
+            case L'\t': result += L"\\t"; break;
+            default: result.push_back(ch); break;
+            }
+        }
+        return result;
+    }
+
+    static std::wstring UnescapeValue(const std::wstring& value)
+    {
+        std::wstring result;
+        result.reserve(value.size());
+        bool escaping = false;
+        for (wchar_t ch : value)
+        {
+            if (!escaping)
+            {
+                if (ch == L'\\')
+                {
+                    escaping = true;
+                }
+                else
+                {
+                    result.push_back(ch);
+                }
+                continue;
+            }
+
+            switch (ch)
+            {
+            case L'\\': result.push_back(L'\\'); break;
+            case L'r': result.push_back(L'\r'); break;
+            case L'n': result.push_back(L'\n'); break;
+            case L't': result.push_back(L'\t'); break;
+            default:
+                result.push_back(L'\\');
+                result.push_back(ch);
+                break;
+            }
+            escaping = false;
+        }
+        if (escaping)
+            result.push_back(L'\\');
+        return result;
+    }
+
     static void ParseShortcutLine(const std::wstring& val, Model::ShortcutInfo& info)
     {
-        size_t p1 = val.find(L'|');
-        if (p1 == std::wstring::npos) return;
+        auto parts = Split(val, L'|');
+        if (parts.size() < 2) return;
 
-        info.name = val.substr(0, p1);
-        std::wstring rest = val.substr(p1 + 1);
-        size_t p2 = rest.find(L'|');
-        if (p2 != std::wstring::npos)
+        info.name = parts[0];
+        info.targetPath = parts[1];
+        if (parts.size() > 2) info.arguments = parts[2];
+        if (parts.size() > 3) info.iconPath = parts[3];
+        if (parts.size() > 4) info.runAsAdmin = (parts[4] == L"1");
+        if (parts.size() > 5)
         {
-            info.targetPath = rest.substr(0, p2);
-            info.arguments = rest.substr(p2 + 1);
+            try { info.type = (Model::ShortcutType)std::stoi(parts[5]); } catch (...) {}
         }
-        else
-        {
-            info.targetPath = rest;
-        }
+        if (parts.size() > 6) info.iconInvertLight = (parts[6] == L"1");
+        if (parts.size() > 7) info.iconInvertDark = (parts[7] == L"1");
     }
 
     std::vector<Model::PopupPage> CreateDefaultConfig()

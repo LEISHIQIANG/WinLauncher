@@ -6,6 +6,9 @@
 #include "PromptWindow.h"
 #include "ConfirmWindow.h"
 #include "ShortcutDialog.h"
+#include "HotkeyDialog.h"
+#include "UrlDialog.h"
+#include "CommandDialog.h"
 #include "../DpiHelper.h"
 #include "../Services/SyncFolderService.h"
 #include <windowsx.h>
@@ -76,19 +79,113 @@ void ShortcutPage::ShowAddShortcutDialog()
         if (!result.targetPath.empty())
         {
             RendShortcutInfo sc;
-            sc.name        = result.name;
-            sc.targetPath  = result.targetPath;
-            sc.arguments   = result.arguments;
-            sc.iconPath    = result.iconPath;
-            sc.hIcon       = ShortcutManager::GetShortcutIcon(result.iconPath.empty() ? result.targetPath : result.iconPath);
+            sc.name            = result.name;
+            sc.targetPath      = result.targetPath;
+            sc.arguments       = result.arguments;
+            sc.iconPath        = result.iconPath;
+            sc.runAsAdmin      = result.runAsAdmin;
+            sc.iconInvertLight = result.iconInvertLight;
+            sc.iconInvertDark  = result.iconInvertDark;
+            sc.type            = Model::ShortcutType::File;
+            sc.targetKind      = ShortcutManager::InferTargetKind(result.targetPath);
+            sc.iconSource      = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            sc.hIcon           = ShortcutManager::GetShortcutIcon(sc);
 
             m_pageData->shortcuts.push_back(sc);
-            ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon);
+            ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
             m_pageData->iconBitmaps.push_back(bmp);
 
             m_owner->NotifyConfigChanged();
             InvalidateRect(hWnd, nullptr, FALSE);
         }
+    }
+}
+
+void ShortcutPage::ShowAddHotkeyDialog()
+{
+    if (!m_pageData) return;
+    HWND hWnd = m_owner->GetWindowHWND();
+    HotkeyDialogResult result;
+    if (HotkeyDialog::Show(hWnd, L"添加快捷键", result, nullptr, m_owner->GetAppContext()))
+    {
+        RendShortcutInfo sc;
+        sc.name        = result.name;
+        sc.targetPath  = result.hotkey;
+        sc.arguments   = L"";
+        sc.iconPath    = result.iconPath;
+        sc.runAsAdmin  = result.afterClose;
+        sc.type        = Model::ShortcutType::Hotkey;
+        sc.iconInvertLight = result.iconInvertLight;
+        sc.iconInvertDark  = result.iconInvertDark;
+        sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+
+        m_pageData->shortcuts.push_back(sc);
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        m_pageData->iconBitmaps.push_back(bmp);
+
+        m_owner->NotifyConfigChanged();
+        InvalidateRect(hWnd, nullptr, FALSE);
+    }
+}
+
+void ShortcutPage::ShowAddUrlDialog()
+{
+    if (!m_pageData) return;
+    HWND hWnd = m_owner->GetWindowHWND();
+    UrlDialogResult result;
+    if (UrlDialog::Show(hWnd, L"添加打开网址", result, nullptr, m_owner->GetAppContext()))
+    {
+        RendShortcutInfo sc;
+        sc.name        = result.name;
+        sc.targetPath  = result.url;
+        sc.arguments   = result.browserPath + L"|||" + result.browserArgs;
+        sc.iconPath    = result.iconPath;
+        sc.runAsAdmin  = false;
+        sc.type        = Model::ShortcutType::Url;
+        sc.iconInvertLight = result.iconInvertLight;
+        sc.iconInvertDark  = result.iconInvertDark;
+        sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+
+        m_pageData->shortcuts.push_back(sc);
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        m_pageData->iconBitmaps.push_back(bmp);
+
+        m_owner->NotifyConfigChanged();
+        InvalidateRect(hWnd, nullptr, FALSE);
+    }
+}
+
+void ShortcutPage::ShowAddCommandDialog()
+{
+    if (!m_pageData) return;
+    HWND hWnd = m_owner->GetWindowHWND();
+    CommandDialogResult result;
+    if (CommandDialog::Show(hWnd, L"添加运行命令", result, nullptr, m_owner->GetAppContext()))
+    {
+        RendShortcutInfo sc;
+        sc.name        = result.name;
+        sc.targetPath  = result.command;
+        sc.arguments   = result.commandType + L"|||" + result.builtinCmd + L"|||" + 
+                         std::to_wstring(result.showWindow ? 1 : 0) + L"|||" + 
+                         std::to_wstring(result.captureOutput ? 1 : 0) + L"|||" + 
+                         std::to_wstring(result.timeoutSeconds) + L"|||" + 
+                         std::to_wstring(result.maxChars);
+        sc.iconPath    = result.iconPath;
+        sc.runAsAdmin  = result.runAsAdmin;
+        sc.type        = Model::ShortcutType::Command;
+        sc.iconInvertLight = result.iconInvertLight;
+        sc.iconInvertDark  = result.iconInvertDark;
+        sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+
+        m_pageData->shortcuts.push_back(sc);
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        m_pageData->iconBitmaps.push_back(bmp);
+
+        m_owner->NotifyConfigChanged();
+        InvalidateRect(hWnd, nullptr, FALSE);
     }
 }
 
@@ -180,7 +277,7 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 8.0f, 8.0f);
 
         bool isSelected = m_shortcutStates[i].selected;
-        D2D1_COLOR_F baseClr = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f);
+        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
         float alphaBg = isHovered ? 0.105f : 0.035f;
         float alphaBorder = isHovered ? 0.18f : 0.065f;
 
@@ -255,7 +352,7 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         D2D1_RECT_F addCardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
         D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addCardRect, 8.0f, 8.0f);
 
-        D2D1_COLOR_F baseClr = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f);
+        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
         float alphaBg = m_hoveredAddShortcut ? 0.09f : 0.02f;
         float alphaBorder = m_hoveredAddShortcut ? 0.16f : 0.065f;
 
@@ -989,7 +1086,7 @@ void ShortcutPage::EnsureIcons(ID2D1HwndRenderTarget* rt)
 
         for (int i = 0; i < n; i++)
         {
-            m_pageData->iconBitmaps[i] = m_owner->CreateD2DBitmapFromHicon(m_pageData->shortcuts[i].hIcon);
+            m_pageData->iconBitmaps[i] = m_owner->CreateD2DBitmapFromHicon(m_pageData->shortcuts[i].hIcon, m_pageData->shortcuts[i].name);
         }
     }
 }
@@ -1197,11 +1294,14 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
     sc.name = name;
     sc.targetPath = targetPath;
     sc.arguments = arguments;
-    sc.hIcon = ShortcutManager::GetShortcutIcon(targetPath);
+    sc.type = Model::ShortcutType::File;
+    sc.targetKind = ShortcutManager::InferTargetKind(path);
+    sc.iconSource = Model::IconSource::Auto;
+    sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
 
     m_pageData->shortcuts.push_back(sc);
 
-    ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon);
+    ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
     m_pageData->iconBitmaps.push_back(bmp);
 }
 
@@ -1245,55 +1345,171 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
     if (!m_pageData || index < 0 || index >= (int)m_pageData->shortcuts.size()) return;
 
     RendShortcutInfo& sc = m_pageData->shortcuts[index];
+    bool changed = false;
 
-    ShortcutDialog::InitParams init;
-    init.name       = sc.name;
-    init.targetPath = sc.targetPath;
-    init.arguments  = sc.arguments;
-    init.iconPath   = sc.iconPath;
-
-    ShortcutDialogResult result;
-    if (ShortcutDialog::Show(hWnd, L"编辑快捷方式", result, &init, m_owner->GetAppContext()))
+    if (sc.type == Model::ShortcutType::Hotkey)
     {
-        bool changed = false;
+        HotkeyDialog::InitParams init;
+        init.name = sc.name;
+        init.hotkey = sc.targetPath;
+        init.iconPath = sc.iconPath;
+        init.afterClose = sc.runAsAdmin;
+        init.iconInvertLight = sc.iconInvertLight;
+        init.iconInvertDark = sc.iconInvertDark;
 
-        if (sc.name != result.name)
-            { sc.name = result.name; changed = true; }
-
-        if (sc.arguments != result.arguments)
-            { sc.arguments = result.arguments; changed = true; }
-
-        if (sc.iconPath != result.iconPath)
-            { sc.iconPath = result.iconPath; changed = true; }
-
-        if (sc.targetPath != result.targetPath || changed)
+        HotkeyDialogResult result;
+        if (HotkeyDialog::Show(hWnd, L"编辑快捷键", result, &init, m_owner->GetAppContext()))
         {
-            if (sc.targetPath != result.targetPath)
-            {
-                sc.targetPath = result.targetPath;
-            }
+            if (sc.name != result.name) { sc.name = result.name; changed = true; }
+            if (sc.targetPath != result.hotkey) { sc.targetPath = result.hotkey; changed = true; }
+            if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
+            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
+            if (sc.runAsAdmin != result.afterClose) { sc.runAsAdmin = result.afterClose; changed = true; }
+            if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
+            if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
+        }
+    }
+    else if (sc.type == Model::ShortcutType::Url)
+    {
+        UrlDialog::InitParams init;
+        init.name = sc.name;
+        init.url = sc.targetPath;
+        
+        std::wstring browserPath, browserArgs;
+        size_t sep = sc.arguments.find(L"|||");
+        if (sep != std::wstring::npos)
+        {
+            browserPath = sc.arguments.substr(0, sep);
+            browserArgs = sc.arguments.substr(sep + 3);
+        }
+        else
+        {
+            browserPath = sc.arguments;
+        }
+        init.browserPath = browserPath;
+        init.browserArgs = browserArgs;
+        init.iconPath = sc.iconPath;
+        init.iconInvertLight = sc.iconInvertLight;
+        init.iconInvertDark = sc.iconInvertDark;
+
+        UrlDialogResult result;
+        if (UrlDialog::Show(hWnd, L"编辑打开网址", result, &init, m_owner->GetAppContext()))
+        {
+            if (sc.name != result.name) { sc.name = result.name; changed = true; }
+            if (sc.targetPath != result.url) { sc.targetPath = result.url; changed = true; }
             
-            // Refresh icon using custom icon path if present, otherwise target path
-            if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
-            sc.hIcon = ShortcutManager::GetShortcutIcon(sc.iconPath.empty() ? sc.targetPath : sc.iconPath);
-
-            // Refresh D2D bitmap
-            if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
-            {
-                m_pageData->iconBitmaps[index]->Release();
-                m_pageData->iconBitmaps[index] = nullptr;
-            }
-            if (index < (int)m_pageData->iconBitmaps.size())
-                m_pageData->iconBitmaps[index] = m_owner->CreateD2DBitmapFromHicon(sc.hIcon);
-
-            changed = true;
+            std::wstring newArgs = result.browserPath + L"|||" + result.browserArgs;
+            if (sc.arguments != newArgs) { sc.arguments = newArgs; changed = true; }
+            
+            if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
+            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
+            if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
+            if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
         }
+    }
+    else if (sc.type == Model::ShortcutType::Command)
+    {
+        CommandDialog::InitParams init;
+        init.name = sc.name;
+        init.command = sc.targetPath;
+        init.iconPath = sc.iconPath;
+        init.runAsAdmin = sc.runAsAdmin;
+        init.iconInvertLight = sc.iconInvertLight;
+        init.iconInvertDark = sc.iconInvertDark;
 
-        if (changed)
+        std::vector<std::wstring> segments;
+        std::wstring s = sc.arguments;
+        size_t pos = 0;
+        while ((pos = s.find(L"|||")) != std::wstring::npos)
         {
-            m_owner->NotifyConfigChanged();
-            repaint = true;
+            segments.push_back(s.substr(0, pos));
+            s.erase(0, pos + 3);
         }
+        segments.push_back(s);
+        
+        std::wstring type = L"cmd", builtin;
+        bool showWindow = false, captureOutput = false;
+        int timeout = 300, maxChars = 2000;
+        
+        if (segments.size() > 0) type = segments[0];
+        if (segments.size() > 1) builtin = segments[1];
+        if (segments.size() > 2) showWindow = (segments[2] == L"1");
+        if (segments.size() > 3) captureOutput = (segments[3] == L"1");
+        if (segments.size() > 4) { try { timeout = std::stoi(segments[4]); } catch(...) {} }
+        if (segments.size() > 5) { try { maxChars = std::stoi(segments[5]); } catch(...) {} }
+
+        init.commandType = type;
+        init.builtinCmd = builtin;
+        init.showWindow = showWindow;
+        init.captureOutput = captureOutput;
+        init.timeoutSeconds = timeout;
+        init.maxChars = maxChars;
+
+        CommandDialogResult result;
+        if (CommandDialog::Show(hWnd, L"编辑运行命令", result, &init, m_owner->GetAppContext()))
+        {
+            if (sc.name != result.name) { sc.name = result.name; changed = true; }
+            if (sc.targetPath != result.command) { sc.targetPath = result.command; changed = true; }
+            if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
+            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
+            if (sc.runAsAdmin != result.runAsAdmin) { sc.runAsAdmin = result.runAsAdmin; changed = true; }
+            if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
+            if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
+            
+            std::wstring newArgs = result.commandType + L"|||" + result.builtinCmd + L"|||" + 
+                                   std::to_wstring(result.showWindow ? 1 : 0) + L"|||" + 
+                                   std::to_wstring(result.captureOutput ? 1 : 0) + L"|||" + 
+                                   std::to_wstring(result.timeoutSeconds) + L"|||" + 
+                                   std::to_wstring(result.maxChars);
+            if (sc.arguments != newArgs) { sc.arguments = newArgs; changed = true; }
+        }
+    }
+    else
+    {
+        ShortcutDialog::InitParams init;
+        init.name            = sc.name;
+        init.targetPath      = sc.targetPath;
+        init.arguments       = sc.arguments;
+        init.iconPath        = sc.iconPath;
+        init.runAsAdmin      = sc.runAsAdmin;
+        init.iconInvertLight = sc.iconInvertLight;
+        init.iconInvertDark  = sc.iconInvertDark;
+
+        ShortcutDialogResult result;
+        if (ShortcutDialog::Show(hWnd, L"编辑快捷方式", result, &init, m_owner->GetAppContext()))
+        {
+            if (sc.name != result.name) { sc.name = result.name; changed = true; }
+            if (sc.arguments != result.arguments) { sc.arguments = result.arguments; changed = true; }
+            if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
+            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
+            if (sc.runAsAdmin != result.runAsAdmin) { sc.runAsAdmin = result.runAsAdmin; changed = true; }
+            if (sc.targetPath != result.targetPath) { sc.targetPath = result.targetPath; changed = true; }
+            Model::ShortcutTargetKind newTargetKind = ShortcutManager::InferTargetKind(result.targetPath);
+            if (sc.targetKind != newTargetKind) { sc.targetKind = newTargetKind; changed = true; }
+            if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
+            if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
+        }
+    }
+
+    if (changed)
+    {
+        if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
+        sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
+
+        if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
+        {
+            m_pageData->iconBitmaps[index]->Release();
+            m_pageData->iconBitmaps[index] = nullptr;
+        }
+        if (index < (int)m_pageData->iconBitmaps.size())
+            m_pageData->iconBitmaps[index] = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+
+        m_owner->NotifyConfigChanged();
+        repaint = true;
     }
 }
 

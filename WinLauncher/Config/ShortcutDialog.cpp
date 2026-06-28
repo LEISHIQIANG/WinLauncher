@@ -14,12 +14,11 @@
 //  Window dimensions (logical units, pre-scale)
 // ─────────────────────────────────────────────
 static const int  DLG_W  = 360;   // window width
-static const int  DLG_H  = 390;   // window height
-
 // Vertical layout anchors (logical Y)
 static const float Y_TITLE      = 10.0f;
 static const float Y_FORM_TOP   = 36.0f;   // The form component starts drawing from here downwards
-static const float Y_BUTTONS    = 345.0f;  // ok / cancel row
+static const float Y_BUTTONS    = Y_FORM_TOP + ShortcutEditForm::PreferredContentHeight() + 20.0f;
+static const int  DLG_H         = (int)(Y_BUTTONS + 45.0f);
 
 static ShortcutDialog* g_sdInstance = nullptr;
 
@@ -115,12 +114,14 @@ bool ShortcutDialog::Show(HWND parent, const wchar_t* title,
     if (ok)
     {
         ShortcutEditFormResult formRes = win->m_form.GetResult();
-        result.name        = formRes.name;
-        result.targetPath  = formRes.targetPath;
-        result.arguments   = formRes.arguments;
-        result.workingDir  = formRes.workingDir;
-        result.iconPath    = formRes.iconPath;
-        result.runAsAdmin  = formRes.runAsAdmin;
+        result.name            = formRes.name;
+        result.targetPath      = formRes.targetPath;
+        result.arguments       = formRes.arguments;
+        result.workingDir      = formRes.workingDir;
+        result.iconPath        = formRes.iconPath;
+        result.runAsAdmin      = formRes.runAsAdmin;
+        result.iconInvertLight = formRes.iconInvertLight;
+        result.iconInvertDark  = formRes.iconInvertDark;
     }
 
     g_sdInstance = nullptr;
@@ -366,10 +367,13 @@ void ShortcutDialog::EnsureFonts()
                           DWRITE_PARAGRAPH_ALIGNMENT va)
     {
         if (!m_dw || tf) return;
-        m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-            weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-            size, L"", &tf);
-        if (tf) { tf->SetTextAlignment(ha); tf->SetParagraphAlignment(va); }
+        UIStyle::Typography::CreateTextFormat(
+            m_dw.Get(),
+            &tf,
+            size,
+            weight,
+            ha,
+            va);
     };
 
     makeFormat(m_tfTitle, 12.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD,

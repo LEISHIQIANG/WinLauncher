@@ -60,6 +60,7 @@ private:
     void DrawTopBar(ID2D1HwndRenderTarget* rt);
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);
     void DrawDock(ID2D1HwndRenderTarget* rt);
+    void LaunchShortcut(const RendShortcutInfo& sc);
 
     static PopupWindow* s_instance;
 

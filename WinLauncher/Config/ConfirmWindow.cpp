@@ -253,36 +253,33 @@ void ConfirmWindow::EnsureFonts()
 {
     if (m_dw && !m_tfTitle)
     {
-        m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-            DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 12, L"", &m_tfTitle);
-        if (m_tfTitle)
-        {
-            m_tfTitle->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            m_tfTitle->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
+        UIStyle::Typography::CreateTextFormat(
+            m_dw.Get(),
+            &m_tfTitle,
+            12.0f,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            DWRITE_TEXT_ALIGNMENT_LEADING,
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
     if (m_dw && !m_tfPrompt)
     {
-        m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 10, L"", &m_tfPrompt);
-        if (m_tfPrompt)
-        {
-            m_tfPrompt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            m_tfPrompt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
+        UIStyle::Typography::CreateTextFormat(
+            m_dw.Get(),
+            &m_tfPrompt,
+            10.0f,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_TEXT_ALIGNMENT_LEADING,
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
     if (m_dw && !m_tfBtn)
     {
-        m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, 10, L"", &m_tfBtn);
-        if (m_tfBtn)
-        {
-            m_tfBtn->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            m_tfBtn->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
+        UIStyle::Typography::CreateTextFormat(
+            m_dw.Get(),
+            &m_tfBtn,
+            10.0f,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_TEXT_ALIGNMENT_CENTER,
+            DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
 }
 
@@ -373,7 +370,7 @@ void ConfirmWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         float cancelAlphaBg = m_hoveredCancel ? 0.09f : 0.04f;
         float cancelAlphaBorder = m_hoveredCancel ? 0.16f : 0.075f;
 
-        D2D1_COLOR_F baseClr = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f);
+        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
         auto cancelBgBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBg));
         if (cancelBgBrush)
         {

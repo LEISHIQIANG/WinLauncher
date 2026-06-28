@@ -17,7 +17,9 @@ void SettingsPage::SetCategory(int categoryIndex)
 {
     m_categoryIndex = categoryIndex;
     m_hoveredAutoStart = false;
-    m_hoveredOpenConfigDir = false;
+    m_hoveredOpenConfigFile = false;
+    m_hoveredOpenLogFile = false;
+    m_hoveredConfigDirText = false;
     m_hoveredTrigger = -1;
     m_hoveredTheme = -1;
     m_hoveredThemeColor = -1;
@@ -37,7 +39,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     }
 
-    D2D1_COLOR_F baseClr = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f);
+    D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
 
     // 1. Draw Page Title
     if (tfTitle)
@@ -656,7 +658,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const D2D1_RECT_F pathCardRect = D2D1::RectF(160.0f, 86.0f, 500.0f, 166.0f);
             const D2D1_RECT_F dirLabelRect = D2D1::RectF(180.0f, 98.0f, 480.0f, 118.0f);
             const D2D1_RECT_F dirValueRect = D2D1::RectF(180.0f, 120.0f, 480.0f, 156.0f);
-            const D2D1_RECT_F openRect = D2D1::RectF(160.0f, 178.0f, 500.0f, 214.0f);
+            const D2D1_RECT_F openConfigFileRect = D2D1::RectF(160.0f, 178.0f, 325.0f, 214.0f);
+            const D2D1_RECT_F openLogFileRect = D2D1::RectF(335.0f, 178.0f, 500.0f, 214.0f);
 
             ID2D1SolidColorBrush* tbNormal = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
@@ -682,40 +685,85 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->DrawTextW(dirLabel.c_str(), (UINT32)dirLabel.size(), tfDefault, dirLabelRect, tbMuted);
 
                 std::wstring configDir = m_owner->GetConfigDir();
-                rt->DrawTextW(configDir.c_str(), (UINT32)configDir.size(), tfDefault, dirValueRect, tbNormal);
+                ID2D1SolidColorBrush* textBrush = tbNormal;
+                if (m_hoveredConfigDirText)
+                {
+                    rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &textBrush);
+                }
+                rt->DrawTextW(configDir.c_str(), (UINT32)configDir.size(), tfDefault, dirValueRect, textBrush);
+                if (m_hoveredConfigDirText && textBrush)
+                {
+                    textBrush->Release();
+                }
 
                 tfDefault->SetWordWrapping(oldWrapping);
                 tfDefault->SetTextAlignment(oldAlignment);
             }
 
-            D2D1_ROUNDED_RECT openButton = D2D1::RoundedRect(openRect, 6.0f, 6.0f);
-            ID2D1SolidColorBrush* btnBg = nullptr;
-            D2D1_COLOR_F btnClr = m_hoveredOpenConfigDir ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float btnAlpha = m_hoveredOpenConfigDir ? 0.12f : 0.035f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(btnClr.r, btnClr.g, btnClr.b, btnAlpha), &btnBg);
-            if (btnBg)
+            // 1. Draw "打开配置文件" Button
             {
-                rt->FillRoundedRectangle(openButton, btnBg);
-                btnBg->Release();
+                D2D1_ROUNDED_RECT btnRect = D2D1::RoundedRect(openConfigFileRect, 6.0f, 6.0f);
+                ID2D1SolidColorBrush* btnBg = nullptr;
+                D2D1_COLOR_F btnClr = m_hoveredOpenConfigFile ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float btnAlpha = m_hoveredOpenConfigFile ? 0.12f : 0.035f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(btnClr.r, btnClr.g, btnClr.b, btnAlpha), &btnBg);
+                if (btnBg)
+                {
+                    rt->FillRoundedRectangle(btnRect, btnBg);
+                    btnBg->Release();
+                }
+
+                ID2D1SolidColorBrush* btnBorder = nullptr;
+                D2D1_COLOR_F borderClr = m_hoveredOpenConfigFile ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float borderAlpha = m_hoveredOpenConfigFile ? 0.26f : 0.07f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &btnBorder);
+                if (btnBorder)
+                {
+                    rt->DrawRoundedRectangle(btnRect, btnBorder, UIStyle::Metrics::ControlStroke());
+                    btnBorder->Release();
+                }
+
+                if (tbNormal)
+                {
+                    std::wstring btnText = L"打开配置文件";
+                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), tfDefault, openConfigFileRect, tbNormal);
+                    tfDefault->SetTextAlignment(oldAlignment);
+                }
             }
 
-            ID2D1SolidColorBrush* btnBorder = nullptr;
-            D2D1_COLOR_F borderClr = m_hoveredOpenConfigDir ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float borderAlpha = m_hoveredOpenConfigDir ? 0.26f : 0.07f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &btnBorder);
-            if (btnBorder)
+            // 2. Draw "打开日志文件" Button
             {
-                rt->DrawRoundedRectangle(openButton, btnBorder, UIStyle::Metrics::ControlStroke());
-                btnBorder->Release();
-            }
+                D2D1_ROUNDED_RECT btnRect = D2D1::RoundedRect(openLogFileRect, 6.0f, 6.0f);
+                ID2D1SolidColorBrush* btnBg = nullptr;
+                D2D1_COLOR_F btnClr = m_hoveredOpenLogFile ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float btnAlpha = m_hoveredOpenLogFile ? 0.12f : 0.035f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(btnClr.r, btnClr.g, btnClr.b, btnAlpha), &btnBg);
+                if (btnBg)
+                {
+                    rt->FillRoundedRectangle(btnRect, btnBg);
+                    btnBg->Release();
+                }
 
-            if (tbNormal)
-            {
-                std::wstring btnText = L"打开配置目录";
-                DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), tfDefault, openRect, tbNormal);
-                tfDefault->SetTextAlignment(oldAlignment);
+                ID2D1SolidColorBrush* btnBorder = nullptr;
+                D2D1_COLOR_F borderClr = m_hoveredOpenLogFile ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float borderAlpha = m_hoveredOpenLogFile ? 0.26f : 0.07f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &btnBorder);
+                if (btnBorder)
+                {
+                    rt->DrawRoundedRectangle(btnRect, btnBorder, UIStyle::Metrics::ControlStroke());
+                    btnBorder->Release();
+                }
+
+                if (tbNormal)
+                {
+                    std::wstring btnText = L"打开日志文件";
+                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), tfDefault, openLogFileRect, tbNormal);
+                    tfDefault->SetTextAlignment(oldAlignment);
+                }
             }
 
             if (tbNormal) tbNormal->Release();
@@ -842,10 +890,14 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
     }
     else if (m_categoryIndex == 3)
     {
-        bool hovered = HitTestOpenConfigDir(pt);
-        if (hovered != m_hoveredOpenConfigDir)
+        bool hConfigFile = HitTestOpenConfigFile(pt);
+        bool hLogFile = HitTestOpenLogFile(pt);
+        bool hConfigDirText = HitTestConfigDirText(pt);
+        if (hConfigFile != m_hoveredOpenConfigFile || hLogFile != m_hoveredOpenLogFile || hConfigDirText != m_hoveredConfigDirText)
         {
-            m_hoveredOpenConfigDir = hovered;
+            m_hoveredOpenConfigFile = hConfigFile;
+            m_hoveredOpenLogFile = hLogFile;
+            m_hoveredConfigDirText = hConfigDirText;
             repaint = true;
         }
     }
@@ -853,10 +905,12 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredOpenConfigDir || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0)
+    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0)
     {
         m_hoveredAutoStart = false;
-        m_hoveredOpenConfigDir = false;
+        m_hoveredOpenConfigFile = false;
+        m_hoveredOpenLogFile = false;
+        m_hoveredConfigDirText = false;
         m_hoveredTrigger = -1;
         m_hoveredTheme = -1;
         m_hoveredThemeColor = -1;
@@ -1024,7 +1078,17 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
     }
     else if (m_categoryIndex == 3)
     {
-        if (HitTestOpenConfigDir(pt))
+        if (HitTestOpenConfigFile(pt))
+        {
+            m_owner->OpenConfigFile();
+            repaint = true;
+        }
+        else if (HitTestOpenLogFile(pt))
+        {
+            m_owner->OpenLogFile();
+            repaint = true;
+        }
+        else if (HitTestConfigDirText(pt))
         {
             m_owner->OpenConfigDir();
             repaint = true;
@@ -1128,10 +1192,22 @@ int SettingsPage::HitTestWindowMode(POINT pt)
     return -1;
 }
 
-bool SettingsPage::HitTestOpenConfigDir(POINT pt)
+bool SettingsPage::HitTestOpenConfigFile(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 160 && pt.x <= 500 && pt.y >= 178 && pt.y <= 214);
+    return (pt.x >= 160 && pt.x <= 325 && pt.y >= 178 && pt.y <= 214);
+}
+
+bool SettingsPage::HitTestOpenLogFile(POINT pt)
+{
+    if (m_categoryIndex != 3) return false;
+    return (pt.x >= 335 && pt.x <= 500 && pt.y >= 178 && pt.y <= 214);
+}
+
+bool SettingsPage::HitTestConfigDirText(POINT pt)
+{
+    if (m_categoryIndex != 3) return false;
+    return (pt.x >= 180 && pt.x <= 480 && pt.y >= 120 && pt.y <= 156);
 }
 
 bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType)

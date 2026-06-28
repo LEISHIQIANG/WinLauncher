@@ -168,7 +168,7 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     int currentCategory = m_owner->GetCurrentCategoryIndex();
     IDWriteTextFormat* tfLeft = m_owner->GetLeftFont();
 
-    D2D1_COLOR_F baseClr = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? D2D1::ColorF(0.0f, 0.0f, 0.0f) : D2D1::ColorF(1.0f, 1.0f, 1.0f);
+    D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
 
     EnsureCategoryStates();
 

@@ -15,6 +15,13 @@ struct RendShortcutInfo
     std::wstring arguments;
     std::wstring iconPath;
     HICON        hIcon = nullptr;
+    bool         runAsAdmin = false;
+    Model::ShortcutType type = Model::ShortcutType::File;
+    Model::ShortcutTargetKind targetKind = Model::ShortcutTargetKind::Unknown;
+    Model::IconSource iconSource = Model::IconSource::Auto;
+    std::wstring builtinIconId;
+    bool         iconInvertLight = false;
+    bool         iconInvertDark = false;
 };
 
 struct RendPopupPage
@@ -34,6 +41,9 @@ public:
     static void FreeShortcuts(std::vector<RendShortcutInfo>& shortcuts);
     static std::wstring FindConfigDir();
     static HICON GetShortcutIcon(const std::wstring& targetPath);
+    static HICON GetShortcutIcon(const RendShortcutInfo& shortcut);
+    static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut);
+    static Model::ShortcutTargetKind InferTargetKind(const std::wstring& path);
 
     static std::vector<RendPopupPage> LoadConfig(const std::wstring& configDir);
     static void SaveConfig(const std::wstring& configDir, const std::vector<RendPopupPage>& pages);

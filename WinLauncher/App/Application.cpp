@@ -40,19 +40,33 @@ int Application::Run()
     m_appCtx = std::make_shared<AppContext>();
     m_appCtx->hInstance = m_hInstance;
 
+    LOG_INFO(m_appCtx->logger, L"Application::Run: process initialized, creating main window");
+
     if (!CreateMainWindow())
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::Run: CreateMainWindow failed! GetLastError()=%d", GetLastError());
         return 1;
+    }
 
     if (!InitializeServices())
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::Run: InitializeServices failed!");
         return 1;
+    }
 
     AddTrayIcon();
 
     if (!LoadRuntimeSettings())
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::Run: LoadRuntimeSettings failed!");
         return 1;
+    }
 
     if (!InstallHooks())
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::Run: InstallHooks failed!");
         return 1;
+    }
 
     PopupWindow::Init(m_appCtx.get());
     TrayMenuWindow::Init(m_hMainWnd, m_appCtx.get());
@@ -67,23 +81,30 @@ bool Application::InitializeProcess()
     timeBeginPeriod(1);
     m_timerResolutionRaised = true;
 
+    bool dpiAware = false;
     auto user32 = GetModuleHandleW(L"user32.dll");
     if (user32)
     {
         auto fn = reinterpret_cast<BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT)>(
             GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
-        if (fn)
+        dpiAware = fn && fn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+
+    if (!dpiAware)
+    {
+        HMODULE shcore = LoadLibraryW(L"shcore.dll");
+        if (shcore)
         {
-            fn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        }
-        else
-        {
-            SetProcessDPIAware();
+            auto fn = reinterpret_cast<HRESULT(WINAPI*)(int)>(
+                GetProcAddress(shcore, "SetProcessDpiAwareness"));
+            dpiAware = fn && SUCCEEDED(fn(2)); // PROCESS_PER_MONITOR_DPI_AWARE
+            FreeLibrary(shcore);
         }
     }
-    else
+
+    if (!dpiAware)
     {
-        SetProcessDPIAware();
+        dpiAware = SetProcessDPIAware() != FALSE;
     }
 
     InitCommonControls();
@@ -142,6 +163,10 @@ bool Application::InitializeServices()
     m_appCtx->iconService = std::make_unique<SystemIconService>();
 
     LOG_INFO(m_appCtx->logger, L"WinLauncher starting...");
+
+    // Validate autostart configuration and self-check
+    AutoStartHelper::ValidateAndSelfCheck();
+
     return true;
 }
 
@@ -161,12 +186,15 @@ bool Application::LoadRuntimeSettings()
 
 bool Application::InstallHooks()
 {
+    LOG_INFO(m_appCtx->logger, L"Application::InstallHooks: attempting to install mouse hook");
     if (MouseHook::Install(m_hMainWnd))
     {
         m_mouseHookInstalled = true;
+        LOG_INFO(m_appCtx->logger, L"Application::InstallHooks: mouse hook installed successfully");
         return true;
     }
 
+    LOG_ERROR(m_appCtx->logger, L"Application::InstallHooks: failed to install mouse hook!");
     MessageBoxW(nullptr, L"Failed to install mouse hook", L"WinLauncher", MB_ICONERROR);
     return false;
 }
@@ -192,14 +220,19 @@ void Application::Shutdown()
 
     if (m_mouseHookInstalled)
     {
+        LOG_INFO(m_appCtx->logger, L"Application::Shutdown: uninstalling mouse hook");
         MouseHook::Uninstall();
         m_mouseHookInstalled = false;
     }
 
     if (m_hMainWnd && IsWindow(m_hMainWnd))
+    {
+        LOG_INFO(m_appCtx->logger, L"Application::Shutdown: destroying main window");
         DestroyWindow(m_hMainWnd);
+    }
     m_hMainWnd = nullptr;
 
+    LOG_INFO(m_appCtx->logger, L"Application::Shutdown: releasing window singletons");
     PopupWindow::Release();
     ConfigWindow::Release();
     TrayMenuWindow::Release();

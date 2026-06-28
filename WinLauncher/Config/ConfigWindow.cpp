@@ -1,6 +1,10 @@
 #define NOMINMAX
 #include "ConfigWindow.h"
 #include "PromptWindow.h"
+#include "WaitWindow.h"
+#include "HotkeyDialog.h"
+#include "UrlDialog.h"
+#include "CommandDialog.h"
 #include "../DpiHelper.h"
 #include "../MouseHook.h"
 #include "../UI/Controls/IconRenderer.h"
@@ -102,7 +106,14 @@ void ConfigWindow::LoadConfig()
                 si.targetPath = vs.targetPath;
                 si.arguments = vs.arguments;
                 si.iconPath = vs.iconPath;
-                si.hIcon = ShortcutManager::GetShortcutIcon(vs.iconPath.empty() ? vs.targetPath : vs.iconPath);
+                si.runAsAdmin = vs.runAsAdmin;
+                si.type = vs.type;
+                si.targetKind = vs.targetKind;
+                si.iconSource = vs.iconSource;
+                si.builtinIconId = vs.builtinIconId;
+                si.iconInvertLight = vs.iconInvertLight;
+                si.iconInvertDark = vs.iconInvertDark;
+                si.hIcon = ShortcutManager::GetShortcutIcon(si);
                 pp.shortcuts.push_back(std::move(si));
             }
             m_pages.push_back(std::move(pp));
@@ -157,6 +168,13 @@ void ConfigWindow::SaveConfig()
                 vs.targetPath = si.targetPath;
                 vs.arguments = si.arguments;
                 vs.iconPath = si.iconPath;
+                vs.runAsAdmin = si.runAsAdmin;
+                vs.type = si.type;
+                vs.targetKind = si.targetKind;
+                vs.iconSource = si.iconSource;
+                vs.builtinIconId = si.builtinIconId;
+                vs.iconInvertLight = si.iconInvertLight;
+                vs.iconInvertDark = si.iconInvertDark;
                 vp.shortcuts.push_back(std::move(vs));
             }
             viewPages.push_back(std::move(vp));
@@ -317,6 +335,20 @@ std::wstring ConfigWindow::GetConfigFilePath()
     return m_configDir + L"\\launcher_config.ini";
 }
 
+void ConfigWindow::OpenConfigFile()
+{
+    std::wstring path = GetConfigFilePath();
+    if (!path.empty())
+        ShellExecuteW(GetHWND(), L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void ConfigWindow::OpenLogFile()
+{
+    std::wstring path = GetConfigDir() + L"\\winlauncher.log";
+    if (!path.empty())
+        ShellExecuteW(GetHWND(), L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 void ConfigWindow::OpenConfigDir()
 {
     std::wstring dir = GetConfigDir();
@@ -348,8 +380,13 @@ double ConfigWindow::GetTimeInSeconds()
     return (double)count.QuadPart / (double)freq.QuadPart;
 }
 
-ID2D1Bitmap* ConfigWindow::CreateD2DBitmapFromHicon(HICON hIcon)
+ID2D1Bitmap* ConfigWindow::CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name)
 {
+    if (hIcon == nullptr)
+    {
+        auto bmp = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), name, ICON_SIZE * 2);
+        return bmp.Detach();
+    }
     auto bmp = IconRenderer::HicontoD2D(m_rt.Get(), hIcon, ICON_SIZE * 2);
     return bmp.Detach();
 }
@@ -438,7 +475,11 @@ void ConfigWindow::SetAutoStart(bool enable)
 {
     if (m_appCtx && m_appCtx->configService)
     {
-        m_appCtx->configService->SetAutoStart(enable);
+        HWND parent = GetHWND();
+        const wchar_t* prompt = enable ? L"正在开启开机自启，请稍候..." : L"正在关闭开机自启，请稍候...";
+        WaitWindow::Show(parent, L"请稍候", prompt, [this, enable]() {
+            m_appCtx->configService->SetAutoStart(enable);
+        }, m_appCtx);
     }
 }
 
@@ -710,36 +751,33 @@ void ConfigWindow::EnsureIcons()
     {
         if (!m_tfLeft)
         {
-            m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL, 12, L"", &m_tfLeft);
-            if (m_tfLeft)
-            {
-                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                m_tfLeft->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            }
+            UIStyle::Typography::CreateTextFormat(
+                m_dw.Get(),
+                &m_tfLeft,
+                12.0f,
+                DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_TEXT_ALIGNMENT_LEADING,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
         if (!m_tfTitle)
         {
-            m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-                DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL, 15, L"", &m_tfTitle);
-            if (m_tfTitle)
-            {
-                m_tfTitle->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                m_tfTitle->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            }
+            UIStyle::Typography::CreateTextFormat(
+                m_dw.Get(),
+                &m_tfTitle,
+                15.0f,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_TEXT_ALIGNMENT_LEADING,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
         if (!m_tfHeader)
         {
-            m_dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-                DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL, 13, L"", &m_tfHeader);
-            if (m_tfHeader)
-            {
-                m_tfHeader->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                m_tfHeader->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            }
+            UIStyle::Typography::CreateTextFormat(
+                m_dw.Get(),
+                &m_tfHeader,
+                13.0f,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_TEXT_ALIGNMENT_LEADING,
+                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
     }
 }
@@ -978,11 +1016,12 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
                 std::vector<DropDownMenu::Item> items = {
                     { L"\u5feb\u6377\u65b9\u5f0f",   [this]() { m_shortcutPage.ShowAddShortcutDialog(); } },
-                    { L"\u5feb\u6377\u952e",         nullptr },
-                    { L"\u6253\u5f00\u7f51\u7ad9",   nullptr },
-                    { L"\u8fd0\u884c\u547d\u4ee4",   nullptr },
+                    { L"\u5feb\u6377\u952e",         [this]() { m_shortcutPage.ShowAddHotkeyDialog(); } },
+                    { L"\u6253\u5f00\u7f51\u7ad9",   [this]() { m_shortcutPage.ShowAddUrlDialog(); } },
+                    { L"\u8fd0\u884c\u547d\u4ee4",   [this]() { m_shortcutPage.ShowAddCommandDialog(); } },
                     { L"\u6dfb\u52a0\u5b8f",         nullptr },
                     { L"\u6279\u91cf\u542f\u52a8",   nullptr },
+                    { L"\u5185\u7f6e\u56fe\u6807",   nullptr },
                 };
                 DropDownMenu::Show(hWnd, screenPt, items, m_appCtx);
             }
@@ -1174,7 +1213,7 @@ void ConfigWindow::AddSyncCategory(const std::wstring& name, const std::wstring&
     for (auto& rs : rendShortcuts)
     {
         if (!rs.hIcon)
-            rs.hIcon = ShortcutManager::GetShortcutIcon(rs.targetPath);
+            rs.hIcon = ShortcutManager::GetShortcutIcon(rs);
         newPage.shortcuts.push_back(rs);
     }
 

@@ -28,6 +28,9 @@ std::vector<Model::ShortcutInfo> SyncFolderService::LoadShortcuts(const std::wst
 
         info.targetPath = fullPath;
         info.arguments = L"";
+        info.type = Model::ShortcutType::File;
+        info.targetKind = ShortcutManager::InferTargetKind(fullPath);
+        info.iconSource = Model::IconSource::Auto;
         result.push_back(std::move(info));
     } while (FindNextFileW(hFind, &ffd));
     FindClose(hFind);
@@ -65,7 +68,10 @@ std::vector<RendShortcutInfo> SyncFolderService::LoadRendShortcuts(const std::ws
 
         info.targetPath = fullPath;
         info.arguments = L"";
-        info.hIcon = ShortcutManager::GetShortcutIcon(fullPath);
+        info.type = Model::ShortcutType::File;
+        info.targetKind = ShortcutManager::InferTargetKind(fullPath);
+        info.iconSource = Model::IconSource::Auto;
+        info.hIcon = ShortcutManager::GetShortcutIcon(info);
         result.push_back(std::move(info));
     } while (FindNextFileW(hFind, &ffd));
     FindClose(hFind);

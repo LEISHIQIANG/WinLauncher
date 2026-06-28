@@ -1,5 +1,6 @@
 #include "FolderWatcher.h"
 #include "SyncFolderService.h"
+#include "../App/Logger.h"
 #include <thread>
 #include <mutex>
 #include <map>
@@ -92,6 +93,7 @@ struct FolderWatcher::Impl
 
             if (changed && hWndNotify && IsWindow(hWndNotify))
             {
+                LOG_G_INFO(L"FolderWatcher::WatchThread: changes detected in watched folders, posting notify message");
                 PostMessageW(hWndNotify, msgNotify, 0, 0);
             }
 
@@ -138,6 +140,7 @@ void FolderWatcher::UpdateFolders(const std::vector<std::wstring>& folders, HWND
 void FolderWatcher::Start()
 {
     if (m_impl->m_running) return;
+    LOG_G_INFO(L"FolderWatcher::Start: starting folder watch thread for %zu folders", m_impl->m_folders.size());
     m_impl->m_running = true;
     m_impl->m_thread = std::thread(&FolderWatcher::Impl::WatchThread, m_impl.get());
 }
@@ -145,6 +148,7 @@ void FolderWatcher::Start()
 void FolderWatcher::Stop()
 {
     if (!m_impl || !m_impl->m_running) return;
+    LOG_G_INFO(L"FolderWatcher::Stop: stopping folder watch thread");
     m_impl->m_running = false;
     if (m_impl->m_thread.joinable())
     {

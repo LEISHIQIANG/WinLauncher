@@ -1,103 +1,87 @@
 #pragma once
-#include <windows.h>
 #include <string>
 #include <fstream>
 #include <mutex>
 #include <chrono>
-#include <cstdio>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
+#include <vector>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
 
 class Logger
 {
 public:
-    enum Level { LInfo, LWarn, LError, LDebug };
+    enum Level {
+        INFO,
+        WORNING,
+        DEBUG,
+        ERRA,
+        // Compatibility aliases
+        LInfo = INFO,
+        LWarn = WORNING,
+        LError = ERRA,
+        LDebug = DEBUG
+    };
 
-    Logger(const std::wstring& logFile = L"")
-    {
-        if (!logFile.empty())
-            m_file.open(logFile, std::ios::app);
-    }
+    Logger(const std::wstring& logFile = L"");
+    ~Logger();
 
-    ~Logger()
-    {
-        if (m_file.is_open()) m_file.close();
-    }
+    // Default global logger instance for convenience and global logging
+    static Logger* GetDefault();
+    static void SetDefault(Logger* logger);
 
-    void Log(Level level, const wchar_t* format, ...)
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
+    // Dynamic instance registry for exception callback
+    static Logger*& GetInstanceRef();
 
-        va_list args;
-        va_start(args, format);
-        int len = _vsnwprintf(nullptr, 0, format, args);
-        va_end(args);
-        if (len <= 0) return;
+    // Detailed Log function capturing file, line, function context
+    void Log(Level level, const char* file, int line, const char* func, const wchar_t* format, ...);
+    void LogV(Level level, const char* file, int line, const char* func, const wchar_t* format, va_list args);
 
-        std::wstring msg(len, L'\0');
-        va_start(args, format);
-        _vsnwprintf(&msg[0], len, format, args);
-        va_end(args);
+    // Compatibility methods
+    void LogInfo(const wchar_t* fmt, ...);
+    void LogError(const wchar_t* fmt, ...);
+    void LogWorning(const wchar_t* fmt, ...);
+    void LogDebug(const wchar_t* fmt, ...);
 
-        wchar_t prefix[32];
-        auto now = std::chrono::system_clock::now();
-        auto tt = std::chrono::system_clock::to_time_t(now);
-        tm tm{};
-        localtime_s(&tm, &tt);
-        wchar_t lc = level == LInfo ? L'I' : level == LWarn ? L'W' : level == LError ? L'E' : L'D';
-        swprintf_s(prefix, L"[%02d:%02d:%02d][%c] ", tm.tm_hour, tm.tm_min, tm.tm_sec, lc);
-
-        std::wstring output = prefix + msg + L"\n";
-        OutputDebugStringW(output.c_str());
-
-        if (m_file.is_open())
-        {
-            int clen = WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), nullptr, 0, nullptr, nullptr);
-            std::string utf8(clen, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), &utf8[0], clen, nullptr, nullptr);
-            m_file.write(utf8.data(), utf8.size());
-            m_file.flush();
-        }
-    }
-
-    void LogInfo(const wchar_t* fmt, ...)
-    {
-        va_list args;
-        va_start(args, fmt);
-        int len = _vsnwprintf(nullptr, 0, fmt, args);
-        va_end(args);
-        if (len <= 0) return;
-        std::wstring buf(len, L'\0');
-        va_start(args, fmt);
-        _vsnwprintf(&buf[0], len, fmt, args);
-        va_end(args);
-        Log(LInfo, L"%s", buf.c_str());
-    }
-
-    void LogError(const wchar_t* fmt, ...)
-    {
-        va_list args;
-        va_start(args, fmt);
-        int len = _vsnwprintf(nullptr, 0, fmt, args);
-        va_end(args);
-        if (len <= 0) return;
-        std::wstring buf(len, L'\0');
-        va_start(args, fmt);
-        _vsnwprintf(&buf[0], len, fmt, args);
-        va_end(args);
-        Log(LError, L"%s", buf.c_str());
-    }
-
-    static std::wstring HrToString(HRESULT hr)
-    {
-        wchar_t buf[256];
-        swprintf_s(buf, L"HRESULT=0x%08X", hr);
-        return buf;
-    }
+    static std::wstring HrToString(HRESULT hr);
 
 private:
+    static LONG WINAPI UnhandledCrashHandler(EXCEPTION_POINTERS* exceptionInfo);
+
+    void CleanupLoop();
+    void PruneLogFile();
+    bool ParseLogTime(const std::string& line, std::chrono::system_clock::time_point& outTime);
+
     std::ofstream m_file;
     std::mutex m_mutex;
+    LPTOP_LEVEL_EXCEPTION_FILTER m_prevFilter = nullptr;
+    static Logger* s_defaultLogger;
+
+    // Pruning and Thread variables
+    std::wstring m_logFilePath;
+    std::thread m_cleanupThread;
+    std::atomic<bool> m_stopCleanup{false};
+    std::condition_variable m_cv;
+    std::mutex m_cleanupMutex;
 };
 
-#define LOG_INFO(logger, ...) if (logger) logger->LogInfo(__VA_ARGS__)
-#define LOG_ERROR(logger, ...) if (logger) logger->LogError(__VA_ARGS__)
-#define LOG_HRESULT(logger, hr) if (logger) logger->LogError(L"%hs:%d - %s", __FILE__, __LINE__, Logger::HrToString(hr).c_str())
+// Logging Macros capturing file, line, and function details
+#define LOG_INFO(logger, ...)    if (logger) logger->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_WORNING(logger, ...) if (logger) logger->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_DEBUG(logger, ...)   if (logger) logger->Log(Logger::DEBUG, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_ERRA(logger, ...)    if (logger) logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+
+// Compatibility and helper macros
+#define LOG_ERROR(logger, ...)   if (logger) logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_HRESULT(logger, hr)  if (logger) logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"%hs:%d - %s", __FILE__, __LINE__, Logger::HrToString(hr).c_str())
+
+// Global helper macros
+#define LOG_G_INFO(...)    if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_G_WORNING(...) if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_G_DEBUG(...)   if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::DEBUG, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define LOG_G_ERRA(...)    if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)

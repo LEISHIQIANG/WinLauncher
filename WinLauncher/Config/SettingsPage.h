@@ -23,7 +23,9 @@ private:
     int HitTestTheme(POINT pt);
     int HitTestThemeColor(POINT pt);
     int HitTestWindowMode(POINT pt);
-    bool HitTestOpenConfigDir(POINT pt);
+    bool HitTestOpenConfigFile(POINT pt);
+    bool HitTestOpenLogFile(POINT pt);
+    bool HitTestConfigDirText(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
 
@@ -32,7 +34,9 @@ private:
 
     // Hover states
     bool m_hoveredAutoStart = false;
-    bool m_hoveredOpenConfigDir = false;
+    bool m_hoveredOpenConfigFile = false;
+    bool m_hoveredOpenLogFile = false;
+    bool m_hoveredConfigDirText = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredTheme = -1;   // 0 = dark, 1 = light
     int m_hoveredThemeColor = -1; // 0 to 9

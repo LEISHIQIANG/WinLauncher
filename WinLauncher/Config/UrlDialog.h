@@ -1,54 +1,48 @@
 #pragma once
 #include "../GlassWindow.h"
-#include "ShortcutEditForm.h"
+#include "UrlEditForm.h"
 #include <string>
 
-// ShortcutDialogResult - 对话框的输出结果
-struct ShortcutDialogResult
+// UrlDialogResult
+struct UrlDialogResult
 {
     std::wstring name;
-    std::wstring targetPath;
-    std::wstring arguments;
-    std::wstring workingDir;
+    std::wstring url;
+    std::wstring browserPath;
+    std::wstring browserArgs;
     std::wstring iconPath;
-    bool         runAsAdmin = false;
     bool         iconInvertLight = false;
     bool         iconInvertDark = false;
 };
 
-// ShortcutDialog - 添加/编辑快捷方式的对话框
-// 作为一个基础的 Win32/Direct2D 对话框外壳，托管解耦后的 UI 组件 ShortcutEditForm
-class ShortcutDialog : public GlassWindow
+// UrlDialog - Dialog wrapper hosting UrlEditForm
+class UrlDialog : public GlassWindow
 {
 public:
-    using InitParams = ShortcutEditFormInitParams;
+    using InitParams = UrlEditFormInitParams;
 
-    ShortcutDialog(const wchar_t* title, const InitParams& init, AppContext* ctx = nullptr);
-    virtual ~ShortcutDialog() override;
+    UrlDialog(const wchar_t* title, const InitParams& init, AppContext* ctx = nullptr);
+    virtual ~UrlDialog() override;
 
-    // 显示对话框（模态），成功返回 true，result 保存用户填写的值
     static bool Show(HWND parent, const wchar_t* title,
-                     ShortcutDialogResult& result,
+                     UrlDialogResult& result,
                      const InitParams* init = nullptr,
                      AppContext* ctx = nullptr);
 
 protected:
-    virtual const wchar_t* ClassName() const override { return L"WinLauncherShortcutDialog"; }
+    virtual const wchar_t* ClassName() const override { return L"WinLauncherUrlDialog"; }
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) override;
 
 private:
-    // Fonts
     void EnsureFonts();
     void UpdateChildLayout();
 
-    // Hit-testing helpers
     bool HitTestRect(POINT pt, const D2D1_RECT_F& rect);
     bool HitTestCloseButton(POINT pt);
     bool HitTestOkButton(POINT pt);
     bool HitTestCancelButton(POINT pt);
 
-    // Drawing helpers
     void DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text,
                     const D2D1_RECT_F& rect, bool hovered, bool accent = false);
 
@@ -56,10 +50,9 @@ private:
     InitParams       m_init;
     bool             m_okPressed;
 
-    // 托管解耦后的表单 UI
-    ShortcutEditForm m_form;
+    UrlEditForm      m_form;
 
-    // Hover 状态
+    // Hover states
     bool m_hoveredOk      = false;
     bool m_hoveredCancel  = false;
     bool m_hoveredClose   = false;
