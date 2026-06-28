@@ -778,6 +778,15 @@ bool ShortcutEditForm::IsInputFocused() const
 
 }
 
+bool ShortcutEditForm::HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint)
+{
+    if (m_focusedBox)
+    {
+        return m_focusedBox->HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint);
+    }
+    return false;
+}
+
 
 
 void ShortcutEditForm::ResetFocus()

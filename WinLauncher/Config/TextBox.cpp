@@ -68,14 +68,22 @@ void TextBox::RecreateTextLayout()
         float maxW = m_bounds.right - m_bounds.left - (m_style.paddingLeft + m_style.paddingRight);
         float maxH = m_bounds.bottom - m_bounds.top - (m_style.paddingTop + m_style.paddingBottom);
 
+        size_t safeCaret = std::min(m_caretIndex, m_text.size());
+        std::wstring displayText = m_text.substr(0, safeCaret) + m_compText + m_text.substr(safeCaret);
+
         m_dwFactory->CreateTextLayout(
-            m_text.c_str(),
-            (UINT32)m_text.size(),
+            displayText.c_str(),
+            (UINT32)displayText.size(),
             tf.Get(),
             maxW > 0 ? maxW : 1000.0f,
             maxH > 0 ? maxH : 100.0f,
             &m_textLayout
         );
+
+        if (!m_compText.empty() && m_textLayout)
+        {
+            m_textLayout->SetUnderline(TRUE, DWRITE_TEXT_RANGE{ (UINT32)safeCaret, (UINT32)m_compText.size() });
+        }
     }
 }
 
@@ -141,7 +149,10 @@ void TextBox::Paint(ID2D1HwndRenderTarget* rt, float scale)
         float caretX = 0, caretY = 0;
         DWRITE_HIT_TEST_METRICS metrics;
         BOOL isTrailing = FALSE;
-        m_textLayout->HitTestTextPosition((UINT32)m_caretIndex, isTrailing, &caretX, &caretY, &metrics);
+        size_t drawCaretIndex = m_caretIndex + m_compCaretOffset;
+        size_t displayTextSize = m_text.size() + m_compText.size();
+        if (drawCaretIndex > displayTextSize) drawCaretIndex = displayTextSize;
+        m_textLayout->HitTestTextPosition((UINT32)drawCaretIndex, isTrailing, &caretX, &caretY, &metrics);
 
         D2D1_RECT_F caretRect = D2D1::RectF(
             textX + caretX - 0.75f, textY + caretY,
@@ -399,6 +410,13 @@ void TextBox::UpdateImeWindowPosition(HWND hWnd, float scale)
         cof.ptCurrentPos = pt;
         ImmSetCompositionWindow(hIMC, &cof);
 
+        LOGFONTW lf{};
+        lf.lfHeight = -(int)(m_style.fontSize * scale);
+        lf.lfWeight = FW_NORMAL;
+        lf.lfCharSet = DEFAULT_CHARSET;
+        wcscpy_s(lf.lfFaceName, m_style.fontFamily.c_str());
+        ImmSetCompositionFontW(hIMC, &lf);
+
         CANDIDATEFORM cf;
         cf.dwIndex = 0;
         cf.dwStyle = CFS_CANDIDATEPOS;
@@ -479,8 +497,77 @@ void TextBox::SetText(const std::wstring& text)
     m_caretIndex = m_text.size();
     m_selStart = m_caretIndex;
     m_selEnd = m_caretIndex;
+    m_compText.clear();
+    m_compCaretOffset = 0;
     RecreateTextLayout();
     ResetCaretBlink();
+}
+
+void TextBox::SetCompositionText(const std::wstring& compText, size_t caretOffset)
+{
+    m_compText = compText;
+    m_compCaretOffset = caretOffset;
+    RecreateTextLayout();
+}
+
+bool TextBox::HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint)
+{
+    if (!m_hasFocus) return false;
+
+    switch (uMsg)
+    {
+    case WM_IME_STARTCOMPOSITION:
+    {
+        SetCompositionText(L"", 0);
+        UpdateImeWindowPosition(hWnd, DpiHelper::GetWindowScale(hWnd));
+        return true;
+    }
+    case WM_IME_COMPOSITION:
+    {
+        HIMC hIMC = ImmGetContext(hWnd);
+        if (hIMC)
+        {
+            if (lParam & GCS_RESULTSTR)
+            {
+                SetCompositionText(L"", 0);
+                ImmReleaseContext(hWnd, hIMC);
+                return false; // Let DefWindowProc translate GCS_RESULTSTR into WM_CHAR!
+            }
+            if (lParam & GCS_COMPSTR)
+            {
+                int lenBytes = ImmGetCompositionStringW(hIMC, GCS_COMPSTR, nullptr, 0);
+                std::wstring compStr;
+                int caretOffset = 0;
+                if (lenBytes > 0)
+                {
+                    std::vector<wchar_t> buf(lenBytes / sizeof(wchar_t) + 1);
+                    ImmGetCompositionStringW(hIMC, GCS_COMPSTR, buf.data(), lenBytes);
+                    compStr = std::wstring(buf.data(), lenBytes / sizeof(wchar_t));
+                    
+                    int pos = ImmGetCompositionStringW(hIMC, GCS_CURSORPOS, nullptr, 0);
+                    if (pos >= 0)
+                    {
+                        caretOffset = pos;
+                    }
+                }
+                SetCompositionText(compStr, caretOffset);
+                UpdateImeWindowPosition(hWnd, DpiHelper::GetWindowScale(hWnd));
+                repaint = true;
+                ImmReleaseContext(hWnd, hIMC);
+                return true; // Suppress default composition window
+            }
+            ImmReleaseContext(hWnd, hIMC);
+        }
+        break;
+    }
+    case WM_IME_ENDCOMPOSITION:
+    {
+        SetCompositionText(L"", 0);
+        repaint = true;
+        return true;
+    }
+    }
+    return false;
 }
 
 void TextBox::SetStyle(const UIStyle::TextBoxStyle& style)

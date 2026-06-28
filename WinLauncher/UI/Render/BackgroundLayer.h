@@ -1,6 +1,7 @@
 #pragma once
 #include "IRenderLayer.h"
 #include "../../Config/UIStyle.h"
+#include <cmath>
 #include <d2d1helper.h>
 #include <dwmapi.h>
 #include <vector>
@@ -49,6 +50,7 @@ public:
     virtual void Render(ID2D1HwndRenderTarget* rt, ID2D1DeviceContext* dc,
                         const D2D1_SIZE_F& size, float scale) override
     {
+        SetRenderTarget(rt);
         if (m_dirty)
         {
             CaptureBackground();
@@ -99,9 +101,10 @@ public:
         if (m_bgCap)
         {
             D2D1_SIZE_U cur = m_bgCap->GetPixelSize();
-            RECT wr; GetWindowRect(m_hWnd, &wr);
-            int w = wr.right - wr.left;
-            int h = wr.bottom - wr.top;
+            auto rt = GetD2DRenderTarget();
+            D2D1_SIZE_U targetSize = rt ? rt->GetPixelSize() : D2D1::SizeU(0, 0);
+            int w = (int)targetSize.width;
+            int h = (int)targetSize.height;
             if (cur.width != (UINT32)w || cur.height != (UINT32)h)
             {
                 m_bgCap.Reset();
@@ -112,17 +115,21 @@ public:
 private:
     void CaptureBackground()
     {
-        RECT wr;
-        GetWindowRect(m_hWnd, &wr);
-        int w = wr.right - wr.left;
-        int h = wr.bottom - wr.top;
+        auto rt = GetD2DRenderTarget();
+        if (!rt) return;
+
+        D2D1_SIZE_U pixelSize = rt->GetPixelSize();
+        POINT clientOrigin{ 0, 0 };
+        ClientToScreen(m_hWnd, &clientOrigin);
+        int w = (int)pixelSize.width;
+        int h = (int)pixelSize.height;
         if (w <= 0 || h <= 0) return;
 
         HDC sdc = GetDC(nullptr);
         HDC mdc = CreateCompatibleDC(sdc);
         HBITMAP bmp = CreateCompatibleBitmap(sdc, w, h);
         SelectObject(mdc, bmp);
-        BitBlt(mdc, 0, 0, w, h, sdc, wr.left, wr.top, SRCCOPY);
+        BitBlt(mdc, 0, 0, w, h, sdc, clientOrigin.x, clientOrigin.y, SRCCOPY);
 
         BITMAPINFO bi{};
         bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -140,6 +147,28 @@ private:
         DeleteObject(bmp);
         DeleteDC(mdc);
         ReleaseDC(nullptr, sdc);
+
+        if (m_bgCap)
+        {
+            D2D1_SIZE_U cur = m_bgCap->GetPixelSize();
+            if (cur.width != (UINT32)w || cur.height != (UINT32)h)
+                m_bgCap.Reset();
+            else
+            {
+                auto rt = GetD2DRenderTarget();
+                if (rt)
+                {
+                    FLOAT bmpDpiX = 96.0f;
+                    FLOAT bmpDpiY = 96.0f;
+                    FLOAT rtDpiX = 96.0f;
+                    FLOAT rtDpiY = 96.0f;
+                    m_bgCap->GetDpi(&bmpDpiX, &bmpDpiY);
+                    rt->GetDpi(&rtDpiX, &rtDpiY);
+                    if (fabsf(bmpDpiX - rtDpiX) > 0.5f || fabsf(bmpDpiY - rtDpiY) > 0.5f)
+                        m_bgCap.Reset();
+                }
+            }
+        }
 
         if (m_bgCap)
         {

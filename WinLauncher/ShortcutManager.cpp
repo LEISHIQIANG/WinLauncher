@@ -546,6 +546,21 @@ private:
     ULONG_PTR m_token = 0;
 };
 
+static bool IsImageExtension(const std::wstring& path)
+{
+    const wchar_t* ext = PathFindExtensionW(path.c_str());
+    if (ext && *ext)
+    {
+        return (_wcsicmp(ext, L".png") == 0 ||
+                _wcsicmp(ext, L".jpg") == 0 ||
+                _wcsicmp(ext, L".jpeg") == 0 ||
+                _wcsicmp(ext, L".bmp") == 0 ||
+                _wcsicmp(ext, L".gif") == 0 ||
+                _wcsicmp(ext, L".ico") == 0);
+    }
+    return false;
+}
+
 static HICON LoadIconViaGdiplus(const std::wstring& path)
 {
     GdiPlusManager::EnsureInitialized();
@@ -585,7 +600,7 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
             return hIcon;
     }
 
-    if (isFile)
+    if (isFile && IsImageExtension(targetPath))
     {
         HICON hIcon = LoadIconViaGdiplus(targetPath);
         if (hIcon)
@@ -651,6 +666,11 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
     {
         HICON hIcon = GetShortcutIcon(shortcut.targetPath);
         if (hIcon) return hIcon;
+    }
+
+    if (shortcut.type != Model::ShortcutType::File)
+    {
+        return nullptr;
     }
 
     Model::ShortcutTargetKind kind = shortcut.targetKind;

@@ -34,6 +34,7 @@ private:
     void EnsureCategoryStates();
     void UpdateDragAndSortState(POINT pt);
     void DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, bool isActive, bool isHovered, bool isDragging, const D2D1_COLOR_F& baseClr, IDWriteTextFormat* tfLeft);
+    void BeginSelectAnimation(float targetY);
 
     IConfigWindow* m_owner;
 
@@ -50,5 +51,7 @@ private:
 
     float m_selectAnimCurrentY = -1.0f;
     float m_selectAnimTargetY = -1.0f;
+    float m_selectAnimStartY = -1.0f;
+    float m_selectAnimElapsed = 0.0f;
     bool m_isAnimatingSelect = false;
 };

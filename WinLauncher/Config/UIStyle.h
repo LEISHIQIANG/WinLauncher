@@ -56,6 +56,37 @@ namespace UIStyle
     inline void SetWindowMode(int mode) { g_WindowMode = mode; }
     inline int GetWindowMode() { return g_WindowMode; }
 
+    namespace Performance
+    {
+        inline bool g_HardwareAccelerationEnabled = true;
+
+        inline void SetHardwareAccelerationEnabled(bool enabled)
+        {
+            g_HardwareAccelerationEnabled = enabled;
+        }
+
+        inline bool IsHardwareAccelerationEnabled()
+        {
+            return g_HardwareAccelerationEnabled;
+        }
+
+        inline void ApplyProcessPolicy()
+        {
+            HANDLE process = GetCurrentProcess();
+            HANDLE thread = GetCurrentThread();
+            if (g_HardwareAccelerationEnabled)
+            {
+                SetPriorityClass(process, HIGH_PRIORITY_CLASS);
+                SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+            }
+            else
+            {
+                SetPriorityClass(process, NORMAL_PRIORITY_CLASS);
+                SetThreadPriority(thread, THREAD_PRIORITY_NORMAL);
+            }
+        }
+    }
+
     struct ThemeConfig
     {
         float hue;
@@ -133,6 +164,12 @@ namespace UIStyle
         return (g_ThemeMode == ThemeMode::Light) ? preset.light : preset.dark;
     }
 
+    inline Color GetThemeColorPresetColorFor(int index, ThemeMode mode)
+    {
+        const ThemeColorPreset& preset = GetThemeColorPreset(index);
+        return (mode == ThemeMode::Light) ? preset.light : preset.dark;
+    }
+
     inline const wchar_t* GetThemeColorPresetName(int index)
     {
         return GetThemeColorPreset(index).name;
@@ -152,6 +189,73 @@ namespace UIStyle
             ClampColor(color.d2d.g + delta),
             ClampColor(color.d2d.b + delta),
             alpha);
+    }
+
+    inline D2D1_COLOR_F LerpD2DColor(const D2D1_COLOR_F& c1, const D2D1_COLOR_F& c2, float t)
+    {
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        return D2D1::ColorF(
+            c1.r + (c2.r - c1.r) * t,
+            c1.g + (c2.g - c1.g) * t,
+            c1.b + (c2.b - c1.b) * t,
+            c1.a + (c2.a - c1.a) * t
+        );
+    }
+
+    inline Color BlendColor(const Color& from, const Color& to, float t)
+    {
+        return Color(LerpD2DColor(from.d2d, to.d2d, t));
+    }
+
+    namespace ThemeTransition
+    {
+        inline bool g_Active = false;
+        inline float g_Progress = 1.0f;
+        inline ThemeMode g_FromThemeMode = ThemeMode::Dark;
+        inline int g_FromThemeColorIndex = 0;
+        inline int g_FromWindowMode = 0;
+
+        inline float Ease(float t)
+        {
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            if (t < 0.5f) return 4.0f * t * t * t;
+            float p = -2.0f * t + 2.0f;
+            return 1.0f - (p * p * p) / 2.0f;
+        }
+
+        inline void Begin(ThemeMode fromThemeMode, int fromThemeColorIndex, int fromWindowMode)
+        {
+            g_FromThemeMode = fromThemeMode;
+            g_FromThemeColorIndex = fromThemeColorIndex;
+            g_FromWindowMode = fromWindowMode;
+            g_Progress = 0.0f;
+            g_Active = true;
+        }
+
+        inline void SetProgress(float progress)
+        {
+            if (progress < 0.0f) progress = 0.0f;
+            if (progress > 1.0f) progress = 1.0f;
+            g_Progress = progress;
+        }
+
+        inline void End()
+        {
+            g_Progress = 1.0f;
+            g_Active = false;
+        }
+
+        inline bool IsActive()
+        {
+            return g_Active;
+        }
+
+        inline float BlendProgress()
+        {
+            return Ease(g_Progress);
+        }
     }
 
     inline float RelativeLuminance(const D2D1_COLOR_F& color)
@@ -256,143 +360,262 @@ namespace UIStyle
     // Shared theme tokens
     struct ThemeColor
     {
+        static inline Color BlendToken(const Color& from, const Color& to)
+        {
+            return ThemeTransition::IsActive()
+                ? BlendColor(from, to, ThemeTransition::BlendProgress())
+                : to;
+        }
+
+        static inline const ThemeConfig& ConfigFor(ThemeMode mode, int windowMode)
+        {
+            if (windowMode == 1)
+                return (mode == ThemeMode::Light) ? g_AcrylicLightConfig : g_AcrylicDarkConfig;
+            return (mode == ThemeMode::Light) ? g_LightConfig : g_DarkConfig;
+        }
+
+        static inline Color TextNormalFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 1.0f) : Color(0.94f, 0.95f, 0.97f, 1.0f);
+        }
+
         static inline Color TextNormal()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 1.0f) : Color(0.94f, 0.95f, 0.97f, 1.0f);
+            return BlendToken(TextNormalFor(ThemeTransition::g_FromThemeMode), TextNormalFor(g_ThemeMode));
         }
+
+        static inline Color TextMutedFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 0.72f) : Color(0.94f, 0.95f, 0.97f, 0.68f);
+        }
+
         static inline Color TextMuted()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.055f, 0.065f, 0.085f, 0.72f) : Color(0.94f, 0.95f, 0.97f, 0.68f);
+            return BlendToken(TextMutedFor(ThemeTransition::g_FromThemeMode), TextMutedFor(g_ThemeMode));
         }
+
         static inline Color Accent()
         {
-            return GetThemeColorPresetColor(g_ThemeColorIndex);
+            return BlendToken(
+                GetThemeColorPresetColorFor(ThemeTransition::g_FromThemeColorIndex, ThemeTransition::g_FromThemeMode),
+                GetThemeColorPresetColorFor(g_ThemeColorIndex, g_ThemeMode));
         }
+
         static inline Color AccentHover()
         {
-            float delta = (g_ThemeMode == ThemeMode::Light) ? 0.07f : 0.10f;
-            return ShiftColor(Accent(), delta, 0.82f);
+            float fromDelta = (ThemeTransition::g_FromThemeMode == ThemeMode::Light) ? 0.07f : 0.10f;
+            float toDelta = (g_ThemeMode == ThemeMode::Light) ? 0.07f : 0.10f;
+            return BlendToken(
+                ShiftColor(GetThemeColorPresetColorFor(ThemeTransition::g_FromThemeColorIndex, ThemeTransition::g_FromThemeMode), fromDelta, 0.82f),
+                ShiftColor(GetThemeColorPresetColorFor(g_ThemeColorIndex, g_ThemeMode), toDelta, 0.82f));
         }
+
         static inline Color AccentSubtle()
         {
-            Color color = Accent();
-            color.d2d.a = (g_ThemeMode == ThemeMode::Light) ? 0.18f : 0.22f;
-            return color;
+            Color from = GetThemeColorPresetColorFor(ThemeTransition::g_FromThemeColorIndex, ThemeTransition::g_FromThemeMode);
+            from.d2d.a = (ThemeTransition::g_FromThemeMode == ThemeMode::Light) ? 0.18f : 0.22f;
+            Color to = GetThemeColorPresetColorFor(g_ThemeColorIndex, g_ThemeMode);
+            to.d2d.a = (g_ThemeMode == ThemeMode::Light) ? 0.18f : 0.22f;
+            return BlendToken(from, to);
         }
+
         static inline Color DangerRed()
         {
             return Color(1.0f, 0.2f, 0.2f, 0.8f);
         }
-        static inline Color TextOnAccent()
+
+        static inline Color TextOnAccentFor(int colorIndex, ThemeMode mode)
         {
-            return RelativeLuminance(Accent().d2d) > 0.46f
+            return RelativeLuminance(GetThemeColorPresetColorFor(colorIndex, mode).d2d) > 0.46f
                 ? Color(0.035f, 0.045f, 0.06f, 1.0f)
                 : Color(1.0f, 1.0f, 1.0f, 1.0f);
         }
+
+        static inline Color TextOnAccent()
+        {
+            return BlendToken(
+                TextOnAccentFor(ThemeTransition::g_FromThemeColorIndex, ThemeTransition::g_FromThemeMode),
+                TextOnAccentFor(g_ThemeColorIndex, g_ThemeMode));
+        }
+
+        static inline Color ThemeBaseFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 1.0f) : Color(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+
         static inline Color ThemeBase()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 1.0f) : Color(1.0f, 1.0f, 1.0f, 1.0f);
+            return BlendToken(ThemeBaseFor(ThemeTransition::g_FromThemeMode), ThemeBaseFor(g_ThemeMode));
         }
+
+        static inline Color CardBgFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.03f) : Color(1.0f, 1.0f, 1.0f, 0.02f);
+        }
+
         static inline Color CardBg()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.03f) : Color(1.0f, 1.0f, 1.0f, 0.02f);
+            return BlendToken(CardBgFor(ThemeTransition::g_FromThemeMode), CardBgFor(g_ThemeMode));
         }
+
+        static inline Color CardBorderFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.08f) : Color(1.0f, 1.0f, 1.0f, 0.06f);
+        }
+
         static inline Color CardBorder()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.08f) : Color(1.0f, 1.0f, 1.0f, 0.06f);
+            return BlendToken(CardBorderFor(ThemeTransition::g_FromThemeMode), CardBorderFor(g_ThemeMode));
         }
+
+        static inline Color EditBgFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.05f) : Color(1.0f, 1.0f, 1.0f, 0.12f);
+        }
+
         static inline Color EditBg()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.05f) : Color(1.0f, 1.0f, 1.0f, 0.12f);
+            return BlendToken(EditBgFor(ThemeTransition::g_FromThemeMode), EditBgFor(g_ThemeMode));
         }
+
+        static inline Color EditBorderNormalFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.12f) : Color(1.0f, 1.0f, 1.0f, 0.15f);
+        }
+
         static inline Color EditBorderNormal()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.12f) : Color(1.0f, 1.0f, 1.0f, 0.15f);
+            return BlendToken(EditBorderNormalFor(ThemeTransition::g_FromThemeMode), EditBorderNormalFor(g_ThemeMode));
         }
+
         static inline Color EditBorderFocus()
         {
             return AccentHover();
         }
 
         // Window-level helper colors
-        static inline Color WindowTint()
+        static inline Color WindowTintFor(ThemeMode mode, int windowMode)
         {
-            if (g_ThemeMode == ThemeMode::Light)
+            if (mode == ThemeMode::Light)
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicLightConfig : g_LightConfig;
-                float sat = (g_WindowMode == 1) ? 0.02f : 0.05f;
+                const auto& cfg = ConfigFor(mode, windowMode);
+                float sat = (windowMode == 1) ? 0.02f : 0.05f;
                 D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, cfg.opacity);
                 return Color(rgb);
             }
             else
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicDarkConfig : g_DarkConfig;
-                float sat = (g_WindowMode == 1) ? 0.03f : 0.10f;
+                const auto& cfg = ConfigFor(mode, windowMode);
+                float sat = (windowMode == 1) ? 0.03f : 0.10f;
                 D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, cfg.opacity);
                 return Color(rgb);
             }
         }
-        
-        static inline Color WindowClear()
+
+        static inline Color WindowTint()
         {
-            if (g_ThemeMode == ThemeMode::Light)
+            return BlendToken(
+                WindowTintFor(ThemeTransition::g_FromThemeMode, ThemeTransition::g_FromWindowMode),
+                WindowTintFor(g_ThemeMode, g_WindowMode));
+        }
+        
+        static inline Color WindowClearFor(ThemeMode mode, int windowMode)
+        {
+            if (mode == ThemeMode::Light)
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicLightConfig : g_LightConfig;
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (g_WindowMode == 1) ? 0.02f : 0.05f, cfg.brightness, cfg.opacity * 0.6f);
+                const auto& cfg = ConfigFor(mode, windowMode);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (windowMode == 1) ? 0.02f : 0.05f, cfg.brightness, cfg.opacity * 0.6f);
                 return Color(rgb);
             }
             else
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicDarkConfig : g_DarkConfig;
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (g_WindowMode == 1) ? 0.03f : 0.10f, cfg.brightness, cfg.opacity * 0.36f);
+                const auto& cfg = ConfigFor(mode, windowMode);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (windowMode == 1) ? 0.03f : 0.10f, cfg.brightness, cfg.opacity * 0.36f);
                 return Color(rgb);
+            }
+        }
+
+        static inline Color WindowClear()
+        {
+            return BlendToken(
+                WindowClearFor(ThemeTransition::g_FromThemeMode, ThemeTransition::g_FromWindowMode),
+                WindowClearFor(g_ThemeMode, g_WindowMode));
+        }
+
+        static inline Color WindowBorderFor(ThemeMode mode, int windowMode)
+        {
+            if (mode == ThemeMode::Light)
+            {
+                const auto& cfg = ConfigFor(mode, windowMode);
+                return Color(15 / 255.0f, 23 / 255.0f, 42 / 255.0f, cfg.highlight * 0.15f);
+            }
+            else
+            {
+                const auto& cfg = ConfigFor(mode, windowMode);
+                return Color(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, cfg.highlight * 0.09f);
             }
         }
 
         static inline Color WindowBorder()
         {
-            if (g_ThemeMode == ThemeMode::Light)
+            return BlendToken(
+                WindowBorderFor(ThemeTransition::g_FromThemeMode, ThemeTransition::g_FromWindowMode),
+                WindowBorderFor(g_ThemeMode, g_WindowMode));
+        }
+
+        static inline Color SheenFor(ThemeMode mode, int windowMode)
+        {
+            if (mode == ThemeMode::Light)
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicLightConfig : g_LightConfig;
-                return Color(15 / 255.0f, 23 / 255.0f, 42 / 255.0f, cfg.highlight * 0.15f);
+                const auto& cfg = ConfigFor(mode, windowMode);
+                return Color(1.0f, 1.0f, 1.0f, cfg.highlight * 0.27f);
             }
             else
             {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicDarkConfig : g_DarkConfig;
-                return Color(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, cfg.highlight * 0.09f);
+                const auto& cfg = ConfigFor(mode, windowMode);
+                return Color(1.0f, 1.0f, 1.0f, cfg.highlight * 0.055f);
             }
         }
 
         static inline Color Sheen()
         {
-            if (g_ThemeMode == ThemeMode::Light)
-            {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicLightConfig : g_LightConfig;
-                return Color(1.0f, 1.0f, 1.0f, cfg.highlight * 0.27f);
-            }
-            else
-            {
-                auto& cfg = (g_WindowMode == 1) ? g_AcrylicDarkConfig : g_DarkConfig;
-                return Color(1.0f, 1.0f, 1.0f, cfg.highlight * 0.055f);
-            }
+            return BlendToken(
+                SheenFor(ThemeTransition::g_FromThemeMode, ThemeTransition::g_FromWindowMode),
+                SheenFor(g_ThemeMode, g_WindowMode));
         }
 
         // Generic Button Colors
+        static inline Color ButtonBgHoverFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.045f) : Color(1.0f, 1.0f, 1.0f, 0.105f);
+        }
         static inline Color ButtonBgHover()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.045f) : Color(1.0f, 1.0f, 1.0f, 0.105f);
+            return BlendToken(ButtonBgHoverFor(ThemeTransition::g_FromThemeMode), ButtonBgHoverFor(g_ThemeMode));
+        }
+        static inline Color ButtonBgNormalFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.018f) : Color(1.0f, 1.0f, 1.0f, 0.035f);
         }
         static inline Color ButtonBgNormal()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.018f) : Color(1.0f, 1.0f, 1.0f, 0.035f);
+            return BlendToken(ButtonBgNormalFor(ThemeTransition::g_FromThemeMode), ButtonBgNormalFor(g_ThemeMode));
+        }
+        static inline Color ButtonBorderHoverFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.105f) : Color(1.0f, 1.0f, 1.0f, 0.18f);
         }
         static inline Color ButtonBorderHover()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.105f) : Color(1.0f, 1.0f, 1.0f, 0.18f);
+            return BlendToken(ButtonBorderHoverFor(ThemeTransition::g_FromThemeMode), ButtonBorderHoverFor(g_ThemeMode));
+        }
+        static inline Color ButtonBorderNormalFor(ThemeMode mode)
+        {
+            return (mode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.035f) : Color(1.0f, 1.0f, 1.0f, 0.065f);
         }
         static inline Color ButtonBorderNormal()
         {
-            return (g_ThemeMode == ThemeMode::Light) ? Color(0.0f, 0.0f, 0.0f, 0.035f) : Color(1.0f, 1.0f, 1.0f, 0.065f);
+            return BlendToken(ButtonBorderNormalFor(ThemeTransition::g_FromThemeMode), ButtonBorderNormalFor(g_ThemeMode));
         }
     };
 
@@ -468,4 +691,3 @@ namespace UIStyle
         );
     }
 }
-

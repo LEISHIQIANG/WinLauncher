@@ -92,7 +92,8 @@ void ShortcutPage::ShowAddShortcutDialog()
             sc.hIcon           = ShortcutManager::GetShortcutIcon(sc);
 
             m_pageData->shortcuts.push_back(sc);
-            ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+            bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+            ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
             m_pageData->iconBitmaps.push_back(bmp);
 
             m_owner->NotifyConfigChanged();
@@ -121,7 +122,8 @@ void ShortcutPage::ShowAddHotkeyDialog()
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
         m_pageData->shortcuts.push_back(sc);
-        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
         m_pageData->iconBitmaps.push_back(bmp);
 
         m_owner->NotifyConfigChanged();
@@ -149,7 +151,8 @@ void ShortcutPage::ShowAddUrlDialog()
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
         m_pageData->shortcuts.push_back(sc);
-        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
         m_pageData->iconBitmaps.push_back(bmp);
 
         m_owner->NotifyConfigChanged();
@@ -181,7 +184,8 @@ void ShortcutPage::ShowAddCommandDialog()
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
         m_pageData->shortcuts.push_back(sc);
-        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+        ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
         m_pageData->iconBitmaps.push_back(bmp);
 
         m_owner->NotifyConfigChanged();
@@ -192,6 +196,14 @@ void ShortcutPage::ShowAddCommandDialog()
 void ShortcutPage::UpdateTheme()
 {
     m_brushCache.clear();
+    if (m_pageData)
+    {
+        for (auto* bmp : m_pageData->iconBitmaps)
+        {
+            if (bmp) bmp->Release();
+        }
+        m_pageData->iconBitmaps.clear();
+    }
 }
 
 void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
@@ -932,6 +944,39 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
 
     HWND hWnd = m_owner->GetWindowHWND();
 
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollY = m_targetScrollY;
+        m_scrollVelocity = 0.0f;
+
+        // If dragging, we still need to update drag position and sort state
+        if (m_dragIndex >= 0)
+        {
+            POINT mousePt;
+            GetCursorPos(&mousePt);
+            ScreenToClient(hWnd, &mousePt);
+            float scale = DpiHelper::GetWindowScale(hWnd);
+            mousePt.x = (int)(mousePt.x / scale);
+            mousePt.y = (int)(mousePt.y / scale);
+            UpdateDragAndSortState(mousePt);
+        }
+
+        for (auto& state : m_shortcutStates)
+        {
+            state.currentX = state.targetX;
+            state.currentY = state.targetY;
+        }
+
+        bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
+        bool dragging = (m_dragIndex >= 0);
+        if (!scrollAnimating && !dragging)
+        {
+            m_animating = false;
+        }
+        repaint = true;
+        return;
+    }
+
     // 1. Drag auto-scroll logic
     if (m_dragIndex >= 0 && m_pageData)
     {
@@ -1086,7 +1131,8 @@ void ShortcutPage::EnsureIcons(ID2D1HwndRenderTarget* rt)
 
         for (int i = 0; i < n; i++)
         {
-            m_pageData->iconBitmaps[i] = m_owner->CreateD2DBitmapFromHicon(m_pageData->shortcuts[i].hIcon, m_pageData->shortcuts[i].name);
+            bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? m_pageData->shortcuts[i].iconInvertLight : m_pageData->shortcuts[i].iconInvertDark;
+            m_pageData->iconBitmaps[i] = m_owner->CreateD2DBitmapFromHicon(m_pageData->shortcuts[i].hIcon, m_pageData->shortcuts[i].name, invert);
         }
     }
 }
@@ -1301,7 +1347,8 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
 
     m_pageData->shortcuts.push_back(sc);
 
-    ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+    bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+    ID2D1Bitmap* bmp = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
     m_pageData->iconBitmaps.push_back(bmp);
 }
 
@@ -1506,7 +1553,10 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             m_pageData->iconBitmaps[index] = nullptr;
         }
         if (index < (int)m_pageData->iconBitmaps.size())
-            m_pageData->iconBitmaps[index] = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name);
+        {
+            bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? sc.iconInvertLight : sc.iconInvertDark;
+            m_pageData->iconBitmaps[index] = m_owner->CreateD2DBitmapFromHicon(sc.hIcon, sc.name, invert);
+        }
 
         m_owner->NotifyConfigChanged();
         repaint = true;

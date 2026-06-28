@@ -6,10 +6,13 @@
 #include "Services/PrivilegeLaunchService.h"
 #include "Config/UIStyle.h"
 #include "Config/PromptWindow.h"
+#include "Config/ConfirmWindow.h"
 #include "App/Logger.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")
 
 PopupWindow* PopupWindow::s_instance = nullptr;
 
@@ -23,8 +26,13 @@ static const int COLUMNS        = 6;
 static const int WND_PAD        = 8;
 
 static const UINT_PTR AUTO_HIDE_TIMER_ID = 1;
+static const UINT_PTR POPUP_ANIMATION_TIMER_ID = 2;
+static const UINT POPUP_ANIMATION_FRAME_MS = 8;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
+static const double POPUP_SLOW_SHOW_MS = 24.0;
+static const double POPUP_SLOW_FRAME_MS = 16.0;
+static const double POPUP_SLOW_ICON_REFRESH_MS = 40.0;
 
 static double GetTimeInSeconds()
 {
@@ -101,6 +109,7 @@ PopupWindow::PopupWindow(AppContext* ctx)
     , m_trackMouse(false)
     , m_pinned(false)
     , m_lastRt(nullptr)
+    , m_lastDpi(96.0f)
     , m_animating(false)
     , m_animLastTime(0.0)
     , m_scrollPosition(0.0f)
@@ -132,6 +141,21 @@ PopupWindow::PopupWindow(AppContext* ctx)
             OnConfigChanged();
         });
         m_themeChangedToken = m_appCtx->eventBus->Subscribe(EventType::ThemeChanged, [this]() {
+            for (auto& page : m_pages)
+            {
+                for (auto* bmp : page.iconBitmaps)
+                {
+                    if (bmp) bmp->Release();
+                }
+                page.iconBitmaps.clear();
+            }
+            for (auto* bmp : m_dockPage.iconBitmaps)
+            {
+                if (bmp) bmp->Release();
+            }
+            m_dockPage.iconBitmaps.clear();
+            m_bmpBrushCache.clear();
+
             UpdateTheme();
         });
     }
@@ -325,6 +349,8 @@ bool PopupWindow::IsVisible()
 
 void PopupWindow::Show(HWND parent, POINT pt)
 {
+    double showStart = GetTimeInSeconds();
+
     if (!s_instance)
     {
         Init(nullptr);
@@ -385,6 +411,15 @@ void PopupWindow::Show(HWND parent, POINT pt)
     HWND hwnd = s_instance->GetHWND();
     if (hwnd)
     {
+        if (s_instance->EnsureD2D() && s_instance->m_rt)
+        {
+            s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+            UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+            s_instance->m_bgCap.Reset();
+            s_instance->m_bgFinal.Reset();
+            s_instance->m_compositeRt.Reset();
+            s_instance->m_effectWinSize = {};
+        }
         SetWindowPos(hwnd, HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
         if (s_instance->EnsureD2D())
         {
@@ -406,6 +441,11 @@ void PopupWindow::Show(HWND parent, POINT pt)
             s_instance->ApplySystemBackdrop();
             if (s_instance->EnsureD2D())
             {
+                if (s_instance->m_rt)
+                {
+                    s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+                    UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+                }
                 s_instance->EnsureIcons();
             }
             ShowWindow(s_instance->GetHWND(), SW_SHOW);
@@ -418,8 +458,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
     {
         if (s_instance->m_rt)
         {
-            float currentScale = DpiHelper::GetWindowScale(s_instance->GetHWND());
-            s_instance->m_rt->SetDpi(currentScale * 96.0f, currentScale * 96.0f);
+            s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
             UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
         }
 
@@ -438,17 +477,73 @@ void PopupWindow::Show(HWND parent, POINT pt)
         s_instance->m_hoveredDock = -1;
         s_instance->m_cursorBlink = true;
 
+        // Initialize or update the bounds of the search textbox
+        D2D1_RECT_F topRect = D2D1::RectF(
+            (float)wndPad,
+            (float)wndPad,
+            (float)w - wndPad,
+            (float)wndPad + 22.0f
+        );
+
+        if (!s_instance->m_searchTextBoxCreated)
+        {
+            UIStyle::TextBoxStyle style;
+            style.bgNormal = UIStyle::ThemeColor::ButtonBgNormal();
+            style.borderNormal = UIStyle::ThemeColor::ButtonBorderNormal();
+            style.borderFocused = UIStyle::ThemeColor::ButtonBorderNormal();
+            style.paddingLeft = 28.0f; // Leave space for magnifying glass
+            style.paddingTop = 4.0f;
+            style.paddingBottom = 4.0f;
+            style.paddingRight = 8.0f;
+            style.fontSize = s_instance->GetFontSize();
+            s_instance->m_searchTextBox.SetStyle(style);
+
+            s_instance->m_searchTextBox.Create(s_instance->GetHWND(), s_instance->m_dw.Get(), topRect, L"");
+            s_instance->m_searchTextBoxCreated = true;
+        }
+        else
+        {
+            s_instance->m_searchTextBox.SetBounds(topRect);
+            s_instance->m_searchTextBox.UpdateLayout(scale);
+            s_instance->m_searchTextBox.SetText(L"");
+        }
+
+        s_instance->m_searchTextBox.SetFocus(s_instance->m_searchActive);
+
+        if (s_instance->m_searchActive)
+        {
+            s_instance->m_searchTextBox.UpdateImeWindowPosition(s_instance->GetHWND(), scale);
+        }
+ 
         SetFocus(s_instance->GetHWND());
 
         s_instance->StartAutoHideTimer();
 
         s_instance->m_bgDirty = true;
+        double bgStart = GetTimeInSeconds();
         s_instance->CaptureBackground();
         s_instance->CompositeBackgroundToCache();
+        double bgElapsedMs = (GetTimeInSeconds() - bgStart) * 1000.0;
+        if (bgElapsedMs >= POPUP_SLOW_FRAME_MS)
+        {
+            LOG_G_WORNING(L"PopupWindow perf: initial background refresh took %.2fms", bgElapsedMs);
+        }
         InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
         if (s_instance->m_viewModel)
             s_instance->m_viewModel->NotifyPopupShown();
+
+        double showElapsedMs = (GetTimeInSeconds() - showStart) * 1000.0;
+        if (showElapsedMs >= POPUP_SLOW_SHOW_MS)
+        {
+            LOG_G_WORNING(
+                L"PopupWindow perf: Show took %.2fms pages=%d dockItems=%d window=%dx%d",
+                showElapsedMs,
+                (int)s_instance->m_pages.size(),
+                (int)s_instance->m_dockPage.shortcuts.size(),
+                w_px,
+                h_px);
+        }
     }
 }
 
@@ -460,6 +555,8 @@ void PopupWindow::Hide()
         if (h)
         {
             s_instance->StopAutoHideTimer();
+            KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+            s_instance->m_animating = false;
         }
 
         if (h && UIStyle::Animation::IsEnabled())
@@ -496,6 +593,7 @@ void PopupWindow::Release()
         if (h)
         {
             inst->StopAutoHideTimer();
+            KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             DestroyWindow(h);
         }
 
@@ -625,6 +723,11 @@ void PopupWindow::UpdateSearch()
     }
 }
 
+void PopupWindow::UpdateImeWindowPosition()
+{
+    m_searchTextBox.UpdateImeWindowPosition(GetHWND(), GetWindowScale(GetHWND()));
+}
+
 void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 {
     int wndPad = GetWndPadding();
@@ -641,13 +744,8 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 
     if (m_searchActive)
     {
-        // 1. Draw search box background
-        D2D1_ROUNDED_RECT roundedBox = D2D1::RoundedRect(topRect, 6.0f, 6.0f);
-        auto bgBrush = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgNormal().d2d);
-        if (bgBrush) rt->FillRoundedRectangle(roundedBox, bgBrush.Get());
-
-        auto borderBrush = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-        if (borderBrush) rt->DrawRoundedRectangle(roundedBox, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
+        // Draw textbox background, border, selection, text, and caret
+        m_searchTextBox.Paint(rt, scale);
 
         // 2. Draw magnifying glass icon centered inside 22px height
         float cx = topRect.left + 16.0f;
@@ -659,8 +757,8 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
             rt->DrawLine(D2D1::Point2F(cx + 2.8f, cy + 2.8f), D2D1::Point2F(cx + 6.5f, cy + 6.5f), iconBrush.Get(), UIStyle::Metrics::IconStroke());
         }
 
-        // 3. Draw text / placeholder
-        if (m_searchQuery.empty())
+        // 3. Draw placeholder if empty
+        if (m_searchTextBox.IsEmpty())
         {
             D2D1_COLOR_F placeholderColor = UIStyle::ThemeColor::TextNormal().d2d;
             placeholderColor.a = 0.4f;
@@ -670,45 +768,6 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
                 rt->DrawTextW(L"搜索...", 5, m_searchTextFormat.Get(),
                     D2D1::RectF(topRect.left + 28.0f, topRect.top, topRect.right - 8.0f, topRect.bottom),
                     placeholderBrush.Get());
-            }
-        }
-        else
-        {
-            auto textBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-            if (textBrush && m_searchTextFormat)
-            {
-                rt->DrawTextW(m_searchQuery.c_str(), (UINT32)m_searchQuery.size(), m_searchTextFormat.Get(),
-                    D2D1::RectF(topRect.left + 28.0f, topRect.top, topRect.right - 8.0f, topRect.bottom),
-                    textBrush.Get());
-            }
-        }
-
-        // 4. Draw cursor
-        if (m_cursorBlink && m_searchTextFormat)
-        {
-            ComPtr<IDWriteTextLayout> textLayout;
-            HRESULT hr = m_dw->CreateTextLayout(
-                m_searchQuery.c_str(), 
-                (UINT32)m_searchQuery.size(), 
-                m_searchTextFormat.Get(),
-                topRect.right - topRect.left - 36.0f, 
-                topRect.bottom - topRect.top, 
-                &textLayout
-            );
-            float textWidth = 0.0f;
-            if (SUCCEEDED(hr) && textLayout)
-            {
-                DWRITE_TEXT_METRICS metrics;
-                textLayout->GetMetrics(&metrics);
-                textWidth = metrics.width;
-            }
-
-            float cursorX = topRect.left + 28.0f + textWidth;
-            float cursorY = topRect.top + 5.0f;
-            auto textBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-            if (textBrush)
-            {
-                rt->DrawLine(D2D1::Point2F(cursorX, cursorY), D2D1::Point2F(cursorX, cursorY + 12.0f), textBrush.Get(), 1.0f);
             }
         }
     }
@@ -927,13 +986,22 @@ void PopupWindow::EnsureIcons()
 
     if (m_pages.empty()) return;
 
-    bool rtChanged = (m_rt.Get() != m_lastRt);
+    float currentDpi = 96.0f;
+    if (m_rt)
+    {
+        float dpiY = 96.0f;
+        m_rt->GetDpi(&currentDpi, &dpiY);
+    }
+
+    bool rtChanged = (m_rt.Get() != m_lastRt) || (currentDpi != m_lastDpi);
     if (rtChanged)
     {
         m_lastRt = m_rt.Get();
+        m_lastDpi = currentDpi;
         m_bmpBrushCache.clear();
     }
 
+    bool anyRecreated = false;
     auto iconSvc = m_appCtx && m_appCtx->iconService ? m_appCtx->iconService.get() : m_iconService.get();
 
     for (auto& page : m_pages)
@@ -942,6 +1010,7 @@ void PopupWindow::EnsureIcons()
         bool needRecreate = rtChanged || (page.iconBitmaps.size() != (size_t)n);
         if (needRecreate)
         {
+            anyRecreated = true;
             for (auto* bmp : page.iconBitmaps)
             {
                 if (bmp) bmp->Release();
@@ -952,13 +1021,14 @@ void PopupWindow::EnsureIcons()
 
             for (int i = 0; i < n; i++)
             {
+                bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? page.shortcuts[i].iconInvertLight : page.shortcuts[i].iconInvertDark;
                 if (page.shortcuts[i].hIcon == nullptr)
                 {
                     page.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), page.shortcuts[i].name, GetIconSize() * 2).Detach();
                 }
                 else
                 {
-                    page.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), page.shortcuts[i].hIcon, GetIconSize() * 2);
+                    page.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), page.shortcuts[i].hIcon, GetIconSize() * 2, invert);
                 }
             }
         }
@@ -970,6 +1040,7 @@ void PopupWindow::EnsureIcons()
         bool needRecreate = rtChanged || (m_dockPage.iconBitmaps.size() != (size_t)dn);
         if (needRecreate)
         {
+            anyRecreated = true;
             for (auto* bmp : m_dockPage.iconBitmaps)
                 if (bmp) bmp->Release();
             m_dockPage.iconBitmaps.clear();
@@ -977,16 +1048,22 @@ void PopupWindow::EnsureIcons()
             m_bmpBrushCache.clear();
             for (int i = 0; i < dn; i++)
             {
+                bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? m_dockPage.shortcuts[i].iconInvertLight : m_dockPage.shortcuts[i].iconInvertDark;
                 if (m_dockPage.shortcuts[i].hIcon == nullptr)
                 {
                     m_dockPage.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), m_dockPage.shortcuts[i].name, GetIconSize() * 2).Detach();
                 }
                 else
                 {
-                    m_dockPage.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), m_dockPage.shortcuts[i].hIcon, GetIconSize() * 2);
+                    m_dockPage.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), m_dockPage.shortcuts[i].hIcon, GetIconSize() * 2, invert);
                 }
             }
         }
+    }
+
+    if (anyRecreated && m_searchActive && !m_searchQuery.empty())
+    {
+        UpdateSearch();
     }
 }
 
@@ -1015,7 +1092,7 @@ void PopupWindow::RefreshIcons()
     m_dockPage.iconBitmaps.clear();
     m_bmpBrushCache.clear();
 
-    // Force immediate redraw so user sees default icons flash in
+    // Let the normal paint pass show placeholders without blocking the UI thread.
     InvalidateRect(GetHWND(), nullptr, FALSE);
     UpdateWindow(GetHWND());
 
@@ -1413,17 +1490,203 @@ int PopupWindow::HitTestDock(POINT pt)
     return -1;
 }
 
+void PopupWindow::StartPageAnimationLoop()
+{
+    HWND hWnd = GetHWND();
+    if (!hWnd) return;
+
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollPosition = (float)m_currentPage;
+        m_scrollVelocity = 0.0f;
+        m_animating = false;
+        if (m_viewModel)
+        {
+            m_viewModel->ResetScroll();
+        }
+        InvalidateRect(hWnd, nullptr, FALSE);
+        return;
+    }
+
+    if (!m_animating)
+    {
+        m_animating = true;
+        m_animLastTime = GetTimeInSeconds();
+    }
+
+    SetTimer(hWnd, POPUP_ANIMATION_TIMER_ID, POPUP_ANIMATION_FRAME_MS, nullptr);
+}
+
+void PopupWindow::StepPageAnimationFrame(HWND hWnd)
+{
+    if (!m_animating)
+    {
+        KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
+        return;
+    }
+
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollPosition = (float)m_currentPage;
+        m_scrollVelocity = 0.0f;
+        m_animating = false;
+        if (m_viewModel)
+        {
+            m_viewModel->ResetScroll();
+        }
+        InvalidateRect(hWnd, nullptr, FALSE);
+        KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
+        return;
+    }
+
+    double frameStart = GetTimeInSeconds();
+    double now = frameStart;
+    float dt = (float)(now - m_animLastTime);
+    m_animLastTime = now;
+
+    if (dt > 0.1f) dt = 0.1f;
+    if (dt <= 0.0f) dt = 0.001f;
+
+    float target = (float)m_currentPage;
+    float error = target - m_scrollPosition;
+    int numPages = (int)m_pages.size();
+    if (numPages > 1)
+    {
+        float halfN = (float)numPages / 2.0f;
+        if (error > halfN) error -= (float)numPages;
+        else if (error < -halfN) error += (float)numPages;
+    }
+
+    float stiffness = 400.0f;
+    float damping = 40.0f;
+
+    float force = error * stiffness - m_scrollVelocity * damping;
+    m_scrollVelocity += force * dt;
+    m_scrollPosition += m_scrollVelocity * dt;
+
+    if (numPages > 1)
+    {
+        while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
+        while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
+    }
+
+    if (std::abs(error) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
+    {
+        m_scrollPosition = target;
+        m_scrollVelocity = 0.0f;
+        m_animating = false;
+    }
+
+    if (m_viewModel)
+        m_viewModel->UpdateAnimation();
+
+    InvalidateRect(hWnd, nullptr, FALSE);
+
+    double frameElapsedMs = (GetTimeInSeconds() - frameStart) * 1000.0;
+    double dtMs = (double)dt * 1000.0;
+    if (frameElapsedMs >= POPUP_SLOW_FRAME_MS || dtMs >= 32.0)
+    {
+        static ULONGLONG s_lastSlowFrameLogMs = 0;
+        ULONGLONG tick = GetTickCount64();
+        if (tick - s_lastSlowFrameLogMs >= 1000)
+        {
+            s_lastSlowFrameLogMs = tick;
+            LOG_G_WORNING(
+                L"PopupWindow perf: animation frame slow work=%.2fms dt=%.2fms page=%d scroll=%.3f velocity=%.3f",
+                frameElapsedMs,
+                dtMs,
+                m_currentPage,
+                m_scrollPosition,
+                m_scrollVelocity);
+        }
+    }
+
+    if (!m_animating)
+    {
+        KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
+    }
+}
+
 LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
+    case WM_DPICHANGED:
+    {
+        RECT* const prcNewWindow = (RECT*)lParam;
+        if (prcNewWindow)
+        {
+            float newDpiScale = LOWORD(wParam) / 96.0f;
+            
+            int cols = GetColumns();
+            int rows = GetRows();
+            int w = cols * CellWidth() + GetWndPadding() * 2 - GetIconGap();
+            int topBarHeight = 32;
+            int dockRows = GetDockHeight();
+            int ch = CellHeight();
+            int wndPad = GetWndPadding();
+            int iconGap = GetIconGap();
+            int mainGridCardBottom = wndPad + rows * ch - iconGap + topBarHeight;
+            int lineY = mainGridCardBottom + wndPad;
+            int dockTopY = lineY + wndPad;
+            int h = dockTopY + dockRows * ch - iconGap + wndPad;
+            if (w > 900) w = 900;
+            if (h > 900) h = 900;
+
+            int w_px = (int)(w * newDpiScale);
+            int h_px = (int)(h * newDpiScale);
+
+            POINT ptRef = { prcNewWindow->left, prcNewWindow->top };
+            HMONITOR hm = MonitorFromPoint(ptRef, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi{ sizeof(mi) };
+            GetMonitorInfoW(hm, &mi);
+            RECT wa = mi.rcWork;
+
+            int currentX = prcNewWindow->left;
+            int currentY = prcNewWindow->top;
+
+            if (currentX + w_px > wa.right) currentX = wa.right - w_px;
+            if (currentY + h_px > wa.bottom) currentY = wa.bottom - h_px;
+            if (currentX < wa.left) currentX = wa.left;
+            if (currentY < wa.top) currentY = wa.top;
+
+            prcNewWindow->left = currentX;
+            prcNewWindow->top = currentY;
+            prcNewWindow->right = currentX + w_px;
+            prcNewWindow->bottom = currentY + h_px;
+        }
+        
+        LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        if (EnsureD2D())
+        {
+            EnsureIcons();
+        }
+        return res;
+    }
+
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    {
+        if (m_searchActive)
+        {
+            bool repaint = false;
+            if (m_searchTextBox.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
+            {
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+        break;
+    }
+
     case WM_TIMER:
     {
         if (wParam == AUTO_HIDE_TIMER_ID)
         {
-            if (m_searchActive && !m_searchQuery.empty())
+            if (m_searchActive)
             {
-                m_cursorBlink = !m_cursorBlink;
+                m_searchTextBox.BlinkCaret();
                 InvalidateRect(hWnd, nullptr, FALSE);
             }
 
@@ -1433,8 +1696,36 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             RECT cr; GetClientRect(hWnd, &cr);
             if (pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom)
             {
-                Hide();
+                bool imeActive = false;
+                HIMC hIMC = ImmGetContext(hWnd);
+                if (hIMC)
+                {
+                    DWORD dwSize = ImmGetCandidateListW(hIMC, 0, nullptr, 0);
+                    if (dwSize > 0)
+                    {
+                        imeActive = true;
+                    }
+                    else
+                    {
+                        LONG compLen = ImmGetCompositionStringW(hIMC, GCS_COMPSTR, nullptr, 0);
+                        if (compLen > 0)
+                        {
+                            imeActive = true;
+                        }
+                    }
+                    ImmReleaseContext(hWnd, hIMC);
+                }
+
+                if (!imeActive)
+                {
+                    Hide();
+                }
             }
+            return 0;
+        }
+        if (wParam == POPUP_ANIMATION_TIMER_ID)
+        {
+            StepPageAnimationFrame(hWnd);
             return 0;
         }
         break;
@@ -1442,56 +1733,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_USER_ANIMATE:
     {
-        if (m_animating)
-        {
-            double now = GetTimeInSeconds();
-            float dt = (float)(now - m_animLastTime);
-            m_animLastTime = now;
-
-            if (dt > 0.1f) dt = 0.1f;
-            if (dt <= 0.0f) dt = 0.001f;
-
-            float target = (float)m_currentPage;
-            float error = target - m_scrollPosition;
-            int numPages = (int)m_pages.size();
-            if (numPages > 1)
-            {
-                float halfN = (float)numPages / 2.0f;
-                if (error > halfN) error -= (float)numPages;
-                else if (error < -halfN) error += (float)numPages;
-            }
-
-            float stiffness = 400.0f;
-            float damping = 40.0f;
-
-            float force = error * stiffness - m_scrollVelocity * damping;
-            m_scrollVelocity += force * dt;
-            m_scrollPosition += m_scrollVelocity * dt;
-
-            if (numPages > 1)
-            {
-                while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
-                while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
-            }
-
-            if (std::abs(error) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
-            {
-                m_scrollPosition = target;
-                m_scrollVelocity = 0.0f;
-                m_animating = false;
-            }
-
-            if (m_viewModel)
-                m_viewModel->UpdateAnimation();
-
-            InvalidateRect(hWnd, nullptr, FALSE);
-            UpdateWindow(hWnd);
-
-            if (m_animating)
-            {
-                PostMessage(hWnd, WM_USER_ANIMATE, 0, 0);
-            }
-        }
+        StepPageAnimationFrame(hWnd);
         return 0;
     }
 
@@ -1499,13 +1741,17 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     {
         if (!m_refreshingIcons) return 0;
         m_refreshingIcons = false;
+        double refreshStart = GetTimeInSeconds();
+        int shortcutCount = 0;
 
         // Re-extract HICONs from source
         for (auto& page : m_pages)
         {
+            shortcutCount += (int)page.shortcuts.size();
             for (auto& sc : page.shortcuts)
                 ShortcutManager::RefreshShortcutIcon(sc);
         }
+        shortcutCount += (int)m_dockPage.shortcuts.size();
         for (auto& sc : m_dockPage.shortcuts)
             ShortcutManager::RefreshShortcutIcon(sc);
 
@@ -1523,6 +1769,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
         EnsureIcons();
         InvalidateRect(hWnd, nullptr, FALSE);
+
+        double refreshElapsedMs = (GetTimeInSeconds() - refreshStart) * 1000.0;
+        if (refreshElapsedMs >= POPUP_SLOW_ICON_REFRESH_MS)
+        {
+            LOG_G_WORNING(
+                L"PopupWindow perf: icon refresh took %.2fms shortcuts=%d pages=%d",
+                refreshElapsedMs,
+                shortcutCount,
+                (int)m_pages.size());
+        }
         return 0;
     }
 
@@ -1539,9 +1795,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
 
+        if (m_searchActive)
+        {
+            bool repaint = false;
+            m_searchTextBox.OnMouseMove(hWnd, pt, scale, repaint);
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        }
+
         // Handle tab hover
         int newHoveredTab = -1;
-        if ((!m_searchActive || m_searchQuery.empty()) && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
         {
             int numPages = (int)m_pages.size();
             if (numPages > 0)
@@ -1618,9 +1881,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
             if (!m_animating)
             {
-                m_animating = true;
-                m_animLastTime = GetTimeInSeconds();
-                PostMessage(GetHWND(), WM_USER_ANIMATE, 0, 0);
+                StartPageAnimationLoop();
             }
             InvalidateRect(hWnd, nullptr, FALSE);
         }
@@ -1633,8 +1894,28 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
 
+        // Handle search box click when search is active
+        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        {
+            RECT cr; GetClientRect(hWnd, &cr);
+            float w = (float)cr.right / scale;
+            int wndPad = GetWndPadding();
+            if (pt.x >= wndPad && pt.x <= w - wndPad)
+            {
+                m_searchTextBox.SetFocus(true);
+                bool repaint = false;
+                m_searchTextBox.OnLButtonDown(hWnd, pt, scale, repaint);
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+        else if (m_searchActive)
+        {
+            m_searchTextBox.SetFocus(false);
+        }
+
         // Handle tab click
-        if ((!m_searchActive || m_searchQuery.empty()) && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
         {
             int numPages = (int)m_pages.size();
             if (numPages > 0)
@@ -1655,9 +1936,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                         if (!m_animating)
                         {
-                            m_animating = true;
-                            m_animLastTime = GetTimeInSeconds();
-                            PostMessage(GetHWND(), WM_USER_ANIMATE, 0, 0);
+                            StartPageAnimationLoop();
                         }
                         InvalidateRect(hWnd, nullptr, FALSE);
                     }
@@ -1686,9 +1965,10 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     );
                 }
             }
-            else
+            else if (m_pinned)
             {
-                Hide();
+                ReleaseCapture();
+                SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
         }
         else
@@ -1734,6 +2014,21 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
 
+        // Handle search box double click
+        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        {
+            RECT cr; GetClientRect(hWnd, &cr);
+            float w = (float)cr.right / scale;
+            int wndPad = GetWndPadding();
+            if (pt.x >= wndPad && pt.x <= w - wndPad)
+            {
+                bool repaint = false;
+                m_searchTextBox.OnLButtonDblClk(hWnd, pt, scale, repaint);
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+
         // On blank area double-click → refresh icons
         if (!m_searchActive || m_searchQuery.empty())
         {
@@ -1748,6 +2043,20 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 RefreshIcons();
                 return 0;
             }
+        }
+        return 0;
+    }
+
+    case WM_LBUTTONUP:
+    {
+        if (m_searchActive)
+        {
+            POINT pt_px{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            float scale = GetWindowScale(hWnd);
+            POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
+            bool repaint = false;
+            m_searchTextBox.OnLButtonUp(hWnd, pt, scale, repaint);
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
         }
         return 0;
     }
@@ -1770,9 +2079,14 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         m_hovered = -1;
         if (!m_pinned)
         {
-            StopAutoHideTimer();
-            ShowWindow(hWnd, SW_HIDE);
-            if (m_viewModel) m_viewModel->NotifyPopupHidden();
+            POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
+            RECT cr; GetClientRect(hWnd, &cr);
+            if (pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom)
+            {
+                StopAutoHideTimer();
+                ShowWindow(hWnd, SW_HIDE);
+                if (m_viewModel) m_viewModel->NotifyPopupHidden();
+            }
         }
         return 0;
 
@@ -1782,6 +2096,8 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             if (m_searchActive)
             {
                 m_searchActive = false;
+                m_searchTextBox.SetText(L"");
+                m_searchTextBox.SetFocus(false);
                 m_searchQuery.clear();
                 m_searchResults.clear();
                 if (m_appCtx && m_appCtx->configService)
@@ -1801,13 +2117,15 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             m_searchActive = !m_searchActive;
             if (!m_searchActive)
             {
+                m_searchTextBox.SetText(L"");
+                m_searchTextBox.SetFocus(false);
                 m_searchQuery.clear();
                 m_searchResults.clear();
             }
             else
             {
+                m_searchTextBox.SetFocus(true);
                 UpdateSearch();
-                m_cursorBlink = true;
             }
             if (m_appCtx && m_appCtx->configService)
             {
@@ -1816,9 +2134,9 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             InvalidateRect(hWnd, nullptr, FALSE);
         }
-        else if (wParam == VK_RETURN)
+        else if (m_searchActive)
         {
-            if (m_searchActive && !m_searchQuery.empty())
+            if (wParam == VK_RETURN)
             {
                 if (m_selectedSearchResult >= 0 && m_selectedSearchResult < (int)m_searchResults.size())
                 {
@@ -1838,10 +2156,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     if (!m_pinned) Hide();
                 }
             }
-        }
-        else if (wParam == VK_UP)
-        {
-            if (m_searchActive && !m_searchQuery.empty())
+            else if (wParam == VK_UP)
             {
                 if (!m_searchResults.empty())
                 {
@@ -1852,10 +2167,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     InvalidateRect(hWnd, nullptr, FALSE);
                 }
             }
-        }
-        else if (wParam == VK_DOWN)
-        {
-            if (m_searchActive && !m_searchQuery.empty())
+            else if (wParam == VK_DOWN)
             {
                 if (!m_searchResults.empty())
                 {
@@ -1866,21 +2178,24 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     InvalidateRect(hWnd, nullptr, FALSE);
                 }
             }
+            else
+            {
+                bool repaint = false;
+                std::wstring oldText = m_searchTextBox.GetText();
+                m_searchTextBox.OnKeyDown(hWnd, wParam, lParam, repaint);
+                if (m_searchTextBox.GetText() != oldText)
+                {
+                    m_searchQuery = m_searchTextBox.GetText();
+                    UpdateSearch();
+                    repaint = true;
+                }
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
         }
         else if (wParam == VK_LEFT)
         {
-            if (m_searchActive && !m_searchQuery.empty())
-            {
-                if (!m_searchResults.empty())
-                {
-                    if (m_selectedSearchResult < 0)
-                        m_selectedSearchResult = (int)m_searchResults.size() - 1;
-                    else
-                        m_selectedSearchResult = (m_selectedSearchResult - 1 + (int)m_searchResults.size()) % (int)m_searchResults.size();
-                    InvalidateRect(hWnd, nullptr, FALSE);
-                }
-            }
-            else if (m_pages.size() > 1)
+            if (m_pages.size() > 1)
             {
                 int targetPage = (m_currentPage - 1 + (int)m_pages.size()) % (int)m_pages.size();
                 if (targetPage != m_currentPage)
@@ -1891,9 +2206,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                     if (!m_animating)
                     {
-                        m_animating = true;
-                        m_animLastTime = GetTimeInSeconds();
-                        PostMessage(GetHWND(), WM_USER_ANIMATE, 0, 0);
+                        StartPageAnimationLoop();
                     }
                     InvalidateRect(hWnd, nullptr, FALSE);
                 }
@@ -1901,18 +2214,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         else if (wParam == VK_RIGHT)
         {
-            if (m_searchActive && !m_searchQuery.empty())
-            {
-                if (!m_searchResults.empty())
-                {
-                    if (m_selectedSearchResult < 0)
-                        m_selectedSearchResult = 0;
-                    else
-                        m_selectedSearchResult = (m_selectedSearchResult + 1) % (int)m_searchResults.size();
-                    InvalidateRect(hWnd, nullptr, FALSE);
-                }
-            }
-            else if (m_pages.size() > 1)
+            if (m_pages.size() > 1)
             {
                 int targetPage = (m_currentPage + 1) % (int)m_pages.size();
                 if (targetPage != m_currentPage)
@@ -1923,9 +2225,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                     if (!m_animating)
                     {
-                        m_animating = true;
-                        m_animLastTime = GetTimeInSeconds();
-                        PostMessage(GetHWND(), WM_USER_ANIMATE, 0, 0);
+                        StartPageAnimationLoop();
                     }
                     InvalidateRect(hWnd, nullptr, FALSE);
                 }
@@ -1934,42 +2234,33 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_CHAR:
-        if (wParam == 0x08) // Backspace
+        if (wParam >= 32 && !m_searchActive)
         {
-            if (m_searchActive)
-            {
-                if (!m_searchQuery.empty())
-                {
-                    m_searchQuery.pop_back();
-                    UpdateSearch();
-                    m_cursorBlink = true;
-                    InvalidateRect(hWnd, nullptr, FALSE);
-                }
-            }
-            return 0;
+            m_searchActive = true;
+            m_searchTextBox.SetFocus(true);
+            m_searchTextBox.SetText(L"");
+            m_searchQuery.clear();
+            m_searchResults.clear();
         }
-        else if (wParam == 0x0D || wParam == 0x1B || wParam == 0x09) // Return, Escape, Tab
+
+        if (m_searchActive)
         {
-            // Handled in WM_KEYDOWN
-            return 0;
-        }
-        else if (wParam >= 32) // Printable characters
-        {
-            if (!m_searchActive)
+            bool repaint = false;
+            std::wstring oldText = m_searchTextBox.GetText();
+            m_searchTextBox.OnChar(hWnd, wParam, repaint);
+            if (m_searchTextBox.GetText() != oldText)
             {
-                m_searchActive = true;
-                m_searchQuery.clear();
-                m_searchResults.clear();
+                m_searchQuery = m_searchTextBox.GetText();
+                UpdateSearch();
+                repaint = true;
             }
-            m_searchQuery.push_back((wchar_t)wParam);
-            UpdateSearch();
-            m_cursorBlink = true;
-            InvalidateRect(hWnd, nullptr, FALSE);
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
         break;
 
     case WM_DESTROY:
+        KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         // s_instance is managed by Release()
         return 0;
@@ -2187,7 +2478,7 @@ static void LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     if (type == L"builtin")
     {
         std::wstring msg = L"触发内置命令: " + builtin;
-        MessageBoxW(parent, msg.c_str(), L"WinLauncher Command", MB_OK | MB_ICONINFORMATION);
+        ConfirmWindow::Show(parent, L"WinLauncher Command", msg.c_str(), ctx, false);
     }
     else if (type == L"cmd")
     {

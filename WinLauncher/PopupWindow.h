@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <wrl.h>
+#include "Config/TextBox.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -57,11 +58,14 @@ private:
     void UpdateTextFormat();
 
     void UpdateSearch();
+    void UpdateImeWindowPosition();
     void SavePopupConfig();
     void DrawTopBar(ID2D1HwndRenderTarget* rt);
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);
     void DrawDock(ID2D1HwndRenderTarget* rt);
     void LaunchShortcut(const RendShortcutInfo& sc);
+    void StartPageAnimationLoop();
+    void StepPageAnimationFrame(HWND hWnd);
 
     static PopupWindow* s_instance;
 
@@ -78,6 +82,7 @@ private:
     bool m_pinned;
 
     ID2D1HwndRenderTarget* m_lastRt;
+    float m_lastDpi;
 
     // Animation states
     bool m_animating;
@@ -108,9 +113,10 @@ private:
     int m_hoveredDock;   // index into m_dockPage.shortcuts, -1 if none
     bool m_cursorBlink;
 
+    TextBox m_searchTextBox;
+    bool m_searchTextBoxCreated = false;
     // EventBus subscription token (for cleanup)
     EventBus::Token m_configChangedToken = 0;
     EventBus::Token m_themeChangedToken = 0;
-
     bool m_refreshingIcons = false;
 };

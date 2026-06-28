@@ -25,7 +25,7 @@ public:
     virtual IDWriteTextFormat* GetHeaderFont() = 0;
     virtual IDWriteTextFormat* GetDefaultFont() = 0;
 
-    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"") = 0;
+    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"", bool invert = false) = 0;
 
     virtual size_t GetCategoryCount() = 0;
     virtual std::wstring GetCategoryName(size_t index) = 0;
@@ -71,4 +71,6 @@ public:
     virtual void SetAnimationEnabled(bool enabled) = 0;
     virtual int GetAnimationDuration() = 0;
     virtual void SetAnimationDuration(int duration) = 0;
+    virtual bool GetHardwareAccelerationEnabled() = 0;
+    virtual void SetHardwareAccelerationEnabled(bool enabled) = 0;
 };

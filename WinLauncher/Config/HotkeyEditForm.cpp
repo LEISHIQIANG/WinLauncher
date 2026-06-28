@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "HotkeyEditForm.h"
+#include "ConfirmWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
@@ -533,6 +534,15 @@ bool HotkeyEditForm::IsInputFocused() const
     return m_focusedBox != nullptr || m_recording;
 }
 
+bool HotkeyEditForm::HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint)
+{
+    if (m_focusedBox)
+    {
+        return m_focusedBox->HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint);
+    }
+    return false;
+}
+
 void HotkeyEditForm::ResetFocus()
 {
     if (m_recording)
@@ -565,12 +575,12 @@ bool HotkeyEditForm::Validate(HWND hWnd)
 
     if (name.empty())
     {
-        MessageBoxW(hWnd, L"请输入名称！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", nullptr, false);
         return false;
     }
     if (hotkey.empty())
     {
-        MessageBoxW(hWnd, L"请设置快捷键组合！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请设置快捷键组合！", nullptr, false);
         return false;
     }
     return true;

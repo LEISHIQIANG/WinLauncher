@@ -32,6 +32,7 @@ private:
     bool HitTestImportJson(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
+    bool HitTestHardwareAcceleration(POINT pt);
     bool HitTestAnimationToggle(POINT pt);
     bool HitTestAnimationDuration(POINT pt, int& buttonType);
 
@@ -56,6 +57,7 @@ private:
     int m_hoveredThemeDetailButton = 0;   // 1 = minus, 2 = plus, 0 = none
 
     bool m_hoveredAnimationToggle = false;
+    bool m_hoveredHardwareAcceleration = false;
     bool m_hoveredAnimationDuration = false;
     int m_hoveredAnimationDurationButton = 0; // 1 = minus, 2 = plus, 0 = none
 };

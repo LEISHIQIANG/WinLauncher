@@ -21,6 +21,8 @@
 #include <cmath>
 
 static const int ICON_SIZE = 24;
+static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
+static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 16;
 
 ConfigWindow* ConfigWindow::s_instance = nullptr;
 AppContext* ConfigWindow::s_ctx = nullptr;
@@ -532,7 +534,7 @@ void ConfigWindow::StartAnimation()
     {
         m_animating = true;
         m_animLastTime = GetTimeInSeconds();
-        SetTimer(GetHWND(), 2, 1, nullptr);
+        SetTimer(GetHWND(), CONFIG_ANIMATION_TIMER_ID, CONFIG_ANIMATION_FRAME_MS, nullptr);
     }
 }
 
@@ -550,14 +552,14 @@ double ConfigWindow::GetTimeInSeconds()
     return (double)count.QuadPart / (double)freq.QuadPart;
 }
 
-ID2D1Bitmap* ConfigWindow::CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name)
+ID2D1Bitmap* ConfigWindow::CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name, bool invert)
 {
     if (hIcon == nullptr)
     {
         auto bmp = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), name, ICON_SIZE * 2);
         return bmp.Detach();
     }
-    auto bmp = IconRenderer::HicontoD2D(m_rt.Get(), hIcon, ICON_SIZE * 2);
+    auto bmp = IconRenderer::HicontoD2D(m_rt.Get(), hIcon, ICON_SIZE * 2, invert);
     return bmp.Detach();
 }
 
@@ -653,6 +655,29 @@ void ConfigWindow::SetAutoStart(bool enable)
     }
 }
 
+bool ConfigWindow::GetHardwareAccelerationEnabled()
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        return m_appCtx->configService->GetHardwareAccelerationEnabled();
+    }
+    return true;
+}
+
+void ConfigWindow::SetHardwareAccelerationEnabled(bool enabled)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetHardwareAccelerationEnabled(enabled);
+        UIStyle::Performance::SetHardwareAccelerationEnabled(enabled);
+        UIStyle::Performance::ApplyProcessPolicy();
+        if (m_appCtx->eventBus)
+        {
+            m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        }
+    }
+}
+
 int ConfigWindow::GetPopupColumns()
 {
     if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupColumns();
@@ -729,20 +754,18 @@ void ConfigWindow::SetTheme(int theme, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        UIStyle::ThemeMode oldThemeMode = UIStyle::GetThemeMode();
+        int oldThemeColor = UIStyle::GetThemeColorIndex();
+        int oldWindowMode = UIStyle::GetWindowMode();
         if (UIStyle::Animation::IsEnabled())
         {
-            CaptureTransitionSnapshot();
+            UIStyle::ThemeTransition::Begin(oldThemeMode, oldThemeColor, oldWindowMode);
+            StartThemeTransition(clickPt);
         }
 
         m_appCtx->configService->SetTheme(theme);
-        NotifyConfigChanged();
         UIStyle::SetThemeMode((UIStyle::ThemeMode)theme);
-        m_appCtx->eventBus->Publish(EventType::ThemeChanged);
-
-        if (UIStyle::Animation::IsEnabled())
-        {
-            StartThemeTransition(clickPt);
-        }
+        NotifyConfigChanged();
     }
 }
 
@@ -756,19 +779,18 @@ void ConfigWindow::SetThemeColor(int colorIndex, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        UIStyle::ThemeMode oldThemeMode = UIStyle::GetThemeMode();
+        int oldThemeColor = UIStyle::GetThemeColorIndex();
+        int oldWindowMode = UIStyle::GetWindowMode();
         if (UIStyle::Animation::IsEnabled())
         {
-            CaptureTransitionSnapshot();
+            UIStyle::ThemeTransition::Begin(oldThemeMode, oldThemeColor, oldWindowMode);
+            StartThemeTransition(clickPt);
         }
 
         m_appCtx->configService->SetThemeColor(colorIndex);
         UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
         NotifyConfigChanged();
-
-        if (UIStyle::Animation::IsEnabled())
-        {
-            StartThemeTransition(clickPt);
-        }
     }
 }
 
@@ -782,20 +804,18 @@ void ConfigWindow::SetWindowMode(int mode, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        UIStyle::ThemeMode oldThemeMode = UIStyle::GetThemeMode();
+        int oldThemeColor = UIStyle::GetThemeColorIndex();
+        int oldWindowMode = UIStyle::GetWindowMode();
         if (UIStyle::Animation::IsEnabled())
         {
-            CaptureTransitionSnapshot();
+            UIStyle::ThemeTransition::Begin(oldThemeMode, oldThemeColor, oldWindowMode);
+            StartThemeTransition(clickPt);
         }
 
         m_appCtx->configService->SetWindowMode(mode);
-        NotifyConfigChanged();
         UIStyle::SetWindowMode(mode);
-        m_appCtx->eventBus->Publish(EventType::ThemeChanged);
-
-        if (UIStyle::Animation::IsEnabled())
-        {
-            StartThemeTransition(clickPt);
-        }
+        NotifyConfigChanged();
     }
 }
 
@@ -1299,7 +1319,7 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
             SaveConfig();
             return 0;
         }
-        if (wParam == 2)
+        if (wParam == CONFIG_ANIMATION_TIMER_ID)
         {
             if (m_animating)
             {
@@ -1328,12 +1348,11 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
                 if (repaint)
                 {
                     InvalidateRect(hWnd, nullptr, FALSE);
-                    UpdateWindow(hWnd);
                 }
 
                 if (!m_animating)
                 {
-                    KillTimer(hWnd, 2);
+                    KillTimer(hWnd, CONFIG_ANIMATION_TIMER_ID);
                 }
             }
             return 0;

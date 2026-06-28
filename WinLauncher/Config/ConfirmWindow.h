@@ -8,10 +8,10 @@ using Microsoft::WRL::ComPtr;
 class ConfirmWindow : public GlassWindow
 {
 public:
-    ConfirmWindow(const wchar_t* title, const wchar_t* prompt, AppContext* ctx = nullptr);
+    ConfirmWindow(const wchar_t* title, const wchar_t* prompt, AppContext* ctx = nullptr, bool showCancel = true);
     virtual ~ConfirmWindow() override;
 
-    static bool Show(HWND parent, const wchar_t* title, const wchar_t* prompt, AppContext* ctx = nullptr);
+    static bool Show(HWND parent, const wchar_t* title, const wchar_t* prompt, AppContext* ctx = nullptr, bool showCancel = true);
 
 protected:
     virtual const wchar_t* ClassName() const override { return L"WinLauncherConfirm"; }
@@ -29,6 +29,7 @@ private:
     std::wstring m_title;
     std::wstring m_prompt;
     bool m_okPressed;
+    bool m_showCancel;
 
     bool m_hoveredOk;
     bool m_hoveredCancel;

@@ -66,6 +66,7 @@ public:
 
     // Focus helpers
     bool IsInputFocused() const;
+    bool HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint);
     void ResetFocus();
 
     // Data exchange

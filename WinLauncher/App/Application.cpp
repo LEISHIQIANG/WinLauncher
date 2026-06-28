@@ -3,6 +3,7 @@
 #include "PluginHost.h"
 #include "../AutoStartHelper.h"
 #include "../Config/ConfigWindow.h"
+#include "../Config/ConfirmWindow.h"
 #include "../Config/UIStyle.h"
 #include "../KeyboardHook.h"
 #include "../MouseHook.h"
@@ -37,6 +38,14 @@ int Application::Run()
 
     if (HandleHelperCommandLine())
         return 0;
+
+    // Check if an instance is already running
+    HWND hExisting = FindWindowW(L"WinLauncherMain", nullptr);
+    if (hExisting)
+    {
+        PostMessageW(hExisting, AppMessages::ShowConfigWindow, 0, 0);
+        return 0;
+    }
 
     m_appCtx = std::make_shared<AppContext>();
     m_appCtx->hInstance = m_hInstance;
@@ -185,6 +194,8 @@ bool Application::LoadRuntimeSettings()
     UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
     UIStyle::Animation::SetEnabled(m_appCtx->configService->GetAnimationEnabled());
     UIStyle::Animation::SetDurationMs((float)m_appCtx->configService->GetAnimationDuration());
+    UIStyle::Performance::SetHardwareAccelerationEnabled(m_appCtx->configService->GetHardwareAccelerationEnabled());
+    UIStyle::Performance::ApplyProcessPolicy();
     return true;
 }
 
@@ -199,7 +210,7 @@ bool Application::InstallHooks()
     }
 
     LOG_ERROR(m_appCtx->logger, L"Application::InstallHooks: failed to install mouse hook!");
-    MessageBoxW(nullptr, L"Failed to install mouse hook", L"WinLauncher", MB_ICONERROR);
+    ConfirmWindow::Show(nullptr, L"错误", L"Failed to install mouse hook", nullptr, false);
     return false;
 }
 

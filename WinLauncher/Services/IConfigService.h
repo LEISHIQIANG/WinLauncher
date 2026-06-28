@@ -48,5 +48,6 @@ public:
     virtual void SetAnimationEnabled(bool enabled) = 0;
     virtual int GetAnimationDuration() = 0;
     virtual void SetAnimationDuration(int duration) = 0;
+    virtual bool GetHardwareAccelerationEnabled() = 0;
+    virtual void SetHardwareAccelerationEnabled(bool enabled) = 0;
 };
-

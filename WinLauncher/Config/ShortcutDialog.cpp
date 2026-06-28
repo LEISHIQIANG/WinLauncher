@@ -224,14 +224,13 @@ LRESULT ShortcutDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
     case WM_IME_STARTCOMPOSITION:
     case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
     {
-        float scale = GetWindowScale(hWnd);
-        // Form takes care of caret position for IME window
-        if (m_form.IsInputFocused())
+        bool repaint = false;
+        if (m_form.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
         {
-            // Just trigger dummy key updates to reposition
-            bool repaint = false;
-            m_form.OnChar(hWnd, 0, repaint); 
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
         }
         break;
     }

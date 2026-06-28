@@ -32,6 +32,7 @@ public:
     void ResetCaretBlink();
 
     void UpdateImeWindowPosition(HWND hWnd, float scale);
+    bool HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint);
 
     void CopyToClipboard(HWND hWnd);
     void CutToClipboard(HWND hWnd, bool& repaint);
@@ -39,6 +40,8 @@ public:
 
     std::wstring GetText() const { return m_text; }
     void SetText(const std::wstring& text);
+    void SetCompositionText(const std::wstring& compText, size_t caretOffset);
+    bool IsEmpty() const { return m_text.empty() && m_compText.empty(); }
 
     void SetBounds(const D2D1_RECT_F& bounds) { m_bounds = bounds; }
     D2D1_RECT_F GetBounds() const { return m_bounds; }
@@ -74,4 +77,6 @@ private:
     bool m_caretVisible = false;
     bool m_dragSelecting = false;
     UIStyle::TextBoxStyle m_style;
+    std::wstring m_compText;
+    size_t m_compCaretOffset = 0;
 };

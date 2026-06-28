@@ -72,6 +72,7 @@ protected:
     ComPtr<ID2D1HwndRenderTarget> m_rt;
     ComPtr<IDWriteFactory>        m_dw;
     ComPtr<IDWriteTextFormat>     m_tf;
+    bool                          m_d2dHardwareAccelerationEnabled = true;
 
     // Background capture
     ComPtr<ID2D1Bitmap>       m_bgCap;    // raw screen capture
@@ -83,8 +84,11 @@ protected:
     // Cached effects and resources for CompositeBackgroundToCache
     ComPtr<ID2D1Effect>       m_blurEffect;
     ComPtr<ID2D1Effect>       m_satEffect;
+    ComPtr<ID2D1Effect>       m_sheenBlurEffect;
     ComPtr<ID2D1GradientStopCollection> m_sheenGsc;
     ComPtr<ID2D1RadialGradientBrush>    m_sheenBrush;
+    ComPtr<ID2D1BitmapRenderTarget>     m_sheenLayerRt;
+    ComPtr<ID2D1Bitmap>                 m_sheenLayerBitmap;
     D2D1_SIZE_F               m_effectWinSize = {};
 
     // Corner radius for window decoration; 0 = no DWM rounded corners (Win10)
@@ -99,6 +103,7 @@ protected:
     virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform);
 
     void CaptureTransitionSnapshot();
+    void DrawThemeTransitionOverlay(ID2D1HwndRenderTarget* rt, float w, float h);
     void StartThemeTransition(POINT clickPt);
 
     AnimState m_animState = AnimState::None;
@@ -114,6 +119,7 @@ protected:
     ComPtr<ID2D1Bitmap> m_themeTransitionOldBitmap = nullptr;
     ComPtr<ID2D1Layer> m_themeTransitionLayer = nullptr;
     ComPtr<ID2D1GradientStopCollection> m_themeTransitionStopCollection = nullptr;
+    bool m_pendingBackdropUpdate = false;
 
 public:
     // App context for dependency injection (public for free function access)

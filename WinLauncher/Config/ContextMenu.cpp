@@ -77,7 +77,11 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
 
     SetWindowDisplayAffinitySafe(s_instance->GetHWND());
     s_instance->ApplySystemBackdrop();
-    s_instance->EnsureD2D();
+    if (s_instance->EnsureD2D() && s_instance->m_rt)
+    {
+        s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+        UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+    }
 
     // Create the left-aligned text format
     if (s_instance->m_dw && !s_instance->m_tfMenu)

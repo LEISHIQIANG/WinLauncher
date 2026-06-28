@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "UrlEditForm.h"
+#include "ConfirmWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
@@ -438,6 +439,15 @@ bool UrlEditForm::IsInputFocused() const
     return m_focusedBox != nullptr;
 }
 
+bool UrlEditForm::HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint)
+{
+    if (m_focusedBox)
+    {
+        return m_focusedBox->HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint);
+    }
+    return false;
+}
+
 void UrlEditForm::ResetFocus()
 {
     if (m_focusedBox)
@@ -467,12 +477,12 @@ bool UrlEditForm::Validate(HWND hWnd)
 
     if (name.empty())
     {
-        MessageBoxW(hWnd, L"请输入名称！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", nullptr, false);
         return false;
     }
     if (url.empty())
     {
-        MessageBoxW(hWnd, L"请输入网址！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入网址！", nullptr, false);
         return false;
     }
     return true;

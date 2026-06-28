@@ -42,7 +42,7 @@ public:
     virtual IDWriteTextFormat* GetTitleFont() override { return m_tfTitle.Get(); }
     virtual IDWriteTextFormat* GetHeaderFont() override { return m_tfHeader.Get(); }
     virtual IDWriteTextFormat* GetDefaultFont() override { return m_tf.Get(); }
-    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"") override;
+    virtual ID2D1Bitmap* CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name = L"", bool invert = false) override;
 
     virtual size_t GetCategoryCount() override;
     virtual std::wstring GetCategoryName(size_t index) override;
@@ -86,6 +86,8 @@ public:
     virtual void SetAnimationEnabled(bool enabled) override;
     virtual int GetAnimationDuration() override;
     virtual void SetAnimationDuration(int duration) override;
+    virtual bool GetHardwareAccelerationEnabled() override;
+    virtual void SetHardwareAccelerationEnabled(bool enabled) override;
     void ImportJsonConfig();
 
 protected:

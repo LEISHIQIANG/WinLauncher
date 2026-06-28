@@ -110,7 +110,7 @@ public:
         return hIcon;
     }
 
-    virtual ID2D1Bitmap* GetOrCreateBitmap(ID2D1HwndRenderTarget* rt, const std::wstring& targetPath, int size) override
+    virtual ID2D1Bitmap* GetOrCreateBitmap(ID2D1HwndRenderTarget* rt, const std::wstring& targetPath, int size, bool invert) override
     {
         if (!rt)
         {
@@ -118,7 +118,7 @@ public:
             return nullptr;
         }
 
-        auto key = targetPath + L"@" + std::to_wstring(size);
+        auto key = targetPath + L"@" + std::to_wstring(size) + L"@" + std::to_wstring(invert ? 1 : 0);
         auto it = m_bmpCache.find(key);
         if (it != m_bmpCache.end())
         {
@@ -132,7 +132,7 @@ public:
             LOG_G_WORNING(L"GetOrCreateBitmap: GetIcon returned null, path=%s, size=%d, using fallback",
                 targetPath.c_str(), size);
         }
-        auto bmp = IconRenderer::HicontoD2D(rt, hIcon, size);
+        auto bmp = IconRenderer::HicontoD2D(rt, hIcon, size, invert);
         if (bmp)
         {
             m_bmpCache[key] = bmp;
@@ -144,7 +144,7 @@ public:
         return nullptr;
     }
 
-    virtual ID2D1Bitmap* IconToBitmap(ID2D1HwndRenderTarget* rt, HICON hIcon, int size) override
+    virtual ID2D1Bitmap* IconToBitmap(ID2D1HwndRenderTarget* rt, HICON hIcon, int size, bool invert) override
     {
         if (!rt)
         {
@@ -155,7 +155,7 @@ public:
         {
             LOG_G_DEBUG(L"IconToBitmap: hIcon is null, using fallback IDI_APPLICATION, size=%d", size);
         }
-        auto bmp = IconRenderer::HicontoD2D(rt, hIcon, size);
+        auto bmp = IconRenderer::HicontoD2D(rt, hIcon, size, invert);
         if (bmp)
         {
             bmp->AddRef();

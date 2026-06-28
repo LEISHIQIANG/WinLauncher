@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "CommandEditForm.h"
+#include "ConfirmWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
@@ -436,6 +437,15 @@ bool CommandEditForm::IsInputFocused() const
     return m_focusedBox != nullptr;
 }
 
+bool CommandEditForm::HandleImeMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, bool& repaint)
+{
+    if (m_focusedBox)
+    {
+        return m_focusedBox->HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint);
+    }
+    return false;
+}
+
 void CommandEditForm::ResetFocus()
 {
     if (m_focusedBox)
@@ -470,19 +480,19 @@ bool CommandEditForm::Validate(HWND hWnd)
 
     if (name.empty())
     {
-        MessageBoxW(hWnd, L"请输入名称！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", nullptr, false);
         return false;
     }
 
     if (m_commandType != L"builtin" && cmd.empty())
     {
-        MessageBoxW(hWnd, L"请输入命令行内容！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入命令行内容！", nullptr, false);
         return false;
     }
 
     if (m_commandType == L"builtin" && m_builtinCmd.empty())
     {
-        MessageBoxW(hWnd, L"请选择内置命令！", L"验证失败", MB_OK | MB_ICONWARNING);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请选择内置命令！", nullptr, false);
         return false;
     }
 

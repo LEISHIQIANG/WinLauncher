@@ -79,7 +79,11 @@ void TrayMenuWindow::Show(POINT pt)
 
     SetWindowDisplayAffinitySafe(s_instance->GetHWND());
     s_instance->ApplySystemBackdrop();
-    s_instance->EnsureD2D();
+    if (s_instance->EnsureD2D() && s_instance->m_rt)
+    {
+        s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+        UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+    }
 
     s_instance->m_hovered = -1;
 
@@ -147,29 +151,27 @@ void TrayMenuWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     // 0: 显示弹窗
     // 1: 配置窗口
     // 2: 设置窗口
-    // 3: --- separator ---
-    // 4: 暂停/启用弹窗
-    // 5: 重启钩子
-    // 6: 重启应用
-    // (7 would be 退出, keep original last)
+    // 3: 暂停/启用弹窗
+    // 4: 重启钩子
+    // 5: 重启应用
+    // 6: 退出应用
     const wchar_t* pauseLabel = s_popupPaused ? L"启用弹窗" : L"暂停弹窗";
     const wchar_t* items[ITEM_COUNT] = {
         L"显示弹窗",
         L"配置窗口",
         L"设置窗口",
-        L"退出应用",
         pauseLabel,
         L"重启钩子",
         L"重启应用",
+        L"退出应用",
     };
 
     for (int i = 0; i < ITEM_COUNT; i++)
     {
-        // Separator between item 3 and 4: draw a thin line instead of a button
-        if (i == 4)
+        // Separator between primary actions and status/system actions.
+        if (i == 3)
         {
-            // Draw a divider line above item 4
-            float lineY = PAD + 4 * ITEM_H - 1.0f;
+            float lineY = PAD + 3 * ITEM_H - 1.0f;
             D2D1_POINT_2F p1 = D2D1::Point2F(PAD + 4.0f, lineY);
             D2D1_POINT_2F p2 = D2D1::Point2F(w - PAD - 4.0f, lineY);
             auto lineBrush = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderNormal().d2d);
@@ -194,7 +196,7 @@ void TrayMenuWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
             : UIStyle::ThemeColor::ButtonBorderNormal().d2d;
 
         // Special highlight for pause item when active
-        if (i == 4 && s_popupPaused && !isHovered)
+        if (i == 3 && s_popupPaused && !isHovered)
         {
             bgColor.r = 0.8f; bgColor.g = 0.3f; bgColor.b = 0.1f; bgColor.a = 0.15f;
             borderColor.r = 0.8f; borderColor.g = 0.3f; borderColor.b = 0.1f; borderColor.a = 0.5f;
@@ -209,8 +211,8 @@ void TrayMenuWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         if (m_tf)
         {
             D2D1_COLOR_F textColor = UIStyle::ThemeColor::TextNormal().d2d;
-            // Dim "重启应用"/"重启钩子" slightly
-            if (i == 5 || i == 6)
+            // Dim maintenance actions slightly.
+            if (i == 4 || i == 5)
                 textColor.a *= 0.85f;
 
             auto tb = GetOrCreateBrush(textColor);
@@ -263,26 +265,26 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
             PostMessageW(s_hMainWnd, AppMessages::ShowSettingsWindow, 0, 0);
             Hide();
         }
-        else if (hit == 3)  // 退出应用
-        {
-            Hide();
-            if (s_ctx) s_ctx->pluginHost->UnloadAll();
-            PostQuitMessage(0);
-        }
-        else if (hit == 4)  // 暂停/启用弹窗
+        else if (hit == 3)  // 暂停/启用弹窗
         {
             PostMessageW(s_hMainWnd, AppMessages::TogglePopupPause, 0, 0);
             Hide();
         }
-        else if (hit == 5)  // 重启钩子
+        else if (hit == 4)  // 重启钩子
         {
             PostMessageW(s_hMainWnd, AppMessages::RestartHook, 0, 0);
             Hide();
         }
-        else if (hit == 6)  // 重启应用
+        else if (hit == 5)  // 重启应用
         {
             PostMessageW(s_hMainWnd, AppMessages::RestartApp, 0, 0);
             Hide();
+        }
+        else if (hit == 6)  // 退出应用
+        {
+            Hide();
+            if (s_ctx) s_ctx->pluginHost->UnloadAll();
+            PostQuitMessage(0);
         }
         return 0;
     }

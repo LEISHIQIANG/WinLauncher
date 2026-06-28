@@ -2,6 +2,7 @@
 #include "IConfigWindow.h"
 #include "UIStyle.h"
 #include "..\version.h"
+#include <cwchar>
 #include <cmath>
 #include <vector>
 
@@ -29,6 +30,10 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredAppearanceButton = 0;
     m_hoveredThemeDetailSetting = -1;
     m_hoveredThemeDetailButton = 0;
+    m_hoveredAnimationToggle = false;
+    m_hoveredHardwareAcceleration = false;
+    m_hoveredAnimationDuration = false;
+    m_hoveredAnimationDurationButton = 0;
 }
 
 void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
@@ -67,66 +72,17 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
     if (m_categoryIndex == 0) // 系统设置
     {
-        // Draw AutoStart
-        bool autoStart = m_owner->GetAutoStart();
-        
-        // Checkbox box
-        D2D1_RECT_F boxRect = D2D1::RectF(160, 85, 176, 101);
-        D2D1_ROUNDED_RECT roundedBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
-
-        ID2D1SolidColorBrush* bgBrush = nullptr;
-        float alphaBg = m_hoveredAutoStart ? 0.105f : 0.035f;
-        rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &bgBrush);
-
-        ID2D1SolidColorBrush* borderBrush = nullptr;
-        float alphaBorder = m_hoveredAutoStart ? 0.18f : 0.065f;
-        rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder), &borderBrush);
-
-        if (bgBrush) rt->FillRoundedRectangle(roundedBox, bgBrush);
-        if (borderBrush) rt->DrawRoundedRectangle(roundedBox, borderBrush, UIStyle::Metrics::ControlStroke());
-
-        if (bgBrush) bgBrush->Release();
-        if (borderBrush) borderBrush->Release();
-
-        if (autoStart)
+        auto drawInlineCheckbox = [&](float x, bool checked, bool hovered, const wchar_t* label)
         {
-            ID2D1SolidColorBrush* accentBrush = nullptr;
-            rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
-            if (accentBrush)
-            {
-                D2D1_ROUNDED_RECT checkRect = D2D1::RoundedRect(D2D1::RectF(163, 88, 173, 98), 2.0f, 2.0f);
-                rt->FillRoundedRectangle(checkRect, accentBrush);
-                accentBrush->Release();
-            }
-        }
-
-        // Checkbox Text
-        if (tfDefault)
-        {
-            ID2D1SolidColorBrush* tb = nullptr;
-            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tb);
-            if (tb)
-            {
-                std::wstring label = L"开机自启动";
-                rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(186, 83, 350, 103), tb);
-                tb->Release();
-            }
-        }
-
-        // Draw "关闭动画" (Disable Animations) Checkbox side-by-side with AutoStart
-        {
-            bool animDisabled = !m_owner->GetAnimationEnabled();
-            
-            D2D1_RECT_F boxRect = D2D1::RectF(345, 85, 361, 101);
+            D2D1_RECT_F boxRect = D2D1::RectF(x, 85, x + 16.0f, 101);
             D2D1_ROUNDED_RECT roundedBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
-            float alphaBg = m_hoveredAnimationToggle ? 0.105f : 0.035f;
+            float alphaBg = hovered ? 0.105f : 0.035f;
             rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &bgBrush);
 
             ID2D1SolidColorBrush* borderBrush = nullptr;
-            float alphaBorder = m_hoveredAnimationToggle ? 0.18f : 0.065f;
+            float alphaBorder = hovered ? 0.18f : 0.065f;
             rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder), &borderBrush);
 
             if (bgBrush) rt->FillRoundedRectangle(roundedBox, bgBrush);
@@ -135,13 +91,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             if (bgBrush) bgBrush->Release();
             if (borderBrush) borderBrush->Release();
 
-            if (animDisabled)
+            if (checked)
             {
                 ID2D1SolidColorBrush* accentBrush = nullptr;
                 rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
                 if (accentBrush)
                 {
-                    D2D1_ROUNDED_RECT checkRect = D2D1::RoundedRect(D2D1::RectF(348, 88, 358, 98), 2.0f, 2.0f);
+                    D2D1_ROUNDED_RECT checkRect = D2D1::RoundedRect(D2D1::RectF(x + 3.0f, 88, x + 13.0f, 98), 2.0f, 2.0f);
                     rt->FillRoundedRectangle(checkRect, accentBrush);
                     accentBrush->Release();
                 }
@@ -153,13 +109,16 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tb);
                 if (tb)
                 {
-                    std::wstring label = L"关闭界面动画";
-                    rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                        D2D1::RectF(371, 83, 510, 103), tb);
+                    rt->DrawTextW(label, (UINT32)wcslen(label), tfDefault,
+                        D2D1::RectF(x + 26.0f, 83, x + 112.0f, 103), tb);
                     tb->Release();
                 }
             }
-        }
+        };
+
+        drawInlineCheckbox(160.0f, m_owner->GetAutoStart(), m_hoveredAutoStart, L"开机自启");
+        drawInlineCheckbox(280.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
+        drawInlineCheckbox(405.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
 
         // Draw Theme Option Header
         if (tfDefault)
@@ -1028,6 +987,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             repaint = true;
         }
 
+        bool hhw = HitTestHardwareAcceleration(pt);
+        if (hhw != m_hoveredHardwareAcceleration)
+        {
+            m_hoveredHardwareAcceleration = hhw;
+            repaint = true;
+        }
+
         int hcolor = HitTestThemeColor(pt);
         if (hcolor != m_hoveredThemeColor)
         {
@@ -1132,7 +1098,7 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0)
+    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0)
     {
         m_hoveredAutoStart = false;
         m_hoveredOpenConfigFile = false;
@@ -1148,6 +1114,7 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredThemeDetailSetting = -1;
         m_hoveredThemeDetailButton = 0;
         m_hoveredAnimationToggle = false;
+        m_hoveredHardwareAcceleration = false;
         m_hoveredAnimationDuration = false;
         m_hoveredAnimationDurationButton = 0;
         repaint = true;
@@ -1169,6 +1136,13 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
         {
             bool current = m_owner->GetAnimationEnabled();
             m_owner->SetAnimationEnabled(!current);
+            repaint = true;
+        }
+        else if (HitTestHardwareAcceleration(pt))
+        {
+            bool current = m_owner->GetHardwareAccelerationEnabled();
+            m_owner->SetHardwareAccelerationEnabled(!current);
+            m_owner->NotifyConfigChanged();
             repaint = true;
         }
         else
@@ -1397,7 +1371,13 @@ bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
 bool SettingsPage::HitTestAutoStart(POINT pt)
 {
     // Bounds for the AutoStart checkbox and label
-    return (pt.x >= 160 && pt.x <= 300 && pt.y >= 80 && pt.y <= 110);
+    return (pt.x >= 160 && pt.x <= 272 && pt.y >= 80 && pt.y <= 110);
+}
+
+bool SettingsPage::HitTestHardwareAcceleration(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return (pt.x >= 280 && pt.x <= 392 && pt.y >= 80 && pt.y <= 110);
 }
 
 int SettingsPage::HitTestTrigger(POINT pt)
@@ -1521,7 +1501,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
 bool SettingsPage::HitTestAnimationToggle(POINT pt)
 {
     if (m_categoryIndex != 0) return false;
-    return (pt.x >= 345 && pt.x <= 510 && pt.y >= 83 && pt.y <= 103);
+    return (pt.x >= 405 && pt.x <= 510 && pt.y >= 80 && pt.y <= 110);
 }
 
 bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)

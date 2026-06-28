@@ -198,9 +198,14 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
     case WM_IME_STARTCOMPOSITION:
     case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
     {
-        float scale = GetWindowScale(hWnd);
-        m_textBox.UpdateImeWindowPosition(hWnd, scale);
+        bool repaint = false;
+        if (m_textBox.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
+        {
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
         break;
     }
     case WM_TIMER:

@@ -6,7 +6,7 @@
 
 ConfirmWindow* g_confirmInstance = nullptr;
 
-ConfirmWindow::ConfirmWindow(const wchar_t* title, const wchar_t* prompt, AppContext* ctx)
+ConfirmWindow::ConfirmWindow(const wchar_t* title, const wchar_t* prompt, AppContext* ctx, bool showCancel)
     : GlassWindow()
     , m_title(title)
     , m_prompt(prompt)
@@ -15,6 +15,7 @@ ConfirmWindow::ConfirmWindow(const wchar_t* title, const wchar_t* prompt, AppCon
     , m_hoveredCancel(false)
     , m_hoveredClose(false)
     , m_trackMouse(false)
+    , m_showCancel(showCancel)
 {
     m_appCtx = ctx;
 }
@@ -23,11 +24,11 @@ ConfirmWindow::~ConfirmWindow()
 {
 }
 
-bool ConfirmWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt, AppContext* ctx)
+bool ConfirmWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt, AppContext* ctx, bool showCancel)
 {
     if (g_confirmInstance) return false;
 
-    ConfirmWindow* win = new ConfirmWindow(title, prompt, ctx);
+    ConfirmWindow* win = new ConfirmWindow(title, prompt, ctx, showCancel);
 
     int w = 220;
     int h = 110;
@@ -350,7 +351,11 @@ void ConfirmWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     // 4. OK and Cancel Buttons
     {
         // OK Button: warm accent style
-        D2D1_RECT_F okRect = D2D1::RectF(w - 170, 74, w - 95, 98);
+        D2D1_RECT_F okRect;
+        if (m_showCancel)
+            okRect = D2D1::RectF(w - 170, 74, w - 95, 98);
+        else
+            okRect = D2D1::RectF(w - 90, 74, w - 15, 98);
         D2D1_ROUNDED_RECT roundedOk = D2D1::RoundedRect(okRect, 5.0f, 5.0f);
 
         float okAlpha = m_hoveredOk ? 0.80f : 0.64f;
@@ -369,37 +374,44 @@ void ConfirmWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         }
 
         // Cancel Button: Flat translucent gray style
-        D2D1_RECT_F cancelRect = D2D1::RectF(w - 90, 74, w - 15, 98);
-        D2D1_ROUNDED_RECT roundedCancel = D2D1::RoundedRect(cancelRect, 5.0f, 5.0f);
-
-        float cancelAlphaBg = m_hoveredCancel ? 0.09f : 0.04f;
-        float cancelAlphaBorder = m_hoveredCancel ? 0.16f : 0.075f;
-
-        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
-        auto cancelBgBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBg));
-        if (cancelBgBrush)
+        if (m_showCancel)
         {
-            rt->FillRoundedRectangle(roundedCancel, cancelBgBrush.Get());
+            D2D1_RECT_F cancelRect = D2D1::RectF(w - 90, 74, w - 15, 98);
+            D2D1_ROUNDED_RECT roundedCancel = D2D1::RoundedRect(cancelRect, 5.0f, 5.0f);
+
+            float cancelAlphaBg = m_hoveredCancel ? 0.09f : 0.04f;
+            float cancelAlphaBorder = m_hoveredCancel ? 0.16f : 0.075f;
+
+            D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
+            auto cancelBgBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBg));
+            if (cancelBgBrush)
+            {
+                rt->FillRoundedRectangle(roundedCancel, cancelBgBrush.Get());
+            }
+
+            auto cancelBorderBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBorder));
+            if (cancelBorderBrush)
+            {
+                rt->DrawRoundedRectangle(roundedCancel, cancelBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
+            }
+
+            // Text on buttons
+            if (m_tfBtn)
+            {
+                auto cancelTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
+                if (cancelTextBrush)
+                {
+                    rt->DrawTextW(L"取消", 2, m_tfBtn.Get(), cancelRect, cancelTextBrush.Get());
+                }
+            }
         }
 
-        auto cancelBorderBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBorder));
-        if (cancelBorderBrush)
-        {
-            rt->DrawRoundedRectangle(roundedCancel, cancelBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
-        }
-
-        // Text on buttons
         if (m_tfBtn)
         {
             auto okTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextOnAccent().d2d);
             if (okTextBrush)
             {
                 rt->DrawTextW(L"确定", 2, m_tfBtn.Get(), okRect, okTextBrush.Get());
-            }
-            auto cancelTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-            if (cancelTextBrush)
-            {
-                rt->DrawTextW(L"取消", 2, m_tfBtn.Get(), cancelRect, cancelTextBrush.Get());
             }
         }
     }
@@ -423,11 +435,15 @@ bool ConfirmWindow::HitTestOkButton(POINT pt)
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 170, 74, w - 95, 98));
+    if (m_showCancel)
+        return HitTestRect(pt, D2D1::RectF(w - 170, 74, w - 95, 98));
+    else
+        return HitTestRect(pt, D2D1::RectF(w - 90, 74, w - 15, 98));
 }
 
 bool ConfirmWindow::HitTestCancelButton(POINT pt)
 {
+    if (!m_showCancel) return false;
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;

@@ -24,6 +24,8 @@ CategoryList::CategoryList(IConfigWindow* owner)
     , m_animating(false)
     , m_selectAnimCurrentY(-1.0f)
     , m_selectAnimTargetY(-1.0f)
+    , m_selectAnimStartY(-1.0f)
+    , m_selectAnimElapsed(0.0f)
     , m_isAnimatingSelect(false)
 {
 }
@@ -40,7 +42,38 @@ void CategoryList::Reset()
     m_animating = false;
     m_selectAnimCurrentY = -1.0f;
     m_selectAnimTargetY = -1.0f;
+    m_selectAnimStartY = -1.0f;
+    m_selectAnimElapsed = 0.0f;
     m_isAnimatingSelect = false;
+}
+
+static float EaseOutCubicLocal(float t)
+{
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    float p = 1.0f - t;
+    return 1.0f - p * p * p;
+}
+
+void CategoryList::BeginSelectAnimation(float targetY)
+{
+    if (m_selectAnimCurrentY < 0.0f || !UIStyle::Animation::IsEnabled())
+    {
+        m_selectAnimCurrentY = targetY;
+        m_selectAnimTargetY = targetY;
+        m_selectAnimStartY = targetY;
+        m_selectAnimElapsed = 0.0f;
+        m_isAnimatingSelect = false;
+        return;
+    }
+
+    if (std::abs(targetY - m_selectAnimTargetY) <= 0.1f)
+        return;
+
+    m_selectAnimStartY = m_selectAnimCurrentY;
+    m_selectAnimTargetY = targetY;
+    m_selectAnimElapsed = 0.0f;
+    m_isAnimatingSelect = true;
 }
 
 void CategoryList::EnsureCategoryStates()
@@ -161,7 +194,7 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
                 float dist = std::abs(cy - m_selectAnimCurrentY);
                 float factor = 0.0f;
                 if (dist < 40.0f) factor = 1.0f - dist / 40.0f;
-                textLeft = 18.0f + 4.0f * factor;
+                textLeft = 18.0f + 2.0f * factor;
             }
             else if (isActive)
             {
@@ -201,7 +234,8 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     // Draw sliding active background and indicator if animations are enabled
     if (UIStyle::Animation::IsEnabled() && m_selectAnimCurrentY >= 0.0f)
     {
-        D2D1_RECT_F itemRect = D2D1::RectF(10, m_selectAnimCurrentY, 140, m_selectAnimCurrentY + 32);
+        float selectionY = std::roundf(m_selectAnimCurrentY);
+        D2D1_RECT_F itemRect = D2D1::RectF(10, selectionY, 140, selectionY + 32);
         D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 6.0f, 6.0f);
 
         ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -228,7 +262,7 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         if (accentBrush)
         {
             D2D1_ROUNDED_RECT accentRect = D2D1::RoundedRect(
-                D2D1::RectF(12, m_selectAnimCurrentY + 8, 15, m_selectAnimCurrentY + 24), 1.5f, 1.5f);
+                D2D1::RectF(12, selectionY + 8, 15, selectionY + 24), 1.5f, 1.5f);
             rt->FillRoundedRectangle(accentRect, accentBrush);
             accentBrush->Release();
         }
@@ -577,28 +611,32 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         if (m_selectAnimCurrentY < 0.0f)
         {
             m_selectAnimCurrentY = targetActiveY;
+            m_selectAnimTargetY = targetActiveY;
+            m_selectAnimStartY = targetActiveY;
+            m_selectAnimElapsed = 0.0f;
         }
         else
         {
-            float dy = targetActiveY - m_selectAnimCurrentY;
-            if (std::abs(dy) > 0.1f)
-            {
-                if (UIStyle::Animation::IsEnabled())
-                {
-                    m_selectAnimCurrentY += dy * (1.0f - std::exp(-20.0f * dt));
-                }
-                else
-                {
-                    m_selectAnimCurrentY = targetActiveY;
-                }
-                selectMoving = true;
-                repaint = true;
-            }
-            else
-            {
-                m_selectAnimCurrentY = targetActiveY;
-            }
+            BeginSelectAnimation(targetActiveY);
         }
+    }
+
+    if (m_isAnimatingSelect)
+    {
+        constexpr float kSelectAnimDuration = 0.12f;
+        m_selectAnimElapsed += dt;
+        float t = m_selectAnimElapsed / kSelectAnimDuration;
+        float eased = EaseOutCubicLocal(t);
+        m_selectAnimCurrentY = m_selectAnimStartY + (m_selectAnimTargetY - m_selectAnimStartY) * eased;
+
+        if (t >= 1.0f || std::abs(m_selectAnimTargetY - m_selectAnimCurrentY) <= 0.1f)
+        {
+            m_selectAnimCurrentY = m_selectAnimTargetY;
+            m_isAnimatingSelect = false;
+        }
+
+        selectMoving = true;
+        repaint = true;
     }
 
     if (!m_animating && !selectMoving) return;

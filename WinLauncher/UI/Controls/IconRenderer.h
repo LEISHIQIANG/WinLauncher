@@ -13,7 +13,7 @@ using Microsoft::WRL::ComPtr;
 class IconRenderer
 {
 public:
-    static ComPtr<ID2D1Bitmap> HicontoD2D(ID2D1HwndRenderTarget* rt, HICON hIcon, int size = 48)
+    static ComPtr<ID2D1Bitmap> HicontoD2D(ID2D1HwndRenderTarget* rt, HICON hIcon, int size = 48, bool invert = false)
     {
         if (!rt)
         {
@@ -64,14 +64,26 @@ public:
         DWORD* p = (DWORD*)bits;
         for (int i = 0; i < SZ * SZ; i++)
         {
-            BYTE a = p[i] >> 24;
-            if (a > 0 && a < 255)
+            BYTE a = (p[i] >> 24) & 0xFF;
+            BYTE r = (p[i] >> 16) & 0xFF;
+            BYTE g = (p[i] >> 8) & 0xFF;
+            BYTE b = p[i] & 0xFF;
+
+            if (invert)
             {
-                p[i] = (a << 24)
-                    | ((((p[i] >> 16) & 0xFF) * a / 255) << 16)
-                    | ((((p[i] >> 8) & 0xFF) * a / 255) << 8)
-                    | ((p[i] & 0xFF) * a / 255);
+                r = 255 - r;
+                g = 255 - g;
+                b = 255 - b;
             }
+
+            if (a < 255)
+            {
+                r = (BYTE)((r * a) / 255);
+                g = (BYTE)((g * a) / 255);
+                b = (BYTE)((b * a) / 255);
+            }
+
+            p[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
 
         D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(

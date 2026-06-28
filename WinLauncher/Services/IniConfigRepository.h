@@ -38,6 +38,7 @@ public:
         , m_searchMode(false)
         , m_animationEnabled(true)
         , m_animationDuration(200)
+        , m_hardwareAccelerationEnabled(true)
     {
         m_configDir = ConfigPath::PrepareUserConfigDirectory();
         m_configFilePath = m_configDir + L"\\launcher_config.ini";
@@ -219,6 +220,10 @@ public:
                     else if (key == L"AnimationDuration")
                     {
                         try { m_animationDuration = std::stoi(val); } catch (...) { m_animationDuration = 200; }
+                    }
+                    else if (key == L"HardwareAccelerationEnabled")
+                    {
+                        try { m_hardwareAccelerationEnabled = (std::stoi(val) != 0); } catch (...) { m_hardwareAccelerationEnabled = true; }
                     }
                     else if (key == L"DarkHue")
                     {
@@ -451,6 +456,7 @@ public:
         content += L"SearchMode=" + std::to_wstring(m_searchMode ? 1 : 0) + L"\r\n";
         content += L"AnimationEnabled=" + std::to_wstring(m_animationEnabled ? 1 : 0) + L"\r\n";
         content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
+        content += L"HardwareAccelerationEnabled=" + std::to_wstring(m_hardwareAccelerationEnabled ? 1 : 0) + L"\r\n";
         content += L"DarkHue=" + std::to_wstring(m_appearance.dark.hue) + L"\r\n";
         content += L"DarkBlur=" + std::to_wstring(m_appearance.dark.blur) + L"\r\n";
         content += L"DarkOpacity=" + std::to_wstring(m_appearance.dark.opacity) + L"\r\n";
@@ -554,6 +560,8 @@ public:
     virtual void SetAnimationEnabled(bool enabled) override { m_animationEnabled = enabled; }
     virtual int GetAnimationDuration() override { return m_animationDuration; }
     virtual void SetAnimationDuration(int duration) override { m_animationDuration = duration; }
+    virtual bool GetHardwareAccelerationEnabled() override { return m_hardwareAccelerationEnabled; }
+    virtual void SetHardwareAccelerationEnabled(bool enabled) override { m_hardwareAccelerationEnabled = enabled; }
 
     virtual bool GetAutoStart() override
     {
@@ -735,5 +743,6 @@ private:
     bool m_searchMode = false;
     bool m_animationEnabled = true;
     int m_animationDuration = 200;
+    bool m_hardwareAccelerationEnabled = true;
     FolderWatcher m_folderWatcher;
 };

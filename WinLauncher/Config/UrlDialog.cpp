@@ -312,6 +312,19 @@ LRESULT UrlDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         return 0;
     }
 
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    {
+        bool repaint = false;
+        if (m_form.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
+        {
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+        break;
+    }
+
     case WM_CHAR:
     {
         bool repaint = false;

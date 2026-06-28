@@ -1,6 +1,8 @@
 #pragma once
 #include "IRenderLayer.h"
 #include "../../Config/UIStyle.h"
+#include <algorithm>
+#include <d2d1effects.h>
 #include <d2d1helper.h>
 
 class OverlayLayer : public IRenderLayer
@@ -20,21 +22,46 @@ public:
         {
             ReleaseResources();
             m_size = size;
+            D2D1_SIZE_F sheenLayerSize = D2D1::SizeF(w, h);
+            D2D1_PIXEL_FORMAT sheenLayerFormat =
+                D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED);
+            rt->CreateCompatibleRenderTarget(
+                &sheenLayerSize,
+                nullptr,
+                &sheenLayerFormat,
+                D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+                &m_sheenLayerRt);
 
-            D2D1_GRADIENT_STOP gs[2];
-            gs[0].position = 0;
-            gs[0].color = UIStyle::ThemeColor::Sheen().d2d;
-            gs[1].position = 1;
-            gs[1].color = D2D1::ColorF(1, 1, 1, 0);
-            rt->CreateGradientStopCollection(gs, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &m_gsc);
-
-            if (m_gsc)
+            if (m_sheenLayerRt)
             {
-                rt->CreateRadialGradientBrush(
+                FLOAT dpiX = 96.0f;
+                FLOAT dpiY = 96.0f;
+                rt->GetDpi(&dpiX, &dpiY);
+                m_sheenLayerRt->SetDpi(dpiX, dpiY);
+            }
+
+            D2D1_COLOR_F sheen = UIStyle::ThemeColor::Sheen().d2d;
+            D2D1_GRADIENT_STOP gs[5];
+            gs[0].position = 0.00f;
+            gs[0].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, (std::min)(1.0f, sheen.a * 1.35f));
+            gs[1].position = 0.22f;
+            gs[1].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, (std::min)(1.0f, sheen.a * 1.05f));
+            gs[2].position = 0.56f;
+            gs[2].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, sheen.a * 0.60f);
+            gs[3].position = 0.86f;
+            gs[3].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, sheen.a * 0.22f);
+            gs[4].position = 1.00f;
+            gs[4].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, 0.0f);
+            if (m_sheenLayerRt)
+                m_sheenLayerRt->CreateGradientStopCollection(gs, 5, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &m_gsc);
+
+            if (m_sheenLayerRt && m_gsc)
+            {
+                m_sheenLayerRt->CreateRadialGradientBrush(
                     D2D1::RadialGradientBrushProperties(
-                        D2D1::Point2F(w * 0.1f, h * 0.1f),
+                        D2D1::Point2F(w * 0.10f, h * 0.10f),
                         D2D1::Point2F(0, 0),
-                        w * 0.85f, h * 0.85f),
+                        w * 1.18f, h * 1.12f),
                     m_gsc.Get(), &m_sheenBrush);
             }
 
@@ -45,17 +72,59 @@ public:
             m_dirty = false;
         }
 
-        // Sheen
-        if (m_sheenBrush)
-        {
-            rt->FillRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1, h - 1), m_cornerRadius, m_cornerRadius), m_sheenBrush.Get());
-        }
-
         // Tint
         if (m_tintBrush)
         {
             rt->FillRectangle(D2D1::RectF(0, 0, w, h), m_tintBrush.Get());
+        }
+
+        // Sheen - draw after tint and use additive compositing so blurred
+        // transparent pixels cannot darken light-mode glass.
+        if (m_sheenLayerRt && m_sheenBrush)
+        {
+            m_sheenLayerBitmap.Reset();
+            m_sheenLayerRt->BeginDraw();
+            m_sheenLayerRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+            m_sheenLayerRt->FillRoundedRectangle(
+                D2D1::RoundedRect(
+                    D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
+                    (std::max)(0.0f, m_cornerRadius - 0.5f),
+                    (std::max)(0.0f, m_cornerRadius - 0.5f)),
+                m_sheenBrush.Get());
+            HRESULT sheenHr = m_sheenLayerRt->EndDraw();
+            if (SUCCEEDED(sheenHr))
+                m_sheenLayerRt->GetBitmap(&m_sheenLayerBitmap);
+        }
+
+        if (m_sheenLayerBitmap)
+        {
+            if (dc)
+            {
+                if (!m_sheenBlurEffect)
+                    dc->CreateEffect(CLSID_D2D1GaussianBlur, &m_sheenBlurEffect);
+
+                if (m_sheenBlurEffect)
+                {
+                    m_sheenBlurEffect->SetInput(0, m_sheenLayerBitmap.Get());
+                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 4.0f);
+                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_QUALITY);
+                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
+                    dc->DrawImage(
+                        m_sheenBlurEffect.Get(),
+                        nullptr,
+                        nullptr,
+                        D2D1_INTERPOLATION_MODE_LINEAR,
+                        D2D1_COMPOSITE_MODE_PLUS);
+                }
+                else
+                {
+                    rt->DrawBitmap(m_sheenLayerBitmap.Get(), D2D1::RectF(0, 0, w, h));
+                }
+            }
+            else
+            {
+                rt->DrawBitmap(m_sheenLayerBitmap.Get(), D2D1::RectF(0, 0, w, h));
+            }
         }
 
         // Border
@@ -82,6 +151,9 @@ private:
     {
         m_gsc.Reset();
         m_sheenBrush.Reset();
+        m_sheenBlurEffect.Reset();
+        m_sheenLayerRt.Reset();
+        m_sheenLayerBitmap.Reset();
         m_tintBrush.Reset();
         m_borderBrush.Reset();
     }
@@ -90,6 +162,9 @@ private:
     float m_cornerRadius = 8.0f;
     ComPtr<ID2D1GradientStopCollection> m_gsc;
     ComPtr<ID2D1RadialGradientBrush> m_sheenBrush;
+    ComPtr<ID2D1Effect> m_sheenBlurEffect;
+    ComPtr<ID2D1BitmapRenderTarget> m_sheenLayerRt;
+    ComPtr<ID2D1Bitmap> m_sheenLayerBitmap;
     ComPtr<ID2D1SolidColorBrush> m_tintBrush;
     ComPtr<ID2D1SolidColorBrush> m_borderBrush;
 };
