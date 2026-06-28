@@ -100,6 +100,11 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
         DispatchMessageW(&msg);
     }
 
+    if (msg.message == WM_QUIT)
+    {
+        PostQuitMessage((int)msg.wParam);
+    }
+
     bool ok = win->m_okPressed;
     if (ok)
     {
@@ -142,12 +147,12 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         {
             m_result = m_textBox.GetText();
             m_okPressed = true;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         else if (id == IDCANCEL)
         {
             m_okPressed = false;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         return 0;
     }

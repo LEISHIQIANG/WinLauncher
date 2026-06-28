@@ -164,6 +164,11 @@ void WaitWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt, 
         DispatchMessageW(&msg);
     }
 
+    if (msg.message == WM_QUIT)
+    {
+        PostQuitMessage((int)msg.wParam);
+    }
+
     // Join the worker thread to ensure it's fully done
     if (t.joinable()) {
         t.join();
@@ -186,7 +191,7 @@ LRESULT WaitWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
     {
         EnsureD2D();
         m_timerId = SetTimer(hWnd, 1, 30, nullptr); // ~33 FPS
-        return 0;
+        return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
     }
     case WM_TIMER:
     {
@@ -195,14 +200,24 @@ LRESULT WaitWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
             m_angle += 8.0f;
             if (m_angle >= 360.0f) m_angle -= 360.0f;
             InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
         }
-        return 0;
+        break;
     }
     case WM_CLOSE:
     {
         if (m_finished)
         {
-            DestroyWindow(hWnd);
+            if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Closing)
+            {
+                StartCloseTransition([hWnd]() {
+                    DestroyWindow(hWnd);
+                });
+            }
+            else
+            {
+                DestroyWindow(hWnd);
+            }
         }
         return 0; // Prevent manual close (like Alt+F4) unless task is finished
     }

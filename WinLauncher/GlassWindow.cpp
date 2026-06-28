@@ -17,6 +17,8 @@
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
 
+static bool IsWindows11OrLater();
+
 using SWCAFn = BOOL(WINAPI*)(HWND, void*);
 struct AccentPolicy { int s, f; unsigned int g; int a; };
 struct WinCompAttr { int attr; void* data; size_t size; };
@@ -44,6 +46,7 @@ float GlassWindow::GetWindowScale(HWND hwnd)
 
 GlassWindow::GlassWindow()
 {
+    m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
 }
 
 GlassWindow::~GlassWindow()
@@ -98,6 +101,18 @@ static bool IsWindows11OrLater()
     return vi.dwBuildNumber >= 22000;
 }
 
+ShadowSettings GlassWindow::GetShadowSettings() const
+{
+    ShadowSettings s;
+    s.margin = 55;
+    s.blurRadius = 32;
+    s.offsetX = 0;
+    s.offsetY = 8;
+    s.opacity = 0.35f;
+    s.color = RGB(0, 0, 0);
+    return s;
+}
+
 void GlassWindow::ApplySystemBackdrop()
 {
     MARGINS m{ -1, -1, -1, -1 };
@@ -131,9 +146,9 @@ void GlassWindow::ApplySystemBackdrop()
         float s = isLight ? 0.02f : 0.03f;
         D2D1_COLOR_F rgb = UIStyle::HslToRgb(cfg.hue, s, cfg.brightness, cfg.opacity);
         
-        BYTE r = (BYTE)(rgb.r * 255.0f);
-        BYTE g = (BYTE)(rgb.g * 255.0f);
-        BYTE b = (BYTE)(rgb.b * 255.0f);
+        BYTE r = (BYTE)(fminf(fmaxf(rgb.r, 0.0f), 1.0f) * 255.0f);
+        BYTE g = (BYTE)(fminf(fmaxf(rgb.g, 0.0f), 1.0f) * 255.0f);
+        BYTE b = (BYTE)(fminf(fmaxf(rgb.b, 0.0f), 1.0f) * 255.0f);
         BYTE a = (BYTE)(cfg.opacity * 255.0f);
         
         unsigned int gradientColor = (a << 24) | (b << 16) | (g << 8) | r;
@@ -445,10 +460,96 @@ void GlassWindow::DoPaint()
 
     m_rt->BeginDraw();
 
+    D2D1_MATRIX_3X2_F originalTransform;
+    m_rt->GetTransform(&originalTransform);
+    bool transformModified = false;
+
+    if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::None)
+    {
+        D2D1_MATRIX_3X2_F scaleTransform;
+        GetAnimationTransform(w, h, m_animProgress, m_animState, scaleTransform);
+        m_rt->SetTransform(scaleTransform * originalTransform);
+        transformModified = true;
+    }
+
+    bool themeTransitionActive = m_themeTransitionActive && (m_themeTransitionOldBitmap != nullptr);
+    if (themeTransitionActive)
+    {
+        m_rt->DrawBitmap(m_themeTransitionOldBitmap.Get(), D2D1::RectF(0, 0, w, h));
+
+        float dx1 = m_themeTransitionCenter.x;
+        float dx2 = w - m_themeTransitionCenter.x;
+        float dy1 = m_themeTransitionCenter.y;
+        float dy2 = h - m_themeTransitionCenter.y;
+        float maxR = (std::max)({
+            sqrtf(dx1*dx1 + dy1*dy1),
+            sqrtf(dx2*dx2 + dy1*dy1),
+            sqrtf(dx1*dx1 + dy2*dy2),
+            sqrtf(dx2*dx2 + dy2*dy2)
+        });
+        
+        // Soft radial expansion: expand slightly beyond maxR so the feathered edge fully clears the window at 1.0 progress
+        float radius = (maxR * 1.15f) * m_themeTransitionProgress;
+        if (radius <= 0.0f) radius = 0.1f;
+
+        if (!m_themeTransitionStopCollection)
+        {
+            D2D1_GRADIENT_STOP stops[3];
+            stops[0].position = 0.0f;
+            stops[0].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f);
+            stops[1].position = 0.85f;
+            stops[1].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f);
+            stops[2].position = 1.0f;
+            stops[2].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.0f);
+            m_rt->CreateGradientStopCollection(stops, 3, &m_themeTransitionStopCollection);
+        }
+
+        ComPtr<ID2D1RadialGradientBrush> radialBrush;
+        if (m_themeTransitionStopCollection)
+        {
+            m_rt->CreateRadialGradientBrush(
+                D2D1::RadialGradientBrushProperties(
+                    m_themeTransitionCenter,
+                    D2D1::Point2F(0.0f, 0.0f),
+                    radius, radius
+                ),
+                m_themeTransitionStopCollection.Get(),
+                &radialBrush
+            );
+        }
+
+        if (!m_themeTransitionLayer)
+        {
+            m_rt->CreateLayer(nullptr, &m_themeTransitionLayer);
+        }
+
+        m_rt->PushLayer(
+            D2D1::LayerParameters(
+                D2D1::InfiniteRect(),
+                nullptr,
+                D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                D2D1::IdentityMatrix(),
+                1.0f,
+                radialBrush.Get()
+            ),
+            m_themeTransitionLayer.Get()
+        );
+    }
+
     if (m_compositor)
     {
         m_compositor->Render(m_rt.Get(), scale);
         OnPaintContent(m_rt.Get());
+
+        if (themeTransitionActive)
+        {
+            m_rt->PopLayer();
+        }
+
+        if (transformModified)
+        {
+            m_rt->SetTransform(originalTransform);
+        }
         HRESULT hr = m_rt->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET)
         {
@@ -457,8 +558,11 @@ void GlassWindow::DoPaint()
             m_sheenGsc.Reset(); m_sheenBrush.Reset(); m_effectWinSize = {};
             m_rt.Reset();
             m_brushCache.clear();
+            m_themeTransitionStopCollection.Reset();
             if (m_compositor) m_compositor->MarkAllDirty();
+            m_bgDirty = true;
             EnsureD2D();
+            InvalidateRect(m_hWnd, nullptr, FALSE);
         }
         return;
     }
@@ -511,6 +615,16 @@ void GlassWindow::DoPaint()
 
     OnPaintContent(m_rt.Get());
 
+    if (themeTransitionActive)
+    {
+        m_rt->PopLayer();
+    }
+
+    if (transformModified)
+    {
+        m_rt->SetTransform(originalTransform);
+    }
+
     HRESULT hr = m_rt->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET)
     {
@@ -519,7 +633,10 @@ void GlassWindow::DoPaint()
         m_sheenGsc.Reset(); m_sheenBrush.Reset(); m_effectWinSize = {};
         m_rt.Reset();
         m_brushCache.clear();
+        m_themeTransitionStopCollection.Reset();
+        m_bgDirty = true;
         EnsureD2D();
+        InvalidateRect(m_hWnd, nullptr, FALSE);
     }
 }
 
@@ -532,6 +649,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_ACTIVATE:
+        if (LOWORD(wParam) != WA_INACTIVE && m_shadowWindow)
+        {
+            m_shadowWindow->SyncPosition(true);
+        }
         break;
 
     case WM_ERASEBKGND:
@@ -566,6 +687,9 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             GetClientRect(hWnd, &cr);
             bool sizeChanged = !(wp->flags & SWP_NOSIZE);
             bool posChanged  = !(wp->flags & SWP_NOMOVE);
+            bool zorderChanged = !(wp->flags & SWP_NOZORDER);
+            bool isVisible = (wp->flags & SWP_HIDEWINDOW) ? false : ((wp->flags & SWP_SHOWWINDOW) ? true : (IsWindowVisible(hWnd) && !IsIconic(hWnd)));
+
             if (sizeChanged && m_rt)
             {
                 m_rt->Resize(D2D1::SizeU(cr.right, cr.bottom));
@@ -577,6 +701,36 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             {
                 m_bgDirty = true;
             }
+
+            // Sync shadow window
+            if (isVisible)
+            {
+                if (!m_shadowWindow)
+                {
+                    m_shadowWindow = std::make_unique<ShadowWindow>(hWnd);
+                    m_shadowWindow->SetSettings(GetShadowSettings());
+                }
+                
+                RECT wr;
+                GetWindowRect(hWnd, &wr);
+                int mainW = wr.right - wr.left;
+                int mainH = wr.bottom - wr.top;
+                float scale = GetWindowScale(hWnd);
+
+                if (sizeChanged)
+                {
+                    m_shadowWindow->UpdateShadow(mainW, mainH, m_cornerRadius, scale);
+                }
+                else
+                {
+                    m_shadowWindow->SyncPosition(true);
+                }
+            }
+            else if (m_shadowWindow)
+            {
+                m_shadowWindow->SyncPosition(false);
+            }
+
             InvalidateRect(hWnd, nullptr, FALSE);
         }
         return 0;
@@ -602,10 +756,28 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             m_bgDirty = true;
             if (m_bgRefreshMs > 0)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
+
+            if (!m_shadowWindow)
+            {
+                m_shadowWindow = std::make_unique<ShadowWindow>(hWnd);
+                m_shadowWindow->SetSettings(GetShadowSettings());
+            }
+            RECT wr;
+            GetWindowRect(hWnd, &wr);
+            m_shadowWindow->UpdateShadow(wr.right - wr.left, wr.bottom - wr.top, m_cornerRadius, GetWindowScale(hWnd));
+
+            if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
+            {
+                StartOpenTransition();
+            }
         }
         else
         {
             KillTimer(hWnd, 0x888);
+            if (m_shadowWindow)
+            {
+                m_shadowWindow->SyncPosition(false);
+            }
         }
         break;
 
@@ -613,6 +785,75 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         if (wParam == 0x888)
         {
             m_bgDirty = true;
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+        else if (wParam == 0x889)
+        {
+            bool animating = false;
+
+            if (m_animState != AnimState::None)
+            {
+                animating = true;
+                float duration = UIStyle::Animation::GetDurationMs();
+                if (duration <= 0.0f) duration = 1.0f;
+                float elapsed = (float)(GetTickCount64() - m_animStartTime);
+                m_animProgress = elapsed / duration;
+                if (m_animProgress >= 1.0f)
+                {
+                    m_animProgress = 1.0f;
+                    AnimState oldState = m_animState;
+                    m_animState = AnimState::None;
+
+                    if (oldState == AnimState::Opening)
+                    {
+                        SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
+                        if (m_shadowWindow) m_shadowWindow->SetOpacity(1.0f);
+                    }
+                    else if (oldState == AnimState::Closing)
+                    {
+                        SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
+                        if (m_shadowWindow) m_shadowWindow->SetOpacity(0.0f);
+                        if (m_animOnComplete)
+                        {
+                            auto cb = m_animOnComplete;
+                            m_animOnComplete = nullptr;
+                            cb();
+                        }
+                    }
+                }
+                else
+                {
+                    BYTE alpha = 255;
+                    if (m_animState == AnimState::Opening)
+                        alpha = (BYTE)(m_animProgress * 255.0f);
+                    else if (m_animState == AnimState::Closing)
+                        alpha = (BYTE)((1.0f - m_animProgress) * 255.0f);
+                    SetLayeredWindowAttributes(hWnd, 0, alpha, LWA_ALPHA);
+                    if (m_shadowWindow) m_shadowWindow->SetOpacity((float)alpha / 255.0f);
+                }
+            }
+
+            if (m_themeTransitionActive)
+            {
+                animating = true;
+                float duration = UIStyle::Animation::GetDurationMs();
+                if (duration <= 0.0f) duration = 1.0f;
+                float elapsed = (float)(GetTickCount64() - m_themeTransitionStartTime);
+                m_themeTransitionProgress = elapsed / duration;
+                if (m_themeTransitionProgress >= 1.0f)
+                {
+                    m_themeTransitionProgress = 1.0f;
+                    m_themeTransitionActive = false;
+                    m_themeTransitionOldBitmap.Reset();
+                }
+            }
+
+            if (!animating)
+            {
+                KillTimer(hWnd, 0x889);
+            }
+
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
@@ -642,12 +883,203 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
     }
 
+    case WM_CLOSE:
+        if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Closing)
+        {
+            StartCloseTransition([hWnd]() {
+                DestroyWindow(hWnd);
+            });
+            return 0;
+        }
+        break;
+
     case WM_DESTROY:
         if (m_appCtx && m_appCtx->logger)
             LOG_INFO(m_appCtx->logger, L"GlassWindow: destroying window and releasing resources");
         KillTimer(hWnd, 0x888);
+        KillTimer(hWnd, 0x889);
+        if (m_shadowWindow)
+        {
+            m_shadowWindow->Destroy();
+            m_shadowWindow.reset();
+        }
         ReleaseD2D();
         return 0;
     }
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+}
+
+void GlassWindow::StartOpenTransition()
+{
+    if (!UIStyle::Animation::IsEnabled()) return;
+
+    m_animState = AnimState::Opening;
+    m_animProgress = 0.0f;
+    m_animStartTime = GetTickCount64();
+
+    // Determine Apple-style animation center from the current mouse cursor position
+    RECT cr;
+    GetClientRect(m_hWnd, &cr);
+    float scale = GetWindowScale(m_hWnd);
+    float w = (float)cr.right / scale;
+    float h = (float)cr.bottom / scale;
+
+    POINT cursorPt;
+    GetCursorPos(&cursorPt);
+    ScreenToClient(m_hWnd, &cursorPt);
+    float cx = (float)cursorPt.x / scale;
+    float cy = (float)cursorPt.y / scale;
+    cx = (std::max)(0.0f, (std::min)(w, cx));
+    cy = (std::max)(0.0f, (std::min)(h, cy));
+    m_animCenter = D2D1::Point2F(cx, cy);
+
+    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+    if (!(exStyle & WS_EX_LAYERED))
+    {
+        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+    SetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_ALPHA);
+    if (m_shadowWindow)
+    {
+        m_shadowWindow->SetOpacity(0.0f);
+    }
+
+    SetTimer(m_hWnd, 0x889, 10, nullptr);
+}
+
+void GlassWindow::StartCloseTransition(std::function<void()> onComplete)
+{
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        if (onComplete) onComplete();
+        return;
+    }
+
+    m_animState = AnimState::Closing;
+    m_animProgress = 0.0f;
+    m_animStartTime = GetTickCount64();
+    m_animOnComplete = onComplete;
+
+    // Determine Apple-style animation center from the current mouse cursor position
+    RECT cr;
+    GetClientRect(m_hWnd, &cr);
+    float scale = GetWindowScale(m_hWnd);
+    float w = (float)cr.right / scale;
+    float h = (float)cr.bottom / scale;
+
+    POINT cursorPt;
+    GetCursorPos(&cursorPt);
+    ScreenToClient(m_hWnd, &cursorPt);
+    float cx = (float)cursorPt.x / scale;
+    float cy = (float)cursorPt.y / scale;
+    cx = (std::max)(0.0f, (std::min)(w, cx));
+    cy = (std::max)(0.0f, (std::min)(h, cy));
+    m_animCenter = D2D1::Point2F(cx, cy);
+
+    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+    if (!(exStyle & WS_EX_LAYERED))
+    {
+        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+
+    SetTimer(m_hWnd, 0x889, 10, nullptr);
+}
+
+void GlassWindow::GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform)
+{
+    float scale = 1.0f;
+    if (state == AnimState::Opening)
+    {
+        scale = 0.90f + 0.10f * progress; // Apple-style 90% to 100% pop
+    }
+    else if (state == AnimState::Closing)
+    {
+        scale = 1.0f - 0.10f * progress; // Apple-style 100% to 90% shrink
+    }
+
+    transform = D2D1::Matrix3x2F::Scale(
+        scale, scale,
+        m_animCenter
+    );
+}
+
+void GlassWindow::CaptureTransitionSnapshot()
+{
+    if (!EnsureD2D()) return;
+
+    RECT cr;
+    GetClientRect(m_hWnd, &cr);
+    int w = cr.right - cr.left;
+    int h = cr.bottom - cr.top;
+    if (w <= 0 || h <= 0) return;
+
+    m_themeTransitionOldBitmap.Reset();
+
+    // Use GDI-based screen capture of the window's client area for maximum type-safety
+    // and resource domain separation.
+    HDC wdc = GetDC(m_hWnd);
+    if (!wdc) return;
+    HDC mdc = CreateCompatibleDC(wdc);
+    HBITMAP bmp = CreateCompatibleBitmap(wdc, w, h);
+    HGDIOBJ oldBmp = SelectObject(mdc, bmp);
+    
+    BitBlt(mdc, 0, 0, w, h, wdc, 0, 0, SRCCOPY);
+
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    std::vector<DWORD> pixels(w * h);
+    GetDIBits(mdc, bmp, 0, h, pixels.data(), &bi, DIB_RGB_COLORS);
+
+    SelectObject(mdc, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(mdc);
+    ReleaseDC(m_hWnd, wdc);
+
+    // Create Direct2D bitmap directly on the main target m_rt
+    float dx = 96.0f, dy = 96.0f;
+    m_rt->GetDpi(&dx, &dy);
+    D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dx, dy);
+
+    m_rt->CreateBitmap(D2D1::SizeU(w, h), pixels.data(), w * 4, &props, &m_themeTransitionOldBitmap);
+}
+
+void GlassWindow::StartThemeTransition(POINT clickPt)
+{
+    if (!UIStyle::Animation::IsEnabled() || !m_themeTransitionOldBitmap)
+    {
+        m_themeTransitionActive = false;
+        m_themeTransitionOldBitmap.Reset();
+        return;
+    }
+
+    m_themeTransitionActive = true;
+    m_themeTransitionProgress = 0.0f;
+    m_themeTransitionStartTime = GetTickCount64();
+
+    RECT cr;
+    GetClientRect(m_hWnd, &cr);
+    float scale = GetWindowScale(m_hWnd);
+    float w = (float)cr.right / scale;
+    float h = (float)cr.bottom / scale;
+
+    if (clickPt.x == -1 && clickPt.y == -1)
+    {
+        m_themeTransitionCenter = D2D1::Point2F(w / 2.0f, h / 2.0f);
+    }
+    else
+    {
+        m_themeTransitionCenter = D2D1::Point2F((float)clickPt.x, (float)clickPt.y);
+    }
+
+    m_bgDirty = true;
+    if (m_compositor) m_compositor->MarkAllDirty();
+
+    SetTimer(m_hWnd, 0x889, 10, nullptr);
 }

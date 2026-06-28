@@ -27,6 +27,12 @@ DWORD               KeyboardHook::s_recordModifiers = 0;
 bool                KeyboardHook::s_hadNonModifier  = false;
 int                 KeyboardHook::s_pressedCount    = 0;
 
+// Double-Alt detection (hook thread only)
+std::atomic<HWND>   KeyboardHook::s_hDoubleAltWnd   = nullptr;
+std::atomic<DWORD>  KeyboardHook::s_doubleAltMs(400);
+ULONGLONG           KeyboardHook::s_lastAltUpTime   = 0;
+bool                KeyboardHook::s_altDown         = false;
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -164,6 +170,26 @@ void KeyboardHook::StopRecording()
 bool KeyboardHook::IsRecording()
 {
     return s_recording.load();
+}
+
+// ============================================================
+// Double-Alt API
+// ============================================================
+void KeyboardHook::SetDoubleAltTarget(HWND hTargetWnd, DWORD doubleClickMs)
+{
+    s_hDoubleAltWnd.store(hTargetWnd);
+    s_doubleAltMs.store(doubleClickMs);
+    s_lastAltUpTime = 0;
+    s_altDown       = false;
+    LOG_G_INFO(L"KeyboardHook::SetDoubleAltTarget: hWnd=%p, interval=%dms", hTargetWnd, doubleClickMs);
+}
+
+void KeyboardHook::ClearDoubleAltTarget()
+{
+    s_hDoubleAltWnd.store(nullptr);
+    s_lastAltUpTime = 0;
+    s_altDown       = false;
+    LOG_G_INFO(L"KeyboardHook::ClearDoubleAltTarget");
 }
 
 // ============================================================
@@ -312,6 +338,54 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
     if (suppressKeyEvent)
     {
         return 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // Double-Alt detection (runs when NOT in recording mode)
+    // We track Alt-only taps: Alt down then up without any other key pressed.
+    // If two such taps occur within s_doubleAltMs, fire DoubleAltPressed.
+    // -----------------------------------------------------------------------
+    if (nCode == HC_ACTION && !s_recording.load())
+    {
+        HWND hDoubleAltWnd = s_hDoubleAltWnd.load();
+        if (hDoubleAltWnd)
+        {
+            auto* kbdll = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+            DWORD vk    = kbdll->vkCode;
+            bool  isAlt = (vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU);
+
+            bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+            bool isUp   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
+
+            if (isAlt && isDown && !s_altDown)
+            {
+                s_altDown = true;
+            }
+            else if (isAlt && isUp && s_altDown)
+            {
+                s_altDown = false;
+                ULONGLONG now = GetTickCount64();
+                DWORD interval = s_doubleAltMs.load();
+
+                if (s_lastAltUpTime != 0 && (now - s_lastAltUpTime) <= interval)
+                {
+                    // Double-Alt triggered
+                    s_lastAltUpTime = 0;
+                    PostMessageW(hDoubleAltWnd, AppMessages::DoubleAltPressed, 0, 0);
+                    LOG_G_INFO(L"KeyboardHook: double-Alt detected, posting DoubleAltPressed");
+                }
+                else
+                {
+                    s_lastAltUpTime = now;
+                }
+            }
+            else if (!isAlt && isDown && s_altDown)
+            {
+                // Another key pressed while Alt is down – cancel the double-Alt sequence
+                s_altDown       = false;
+                s_lastAltUpTime = 0;
+            }
+        }
     }
 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);

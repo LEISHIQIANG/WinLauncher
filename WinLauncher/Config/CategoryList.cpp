@@ -22,6 +22,9 @@ CategoryList::CategoryList(IConfigWindow* owner)
     , m_dragCurrentInsertIndex(-1)
     , m_grabOffsetY(0.0f)
     , m_animating(false)
+    , m_selectAnimCurrentY(-1.0f)
+    , m_selectAnimTargetY(-1.0f)
+    , m_isAnimatingSelect(false)
 {
 }
 
@@ -35,6 +38,9 @@ void CategoryList::Reset()
     m_dragIndex = -1;
     m_dragCurrentInsertIndex = -1;
     m_animating = false;
+    m_selectAnimCurrentY = -1.0f;
+    m_selectAnimTargetY = -1.0f;
+    m_isAnimatingSelect = false;
 }
 
 void CategoryList::EnsureCategoryStates()
@@ -64,10 +70,12 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 6.0f, 6.0f);
 
     bool isShortcutDragTarget = isHovered && m_owner->IsDraggingShortcut();
+    bool animEnabled = UIStyle::Animation::IsEnabled();
+    bool drawActiveStyle = isActive && !animEnabled;
 
     // Background Card
-    float alphaBg = isActive ? 0.18f : (isHovered ? 0.08f : 0.018f);
-    float alphaBorder = isActive ? 0.40f : (isHovered ? 0.14f : 0.045f);
+    float alphaBg = drawActiveStyle ? 0.18f : (isHovered ? 0.08f : 0.018f);
+    float alphaBorder = drawActiveStyle ? 0.40f : (isHovered ? 0.14f : 0.045f);
 
     if (isDragging)
     {
@@ -81,7 +89,7 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     }
 
     ID2D1SolidColorBrush* bgBrush = nullptr;
-    if (isDragging || isShortcutDragTarget || isActive)
+    if (isDragging || isShortcutDragTarget || drawActiveStyle)
     {
         D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
         accentClr.a = alphaBg;
@@ -99,10 +107,10 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     }
 
     ID2D1SolidColorBrush* borderBrush = nullptr;
-    if (isDragging || isShortcutDragTarget || isActive)
+    if (isDragging || isShortcutDragTarget || drawActiveStyle)
     {
         D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
-        accentClr.a = isActive ? 0.55f : alphaBorder;
+        accentClr.a = drawActiveStyle ? 0.55f : alphaBorder;
         rt->CreateSolidColorBrush(accentClr, &borderBrush);
     }
     else
@@ -114,13 +122,13 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     {
         float strokeWidth = UIStyle::Metrics::ControlStroke();
         if (isShortcutDragTarget) strokeWidth = UIStyle::Metrics::EmphasisStroke();
-        else if (isActive) strokeWidth = UIStyle::Metrics::HairlineStroke();
+        else if (drawActiveStyle) strokeWidth = UIStyle::Metrics::HairlineStroke();
         rt->DrawRoundedRectangle(roundedItem, borderBrush, strokeWidth);
         borderBrush->Release();
     }
 
     // Accent indicator bar (Active category)
-    if (isActive)
+    if (drawActiveStyle)
     {
         ID2D1SolidColorBrush* accentBrush = nullptr;
         rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
@@ -136,12 +144,30 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     // Category Text
     if (tfLeft)
     {
+        D2D1_COLOR_F textClr = UIStyle::ThemeColor::TextNormal().d2d;
+        if (isActive)
+        {
+            textClr = UIStyle::ThemeColor::Accent().d2d;
+        }
+
         ID2D1SolidColorBrush* tb = nullptr;
-        rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tb);
+        rt->CreateSolidColorBrush(textClr, &tb);
         if (tb)
         {
             std::wstring name = m_owner->GetCategoryName(i);
-            float textLeft = isActive ? 22.0f : 18.0f;
+            float textLeft = 18.0f;
+            if (animEnabled && m_selectAnimCurrentY >= 0.0f)
+            {
+                float dist = std::abs(cy - m_selectAnimCurrentY);
+                float factor = 0.0f;
+                if (dist < 40.0f) factor = 1.0f - dist / 40.0f;
+                textLeft = 18.0f + 4.0f * factor;
+            }
+            else if (isActive)
+            {
+                textLeft = 22.0f;
+            }
+
             rt->DrawTextW(name.c_str(), (UINT32)name.size(), tfLeft,
                 D2D1::RectF(textLeft, cy, 115, cy + 32), tb);
             tb->Release();
@@ -171,6 +197,42 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
 
     EnsureCategoryStates();
+
+    // Draw sliding active background and indicator if animations are enabled
+    if (UIStyle::Animation::IsEnabled() && m_selectAnimCurrentY >= 0.0f)
+    {
+        D2D1_RECT_F itemRect = D2D1::RectF(10, m_selectAnimCurrentY, 140, m_selectAnimCurrentY + 32);
+        D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 6.0f, 6.0f);
+
+        ID2D1SolidColorBrush* bgBrush = nullptr;
+        D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
+        accentClr.a = 0.18f;
+        rt->CreateSolidColorBrush(accentClr, &bgBrush);
+        if (bgBrush)
+        {
+            rt->FillRoundedRectangle(roundedItem, bgBrush);
+            bgBrush->Release();
+        }
+
+        ID2D1SolidColorBrush* borderBrush = nullptr;
+        accentClr.a = 0.55f;
+        rt->CreateSolidColorBrush(accentClr, &borderBrush);
+        if (borderBrush)
+        {
+            rt->DrawRoundedRectangle(roundedItem, borderBrush, UIStyle::Metrics::HairlineStroke());
+            borderBrush->Release();
+        }
+
+        ID2D1SolidColorBrush* accentBrush = nullptr;
+        rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
+        if (accentBrush)
+        {
+            D2D1_ROUNDED_RECT accentRect = D2D1::RoundedRect(
+                D2D1::RectF(12, m_selectAnimCurrentY + 8, 15, m_selectAnimCurrentY + 24), 1.5f, 1.5f);
+            rt->FillRoundedRectangle(accentRect, accentBrush);
+            accentBrush->Release();
+        }
+    }
 
     // Draw Categories
     for (int i = 0; i < (int)count; i++)
@@ -291,6 +353,8 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
     if (hc >= 0 && hc < (int)m_owner->GetCategoryCount())
     {
         m_owner->SetCurrentCategoryIndex(hc);
+        m_animating = true;
+        m_owner->StartAnimation();
 
         // Start dragging if not in Settings mode and not the DOCK category
         if (!m_owner->IsSettingsMode() && m_owner->GetCategoryName(hc) != L"DOCK")
@@ -304,9 +368,6 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
             m_grabOffsetY = pt.y - origY;
 
             SetCapture(hwnd);
-
-            m_animating = true;
-            m_owner->StartAnimation();
         }
 
         repaint = true;
@@ -395,6 +456,8 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
     {
         // Select category on right click
         m_owner->SetCurrentCategoryIndex(hc);
+        m_animating = true;
+        m_owner->StartAnimation();
         repaint = true;
 
         HWND hwnd = m_owner->GetWindowHWND();
@@ -495,7 +558,50 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
 
 void CategoryList::UpdateAnimation(float dt, bool& repaint)
 {
-    if (!m_animating) return;
+    int currentCategory = m_owner->GetCurrentCategoryIndex();
+    size_t count = m_owner->GetCategoryCount();
+    bool selectMoving = false;
+
+    if (currentCategory >= 0 && currentCategory < (int)count)
+    {
+        float targetActiveY = 0.0f;
+        if (m_owner->IsSettingsMode())
+        {
+            targetActiveY = (float)(72 + currentCategory * 40);
+        }
+        else if (currentCategory < (int)m_categoryStates.size())
+        {
+            targetActiveY = m_categoryStates[currentCategory].currentY;
+        }
+
+        if (m_selectAnimCurrentY < 0.0f)
+        {
+            m_selectAnimCurrentY = targetActiveY;
+        }
+        else
+        {
+            float dy = targetActiveY - m_selectAnimCurrentY;
+            if (std::abs(dy) > 0.1f)
+            {
+                if (UIStyle::Animation::IsEnabled())
+                {
+                    m_selectAnimCurrentY += dy * (1.0f - std::exp(-20.0f * dt));
+                }
+                else
+                {
+                    m_selectAnimCurrentY = targetActiveY;
+                }
+                selectMoving = true;
+                repaint = true;
+            }
+            else
+            {
+                m_selectAnimCurrentY = targetActiveY;
+            }
+        }
+    }
+
+    if (!m_animating && !selectMoving) return;
 
     HWND hWnd = m_owner->GetWindowHWND();
 
@@ -528,7 +634,7 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
 
     bool dragging = (m_dragIndex >= 0);
 
-    if (dragging || anyCategoryMoving)
+    if (dragging || anyCategoryMoving || selectMoving)
     {
         // Keep animating, trigger repaint
     }

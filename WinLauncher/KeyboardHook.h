@@ -83,6 +83,14 @@ public:
 
     static bool IsRecording();
 
+    // -----------------------------------------------------------------------
+    // Double-Alt hotkey API
+    // Detects two rapid Alt key taps (both pressed+released within doubleClickMs).
+    // Posts AppMessages::DoubleAltPressed to hTargetWnd when triggered.
+    // -----------------------------------------------------------------------
+    static void SetDoubleAltTarget(HWND hTargetWnd, DWORD doubleClickMs = 400);
+    static void ClearDoubleAltTarget();
+
 private:
     static DWORD WINAPI ThreadProc(LPVOID);
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
@@ -104,4 +112,10 @@ private:
     static DWORD               s_recordModifiers;  // accumulated mods
     static bool                s_hadNonModifier;   // saw at least one non-mod key
     static int                 s_pressedCount;     // # of captured keys currently held
+
+    // Double-Alt detection state (hook thread only)
+    static std::atomic<HWND>   s_hDoubleAltWnd;    // target window (nullptr = disabled)
+    static std::atomic<DWORD>  s_doubleAltMs;      // max interval in ms
+    static ULONGLONG           s_lastAltUpTime;    // tick of last Alt key-up
+    static bool                s_altDown;          // is Alt currently pressed
 };

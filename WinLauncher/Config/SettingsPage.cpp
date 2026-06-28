@@ -114,6 +114,53 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
         }
 
+        // Draw "关闭动画" (Disable Animations) Checkbox side-by-side with AutoStart
+        {
+            bool animDisabled = !m_owner->GetAnimationEnabled();
+            
+            D2D1_RECT_F boxRect = D2D1::RectF(345, 85, 361, 101);
+            D2D1_ROUNDED_RECT roundedBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
+
+            ID2D1SolidColorBrush* bgBrush = nullptr;
+            float alphaBg = m_hoveredAnimationToggle ? 0.105f : 0.035f;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &bgBrush);
+
+            ID2D1SolidColorBrush* borderBrush = nullptr;
+            float alphaBorder = m_hoveredAnimationToggle ? 0.18f : 0.065f;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder), &borderBrush);
+
+            if (bgBrush) rt->FillRoundedRectangle(roundedBox, bgBrush);
+            if (borderBrush) rt->DrawRoundedRectangle(roundedBox, borderBrush, UIStyle::Metrics::ControlStroke());
+
+            if (bgBrush) bgBrush->Release();
+            if (borderBrush) borderBrush->Release();
+
+            if (animDisabled)
+            {
+                ID2D1SolidColorBrush* accentBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
+                if (accentBrush)
+                {
+                    D2D1_ROUNDED_RECT checkRect = D2D1::RoundedRect(D2D1::RectF(348, 88, 358, 98), 2.0f, 2.0f);
+                    rt->FillRoundedRectangle(checkRect, accentBrush);
+                    accentBrush->Release();
+                }
+            }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* tb = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tb);
+                if (tb)
+                {
+                    std::wstring label = L"关闭界面动画";
+                    rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
+                        D2D1::RectF(371, 83, 510, 103), tb);
+                    tb->Release();
+                }
+            }
+        }
+
         // Draw Theme Option Header
         if (tfDefault)
         {
@@ -300,8 +347,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
         }
 
-        // Draw Theme Details (6 Sliders/Cards in 2 columns) - Only in Glass Mode
-        if (currentWindowMode == 0)
+        // Draw Theme Details (6 Sliders/Cards in 2 columns) - Glass and Acrylic Modes
+        if (currentWindowMode == 0 || currentWindowMode == 1)
         {
             if (tfDefault)
             {
@@ -316,7 +363,9 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 }
             }
 
-            auto& cfg = (currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
+            auto& cfg = (currentWindowMode == 1) ?
+                ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
+                ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig);
 
             struct DetailItem {
                 int originalIdx;
@@ -651,6 +700,123 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 }
             }
         }
+
+        // Draw Animation Options Header
+        if (tfDefault)
+        {
+            ID2D1SolidColorBrush* tb = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &tb);
+            if (tb)
+            {
+                std::wstring label = L"界面与过渡动画";
+                rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
+                    D2D1::RectF(160, 225, 510, 245), tb);
+                tb->Release();
+            }
+        }
+
+        // Draw Animation Duration Row
+        {
+            float ix = 160.0f;
+            float iy = 255.0f;
+            float cy = iy + 16.0f;
+            bool isRowHovered = m_hoveredAnimationDuration;
+
+            D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + 165.0f, iy + 32.0f);
+            D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
+
+            ID2D1SolidColorBrush* cardBg = nullptr;
+            float alphaBg = isRowHovered ? 0.06f : 0.018f;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &cardBg);
+            if (cardBg)
+            {
+                rt->FillRoundedRectangle(roundedCard, cardBg);
+                cardBg->Release();
+            }
+
+            ID2D1SolidColorBrush* cardBorder = nullptr;
+            float alphaBorder = isRowHovered ? 0.105f : 0.045f;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder), &cardBorder);
+            if (cardBorder)
+            {
+                rt->DrawRoundedRectangle(roundedCard, cardBorder, UIStyle::Metrics::ControlStroke());
+                cardBorder->Release();
+            }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* textBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
+                if (textBrush)
+                {
+                    std::wstring label = L"时长";
+                    rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
+                        D2D1::RectF(ix + 10, cy - 10, ix + 75, cy + 10), textBrush);
+                    textBrush->Release();
+                }
+            }
+
+            D2D1_ROUNDED_RECT roundedMinus = D2D1::RoundedRect(D2D1::RectF(ix + 85, cy - 8, ix + 101, cy + 8), 3.0f, 3.0f);
+            bool isMinusHovered = (isRowHovered && m_hoveredAnimationDurationButton == 1);
+            ID2D1SolidColorBrush* btnBrush = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isMinusHovered ? 0.105f : 0.04f), &btnBrush);
+            if (btnBrush)
+            {
+                rt->FillRoundedRectangle(roundedMinus, btnBrush);
+                btnBrush->Release();
+            }
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isMinusHovered ? 0.18f : 0.075f), &btnBrush);
+            if (btnBrush)
+            {
+                rt->DrawRoundedRectangle(roundedMinus, btnBrush, UIStyle::Metrics::ControlStroke());
+                btnBrush->Release();
+            }
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &btnBrush);
+            if (btnBrush)
+            {
+                rt->DrawLine(D2D1::Point2F(ix + 89, cy), D2D1::Point2F(ix + 97, cy), btnBrush, UIStyle::Metrics::ControlStroke());
+                btnBrush->Release();
+            }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* textBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
+                if (textBrush)
+                {
+                    wchar_t valBuf[32];
+                    swprintf_s(valBuf, L"%dms", m_owner->GetAnimationDuration());
+                    std::wstring valStr = valBuf;
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(valStr.c_str(), (UINT32)valStr.size(), tfDefault,
+                        D2D1::RectF(ix + 101, cy - 10, ix + 129, cy + 10), textBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    textBrush->Release();
+                }
+            }
+
+            D2D1_ROUNDED_RECT roundedPlus = D2D1::RoundedRect(D2D1::RectF(ix + 129, cy - 8, ix + 145, cy + 8), 3.0f, 3.0f);
+            bool isPlusHovered = (isRowHovered && m_hoveredAnimationDurationButton == 2);
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isPlusHovered ? 0.105f : 0.04f), &btnBrush);
+            if (btnBrush)
+            {
+                rt->FillRoundedRectangle(roundedPlus, btnBrush);
+                btnBrush->Release();
+            }
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isPlusHovered ? 0.18f : 0.075f), &btnBrush);
+            if (btnBrush)
+            {
+                rt->DrawRoundedRectangle(roundedPlus, btnBrush, UIStyle::Metrics::ControlStroke());
+                btnBrush->Release();
+            }
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &btnBrush);
+            if (btnBrush)
+            {
+                rt->DrawLine(D2D1::Point2F(ix + 133, cy), D2D1::Point2F(ix + 141, cy), btnBrush, UIStyle::Metrics::ControlStroke());
+                rt->DrawLine(D2D1::Point2F(ix + 137, cy - 4), D2D1::Point2F(ix + 137, cy + 4), btnBrush, UIStyle::Metrics::ControlStroke());
+                btnBrush->Release();
+            }
+        }
     }
     else if (m_categoryIndex == 3) // 配置管理
     {
@@ -855,6 +1021,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             repaint = true;
         }
 
+        bool hat = HitTestAnimationToggle(pt);
+        if (hat != m_hoveredAnimationToggle)
+        {
+            m_hoveredAnimationToggle = hat;
+            repaint = true;
+        }
+
         int hcolor = HitTestThemeColor(pt);
         if (hcolor != m_hoveredThemeColor)
         {
@@ -923,6 +1096,22 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             m_hoveredTrigger = htrig;
             repaint = true;
         }
+
+        bool hat = HitTestAnimationToggle(pt);
+        if (hat != m_hoveredAnimationToggle)
+        {
+            m_hoveredAnimationToggle = hat;
+            repaint = true;
+        }
+
+        int buttonType = 0;
+        bool htd = HitTestAnimationDuration(pt, buttonType);
+        if (htd != m_hoveredAnimationDuration || buttonType != m_hoveredAnimationDurationButton)
+        {
+            m_hoveredAnimationDuration = htd;
+            m_hoveredAnimationDurationButton = buttonType;
+            repaint = true;
+        }
     }
     else if (m_categoryIndex == 3)
     {
@@ -943,7 +1132,7 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0)
+    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0)
     {
         m_hoveredAutoStart = false;
         m_hoveredOpenConfigFile = false;
@@ -958,6 +1147,9 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredAppearanceButton = 0;
         m_hoveredThemeDetailSetting = -1;
         m_hoveredThemeDetailButton = 0;
+        m_hoveredAnimationToggle = false;
+        m_hoveredAnimationDuration = false;
+        m_hoveredAnimationDurationButton = 0;
         repaint = true;
     }
 }
@@ -973,12 +1165,18 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_owner->NotifyConfigChanged();
             repaint = true;
         }
+        else if (HitTestAnimationToggle(pt))
+        {
+            bool current = m_owner->GetAnimationEnabled();
+            m_owner->SetAnimationEnabled(!current);
+            repaint = true;
+        }
         else
         {
             int htheme = HitTestTheme(pt);
             if (htheme >= 0 && htheme <= 1)
             {
-                m_owner->SetTheme(htheme);
+                m_owner->SetTheme(htheme, pt);
                 repaint = true;
             }
             else
@@ -986,7 +1184,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                 int hcolor = HitTestThemeColor(pt);
                 if (hcolor >= 0 && hcolor < UIStyle::ThemeColorPresetCount())
                 {
-                    m_owner->SetThemeColor(hcolor);
+                    m_owner->SetThemeColor(hcolor, pt);
                     repaint = true;
                 }
                 else
@@ -994,7 +1192,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                     int hwmode = HitTestWindowMode(pt);
                     if (hwmode >= 0 && hwmode <= 1)
                     {
-                        m_owner->SetWindowMode(hwmode);
+                        m_owner->SetWindowMode(hwmode, pt);
                         repaint = true;
                     }
                     else
@@ -1037,7 +1235,9 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 else if (settingIdx == 4) // Brightness
                                 {
                                     float val = cfg.brightness + step * 0.05f;
-                                    if (val >= 0.0f && val <= 1.0f) cfg.brightness = val;
+                                    if (val < 0.0f) val = 0.0f;
+                                    if (val > 0.99f) val = 0.99f;
+                                    cfg.brightness = val;
                                 }
                                 else if (settingIdx == 5) // Saturation
                                 {
@@ -1113,6 +1313,27 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_owner->SetTriggerType(htrig);
             m_owner->NotifyConfigChanged();
             repaint = true;
+        }
+        else if (HitTestAnimationToggle(pt))
+        {
+            bool current = m_owner->GetAnimationEnabled();
+            m_owner->SetAnimationEnabled(!current);
+            repaint = true;
+        }
+        else if (m_hoveredAnimationDuration)
+        {
+            if (m_hoveredAnimationDurationButton == 1) // minus
+            {
+                int current = m_owner->GetAnimationDuration();
+                if (current > 50) m_owner->SetAnimationDuration(current - 50);
+                repaint = true;
+            }
+            else if (m_hoveredAnimationDurationButton == 2) // plus
+            {
+                int current = m_owner->GetAnimationDuration();
+                if (current < 1000) m_owner->SetAnimationDuration(current + 50);
+                repaint = true;
+            }
         }
     }
     else if (m_categoryIndex == 3)
@@ -1265,7 +1486,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
 {
     if (m_categoryIndex != 0) return false;
     int currentWindowMode = m_owner->GetWindowMode();
-    if (currentWindowMode == 1) return false;
+    if (currentWindowMode != 0 && currentWindowMode != 1) return false;
 
     std::vector<int> activeIndices = { 0, 1, 2, 3, 4, 5 };
     for (int i = 0; i < (int)activeIndices.size(); i++)
@@ -1293,6 +1514,38 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
             }
             return true;
         }
+    }
+    return false;
+}
+
+bool SettingsPage::HitTestAnimationToggle(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return (pt.x >= 345 && pt.x <= 510 && pt.y >= 83 && pt.y <= 103);
+}
+
+bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
+{
+    if (m_categoryIndex != 2) return false;
+    float ix = 160.0f;
+    float iy = 255.0f;
+    float cy = iy + 16.0f;
+
+    if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
+    {
+        if (pt.x >= ix + 83 && pt.x <= ix + 103 && pt.y >= cy - 10 && pt.y <= cy + 10)
+        {
+            buttonType = 1; // minus
+        }
+        else if (pt.x >= ix + 127 && pt.x <= ix + 147 && pt.y >= cy - 10 && pt.y <= cy + 10)
+        {
+            buttonType = 2; // plus
+        }
+        else
+        {
+            buttonType = 0; // body
+        }
+        return true;
     }
     return false;
 }

@@ -32,6 +32,8 @@ private:
     bool HitTestImportJson(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
+    bool HitTestAnimationToggle(POINT pt);
+    bool HitTestAnimationDuration(POINT pt, int& buttonType);
 
     IConfigWindow* m_owner;
     int m_categoryIndex = 0; // 0 = 常规设置, 1 = 关于
@@ -52,4 +54,8 @@ private:
 
     int m_hoveredThemeDetailSetting = -1; // 0 to 5
     int m_hoveredThemeDetailButton = 0;   // 1 = minus, 2 = plus, 0 = none
+
+    bool m_hoveredAnimationToggle = false;
+    bool m_hoveredAnimationDuration = false;
+    int m_hoveredAnimationDurationButton = 0; // 1 = minus, 2 = plus, 0 = none
 };

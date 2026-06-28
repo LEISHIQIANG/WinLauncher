@@ -24,6 +24,7 @@ protected:
     virtual const wchar_t* ClassName() const override { return L"WinLauncherDropDown"; }
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) override;
+    virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform) override;
 
 private:
     DropDownMenu(AppContext* ctx, const std::vector<Item>& items);

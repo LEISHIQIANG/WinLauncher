@@ -109,7 +109,12 @@ bool ShortcutDialog::Show(HWND parent, const wchar_t* title,
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
- 
+
+    if (msg.message == WM_QUIT)
+    {
+        PostQuitMessage((int)msg.wParam);
+    }
+
     bool ok = win->m_okPressed;
     if (ok)
     {
@@ -166,12 +171,12 @@ LRESULT ShortcutDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
             if (!m_form.Validate(hWnd)) return 0;
 
             m_okPressed = true;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         else if (id == IDCANCEL)
         {
             m_okPressed = false;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         return 0;
     }

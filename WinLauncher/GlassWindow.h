@@ -2,11 +2,14 @@
 #include "BaseWindow.h"
 #include "App/AppContext.h"
 #include "UI/Render/Compositor.h"
+#include "ShadowWindow.h"
 #include <d2d1.h>
 #include <d2d1_1.h>
 #include <dwrite.h>
 #include <wrl.h>
 #include <vector>
+#include <memory>
+#include <functional>
 
 using Microsoft::WRL::ComPtr;
 
@@ -15,6 +18,16 @@ class GlassWindow : public BaseWindow
 public:
     GlassWindow();
     virtual ~GlassWindow();
+
+    enum class AnimState
+    {
+        None,
+        Opening,
+        Closing
+    };
+
+    void StartOpenTransition();
+    void StartCloseTransition(std::function<void()> onComplete = nullptr);
 
     static float GetWindowScale(HWND hwnd);
     static float GetDpiScaleForMonitor(HMONITOR hMonitor);
@@ -80,6 +93,28 @@ protected:
     // Background refresh rate (ms). 11 = ~90 fps for live background behind the window.
     UINT     m_bgRefreshMs = 11;
 
+protected:
+    virtual ShadowSettings GetShadowSettings() const;
+
+    virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform);
+
+    void CaptureTransitionSnapshot();
+    void StartThemeTransition(POINT clickPt);
+
+    AnimState m_animState = AnimState::None;
+    float m_animProgress = 0.0f;
+    ULONGLONG m_animStartTime = 0;
+    std::function<void()> m_animOnComplete = nullptr;
+    D2D1_POINT_2F m_animCenter = { 0.0f, 0.0f };
+
+    bool m_themeTransitionActive = false;
+    float m_themeTransitionProgress = 0.0f;
+    ULONGLONG m_themeTransitionStartTime = 0;
+    D2D1_POINT_2F m_themeTransitionCenter = { 0.0f, 0.0f };
+    ComPtr<ID2D1Bitmap> m_themeTransitionOldBitmap = nullptr;
+    ComPtr<ID2D1Layer> m_themeTransitionLayer = nullptr;
+    ComPtr<ID2D1GradientStopCollection> m_themeTransitionStopCollection = nullptr;
+
 public:
     // App context for dependency injection (public for free function access)
     AppContext* m_appCtx = nullptr;
@@ -94,4 +129,6 @@ private:
 
     // Compositor-based rendering (optional, long-term)
     std::unique_ptr<Compositor> m_compositor;
+
+    std::unique_ptr<ShadowWindow> m_shadowWindow;
 };

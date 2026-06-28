@@ -332,62 +332,15 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
     if (!s_instance) return;
 
-    // 1. Reload configuration data only (no D2D operations — RT may not be stable yet)
-    if (s_instance->m_viewModel)
-        s_instance->m_viewModel->ReloadPages();
-
-    s_instance->ClearPages();
-    if (s_instance->m_viewModel)
+    // 1. Load configuration and page data if not already loaded
+    if (s_instance->m_pages.empty())
     {
-        for (const auto& vp : s_instance->m_viewModel->GetPages())
-        {
-            RendPopupPage pp;
-            pp.name = vp.name;
-            pp.isSyncFolder = vp.isSyncFolder;
-            pp.folderPath = vp.folderPath;
-            for (const auto& vs : vp.shortcuts)
-            {
-                RendShortcutInfo si;
-                si.name = vs.name;
-                si.targetPath = vs.targetPath;
-                si.arguments = vs.arguments;
-                si.iconPath = vs.iconPath;
-                si.type = vs.type;
-                si.runAsAdmin = vs.runAsAdmin;
-                si.targetKind = vs.targetKind;
-                si.iconSource = vs.iconSource;
-                si.builtinIconId = vs.builtinIconId;
-                si.iconInvertLight = vs.iconInvertLight;
-                si.iconInvertDark = vs.iconInvertDark;
-                si.hIcon = ShortcutManager::GetShortcutIcon(si);
-                pp.shortcuts.push_back(std::move(si));
-            }
-            s_instance->m_pages.push_back(std::move(pp));
-        }
-
-        // Populate dock render data
-        s_instance->m_dockPage = RendPopupPage{};
-        s_instance->m_dockPage.name = L"DOCK";
-        for (const auto& vs : s_instance->m_viewModel->GetDockPage().shortcuts)
-        {
-            RendShortcutInfo si;
-            si.name = vs.name;
-            si.targetPath = vs.targetPath;
-            si.arguments = vs.arguments;
-            si.iconPath = vs.iconPath;
-            si.type = vs.type;
-            si.runAsAdmin = vs.runAsAdmin;
-            si.targetKind = vs.targetKind;
-            si.iconSource = vs.iconSource;
-            si.builtinIconId = vs.builtinIconId;
-            si.iconInvertLight = vs.iconInvertLight;
-            si.iconInvertDark = vs.iconInvertDark;
-            si.hIcon = ShortcutManager::GetShortcutIcon(si);
-            s_instance->m_dockPage.shortcuts.push_back(std::move(si));
-        }
-
+        s_instance->OnConfigChanged();
+    }
+    else if (s_instance->m_viewModel)
+    {
         s_instance->m_currentPage = s_instance->m_viewModel->GetCurrentPage();
-        s_instance->m_scrollPosition = s_instance->m_viewModel->GetScrollPosition();
+        s_instance->m_scrollPosition = (float)s_instance->m_currentPage;
         s_instance->m_scrollVelocity = 0.0f;
     }
 
@@ -430,22 +383,22 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
     // 3. Handle window (create or reposition) and ensure stable render target
     HWND hwnd = s_instance->GetHWND();
-    if (hwnd && IsWindowVisible(hwnd))
+    if (hwnd)
     {
-        SetWindowPos(hwnd, HWND_TOPMOST, pt.x, pt.y, w_px, h_px, 0);
+        SetWindowPos(hwnd, HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
+        if (s_instance->EnsureD2D())
+        {
+            s_instance->EnsureIcons();
+        }
+        if (!IsWindowVisible(hwnd))
+        {
+            ShowWindow(hwnd, SW_SHOW);
+        }
         SetActiveWindow(hwnd);
         SetForegroundWindow(hwnd);
-        // RT is stable — create icons now
-        if (s_instance->m_rt)
-            s_instance->EnsureIcons();
     }
     else
     {
-        if (hwnd)
-        {
-            DestroyWindow(hwnd);
-        }
-
         s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, pt.x, pt.y, w_px, h_px, parent);
         if (s_instance->GetHWND())
         {
@@ -508,12 +461,26 @@ void PopupWindow::Hide()
         {
             s_instance->StopAutoHideTimer();
         }
-        if (h) ShowWindow(h, SW_HIDE);
 
-        if (s_instance->m_viewModel)
+        if (h && UIStyle::Animation::IsEnabled())
         {
-            s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
-            s_instance->m_viewModel->NotifyPopupHidden();
+            s_instance->StartCloseTransition([h]() {
+                ShowWindow(h, SW_HIDE);
+                if (s_instance && s_instance->m_viewModel)
+                {
+                    s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
+                    s_instance->m_viewModel->NotifyPopupHidden();
+                }
+            });
+        }
+        else
+        {
+            if (h) ShowWindow(h, SW_HIDE);
+            if (s_instance && s_instance->m_viewModel)
+            {
+                s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
+                s_instance->m_viewModel->NotifyPopupHidden();
+            }
         }
     }
 }
@@ -2055,7 +2022,14 @@ static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose)
     std::thread([hotkeyStr, afterClose]() {
         if (afterClose)
         {
-            Sleep(150);
+            if (UIStyle::Animation::IsEnabled())
+            {
+                Sleep((DWORD)(150 + UIStyle::Animation::GetDurationMs()));
+            }
+            else
+            {
+                Sleep(150);
+            }
         }
         
         std::vector<WORD> keys;

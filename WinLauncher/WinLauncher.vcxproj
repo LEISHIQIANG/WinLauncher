@@ -140,8 +140,10 @@
     <ClCompile Include="KeyboardHook.cpp" />
     <ClCompile Include="ShortcutManager.cpp" />
     <ClCompile Include="GlassWindow.cpp" />
+    <ClCompile Include="ShadowWindow.cpp" />
     <ClCompile Include="PopupWindow.cpp" />
     <ClCompile Include="TrayMenuWindow.cpp" />
+    <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="Config\ConfigWindow.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
@@ -172,8 +174,10 @@
     <ClInclude Include="ShortcutManager.h" />
     <ClInclude Include="BaseWindow.h" />
     <ClInclude Include="GlassWindow.h" />
+    <ClInclude Include="ShadowWindow.h" />
     <ClInclude Include="PopupWindow.h" />
     <ClInclude Include="TrayMenuWindow.h" />
+    <ClInclude Include="ToastWindow.h" />
     <ClInclude Include="DpiHelper.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="version.h" />

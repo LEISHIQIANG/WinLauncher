@@ -43,4 +43,10 @@ public:
     virtual void SetDockHeight(int height) = 0;
     virtual bool GetSearchMode() = 0;
     virtual void SetSearchMode(bool enabled) = 0;
+
+    virtual bool GetAnimationEnabled() = 0;
+    virtual void SetAnimationEnabled(bool enabled) = 0;
+    virtual int GetAnimationDuration() = 0;
+    virtual void SetAnimationDuration(int duration) = 0;
 };
+

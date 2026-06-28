@@ -58,12 +58,17 @@ public:
     virtual void SetPopupWndPadding(int padding) = 0;
 
     virtual int GetTheme() = 0;
-    virtual void SetTheme(int theme) = 0;
+    virtual void SetTheme(int theme, POINT clickPt = { -1, -1 }) = 0;
     virtual int GetThemeColor() = 0;
-    virtual void SetThemeColor(int colorIndex) = 0;
+    virtual void SetThemeColor(int colorIndex, POINT clickPt = { -1, -1 }) = 0;
     virtual int GetWindowMode() = 0;
-    virtual void SetWindowMode(int mode) = 0;
+    virtual void SetWindowMode(int mode, POINT clickPt = { -1, -1 }) = 0;
     virtual AppContext* GetAppContext() = 0;
     virtual int GetDockHeight() = 0;
     virtual void SetDockHeight(int height) = 0;
+
+    virtual bool GetAnimationEnabled() = 0;
+    virtual void SetAnimationEnabled(bool enabled) = 0;
+    virtual int GetAnimationDuration() = 0;
+    virtual void SetAnimationDuration(int duration) = 0;
 };

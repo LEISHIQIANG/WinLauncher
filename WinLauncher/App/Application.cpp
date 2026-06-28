@@ -4,8 +4,10 @@
 #include "../AutoStartHelper.h"
 #include "../Config/ConfigWindow.h"
 #include "../Config/UIStyle.h"
+#include "../KeyboardHook.h"
 #include "../MouseHook.h"
 #include "../PopupWindow.h"
+#include "../ToastWindow.h"
 #include "../resource.h"
 #include "../Services/IniConfigRepository.h"
 #include "../Services/SystemIconService.h"
@@ -70,6 +72,10 @@ int Application::Run()
     PopupWindow::Init(m_appCtx.get());
     TrayMenuWindow::Init(m_hMainWnd, m_appCtx.get());
 
+    // Install keyboard hook and register double-Alt shortcut for TogglePopupPause
+    KeyboardHook::Install();
+    KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+
     int exitCode = MessageLoop();
     Shutdown();
     return exitCode;
@@ -123,9 +129,9 @@ bool Application::CreateMainWindow()
     const wchar_t className[] = L"WinLauncherMain";
 
     WNDCLASSW wc{};
-    wc.lpfnWndProc = Application::WindowProc;
-    wc.hInstance = m_hInstance;
-    wc.hIcon = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    wc.lpfnWndProc   = Application::WindowProc;
+    wc.hInstance     = m_hInstance;
+    wc.hIcon         = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
     wc.lpszClassName = className;
 
     RegisterClassW(&wc);
@@ -135,10 +141,7 @@ bool Application::CreateMainWindow()
         className,
         L"WinLauncher",
         WS_POPUP,
-        0,
-        0,
-        0,
-        0,
+        0, 0, 0, 0,
         nullptr,
         nullptr,
         m_hInstance,
@@ -159,7 +162,7 @@ bool Application::InitializeServices()
         AppMessages::ConfigChanged);
 
     m_appCtx->configService = std::move(configRepository);
-    m_appCtx->iconService = std::make_unique<SystemIconService>();
+    m_appCtx->iconService   = std::make_unique<SystemIconService>();
 
     LOG_INFO(m_appCtx->logger, L"WinLauncher starting...");
 
@@ -180,6 +183,8 @@ bool Application::LoadRuntimeSettings()
     UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
     UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
     UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
+    UIStyle::Animation::SetEnabled(m_appCtx->configService->GetAnimationEnabled());
+    UIStyle::Animation::SetDurationMs((float)m_appCtx->configService->GetAnimationDuration());
     return true;
 }
 
@@ -217,6 +222,10 @@ void Application::Shutdown()
     if (m_appCtx)
         LOG_INFO(m_appCtx->logger, L"WinLauncher shutting down...");
 
+    // Uninstall keyboard hook
+    KeyboardHook::ClearDoubleAltTarget();
+    KeyboardHook::Uninstall();
+
     if (m_mouseHookInstalled)
     {
         LOG_INFO(m_appCtx->logger, L"Application::Shutdown: uninstalling mouse hook");
@@ -235,6 +244,7 @@ void Application::Shutdown()
     PopupWindow::Release();
     ConfigWindow::Release();
     TrayMenuWindow::Release();
+    ToastWindow::Hide();
 
     if (m_appCtx)
     {
@@ -262,12 +272,12 @@ void Application::Shutdown()
 void Application::AddTrayIcon()
 {
     NOTIFYICONDATAW nid{};
-    nid.cbSize = sizeof(nid);
-    nid.hWnd = m_hMainWnd;
-    nid.uID = 1;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.cbSize           = sizeof(nid);
+    nid.hWnd             = m_hMainWnd;
+    nid.uID              = 1;
+    nid.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = AppMessages::TrayIcon;
-    nid.hIcon = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    nid.hIcon            = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
     wcscpy_s(nid.szTip, L"WinLauncher");
     if (Shell_NotifyIconW(NIM_ADD, &nid))
         m_trayIconAdded = true;
@@ -280,14 +290,16 @@ void Application::RemoveTrayIcon()
 
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);
-    nid.hWnd = m_hMainWnd;
-    nid.uID = 1;
+    nid.hWnd   = m_hMainWnd;
+    nid.uID    = 1;
     Shell_NotifyIconW(NIM_DELETE, &nid);
     m_trayIconAdded = false;
 }
 
 void Application::ShowPopupAtCursor()
 {
+    if (m_popupPaused) return;   // 暂停状态下忽略弹窗请求
+
     POINT pt;
     GetCursorPos(&pt);
     PopupWindow::Show(m_hMainWnd, pt);
@@ -310,6 +322,81 @@ void Application::ShowTrayMenuAtCursor()
     TrayMenuWindow::Show(pt);
 }
 
+void Application::TogglePopupPause()
+{
+    m_popupPaused = !m_popupPaused;
+    TrayMenuWindow::SetPaused(m_popupPaused);
+
+    // 在屏幕中央显示简短 Toast 提示
+    const wchar_t* msg = m_popupPaused ? L"弹窗已暂停" : L"弹窗已启用";
+    ToastWindow::Show(msg, 500);
+
+    LOG_INFO(m_appCtx->logger, L"Application::TogglePopupPause: paused=%d", (int)m_popupPaused);
+}
+
+void Application::RestartHook()
+{
+    LOG_INFO(m_appCtx->logger, L"Application::RestartHook: restarting mouse hook...");
+
+    // Uninstall then reinstall the mouse hook
+    if (m_mouseHookInstalled)
+    {
+        MouseHook::Uninstall();
+        m_mouseHookInstalled = false;
+    }
+
+    if (MouseHook::Install(m_hMainWnd))
+    {
+        m_mouseHookInstalled = true;
+        LOG_INFO(m_appCtx->logger, L"Application::RestartHook: mouse hook restarted successfully");
+        ToastWindow::Show(L"钩子已重启", 500);
+    }
+    else
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::RestartHook: failed to reinstall mouse hook");
+    }
+
+    // Also restart the keyboard hook
+    KeyboardHook::ClearDoubleAltTarget();
+    KeyboardHook::Uninstall();
+    KeyboardHook::Install();
+    KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+    LOG_INFO(m_appCtx->logger, L"Application::RestartHook: keyboard hook restarted");
+}
+
+void Application::RestartApp()
+{
+    LOG_INFO(m_appCtx->logger, L"Application::RestartApp: restarting application...");
+
+    // Get current executable path
+    wchar_t exePath[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+    // Use ShellExecute to relaunch; delay slightly so Toast is visible
+    SHELLEXECUTEINFOW sei{};
+    sei.cbSize = sizeof(sei);
+    sei.fMask  = SEE_MASK_NOASYNC;
+    sei.lpVerb = L"open";
+    sei.lpFile = exePath;
+    sei.nShow  = SW_NORMAL;
+
+    // Schedule relaunch via a timer (300ms) so the toast can show briefly
+    // We post WM_QUIT after the timer fires
+    SetTimer(m_hMainWnd, 0xDEAD, 350, [](HWND hWnd, UINT, UINT_PTR id, DWORD) {
+        KillTimer(hWnd, id);
+        wchar_t exePath2[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exePath2, MAX_PATH);
+        SHELLEXECUTEINFOW sei2{};
+        sei2.cbSize = sizeof(sei2);
+        sei2.fMask  = SEE_MASK_NOASYNC;
+        sei2.lpVerb = L"open";
+        sei2.lpFile = exePath2;
+        sei2.nShow  = SW_NORMAL;
+        ShellExecuteExW(&sei2);
+        PostQuitMessage(0);
+    });
+}
+
 LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -329,6 +416,22 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     case AppMessages::ConfigChanged:
         if (m_appCtx && m_appCtx->eventBus)
             m_appCtx->eventBus->Publish(EventType::ConfigChanged);
+        return 0;
+
+    case AppMessages::TogglePopupPause:
+        TogglePopupPause();
+        return 0;
+
+    case AppMessages::RestartHook:
+        RestartHook();
+        return 0;
+
+    case AppMessages::RestartApp:
+        RestartApp();
+        return 0;
+
+    case AppMessages::DoubleAltPressed:
+        TogglePopupPause();
         return 0;
 
     case AppMessages::TrayIcon:

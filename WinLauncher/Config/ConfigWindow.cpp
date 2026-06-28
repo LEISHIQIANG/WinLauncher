@@ -153,6 +153,10 @@ void ConfigWindow::LoadConfig()
 
 void ConfigWindow::SaveConfig()
 {
+    if (HWND hwnd = GetHWND())
+    {
+        KillTimer(hwnd, 101);
+    }
     m_ignoreConfigChangedCount++;
     if (m_viewModel)
     {
@@ -285,7 +289,17 @@ void ConfigWindow::Hide()
 {
     if (s_instance)
     {
-        ShowWindow(s_instance->GetHWND(), SW_HIDE);
+        HWND h = s_instance->GetHWND();
+        if (h && UIStyle::Animation::IsEnabled())
+        {
+            s_instance->StartCloseTransition([h]() {
+                ShowWindow(h, SW_HIDE);
+            });
+        }
+        else
+        {
+            if (h) ShowWindow(h, SW_HIDE);
+        }
     }
 }
 
@@ -297,8 +311,18 @@ void ConfigWindow::Release()
         ConfigWindow* inst = s_instance;
         s_instance = nullptr;
         HWND h = inst->GetHWND();
-        if (h) DestroyWindow(h);
-        delete inst;
+        if (h && UIStyle::Animation::IsEnabled())
+        {
+            inst->StartCloseTransition([h, inst]() {
+                DestroyWindow(h);
+                delete inst;
+            });
+        }
+        else
+        {
+            if (h) DestroyWindow(h);
+            delete inst;
+        }
     }
 }
 
@@ -313,7 +337,17 @@ void ConfigWindow::NotifyConfigChanged()
     {
         m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
     }
-    SaveConfig();
+    
+    // Debounce SaveConfig by 500ms
+    if (HWND hwnd = GetHWND())
+    {
+        SetTimer(hwnd, 101, 500, nullptr);
+    }
+    else
+    {
+        SaveConfig();
+    }
+
     if (m_appCtx && m_appCtx->eventBus)
     {
         m_appCtx->eventBus->Publish(EventType::ThemeChanged);
@@ -691,14 +725,24 @@ int ConfigWindow::GetTheme()
     return 0;
 }
 
-void ConfigWindow::SetTheme(int theme)
+void ConfigWindow::SetTheme(int theme, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        if (UIStyle::Animation::IsEnabled())
+        {
+            CaptureTransitionSnapshot();
+        }
+
         m_appCtx->configService->SetTheme(theme);
         NotifyConfigChanged();
         UIStyle::SetThemeMode((UIStyle::ThemeMode)theme);
         m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+
+        if (UIStyle::Animation::IsEnabled())
+        {
+            StartThemeTransition(clickPt);
+        }
     }
 }
 
@@ -708,13 +752,23 @@ int ConfigWindow::GetThemeColor()
     return 0;
 }
 
-void ConfigWindow::SetThemeColor(int colorIndex)
+void ConfigWindow::SetThemeColor(int colorIndex, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        if (UIStyle::Animation::IsEnabled())
+        {
+            CaptureTransitionSnapshot();
+        }
+
         m_appCtx->configService->SetThemeColor(colorIndex);
         UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
         NotifyConfigChanged();
+
+        if (UIStyle::Animation::IsEnabled())
+        {
+            StartThemeTransition(clickPt);
+        }
     }
 }
 
@@ -724,14 +778,24 @@ int ConfigWindow::GetWindowMode()
     return 0;
 }
 
-void ConfigWindow::SetWindowMode(int mode)
+void ConfigWindow::SetWindowMode(int mode, POINT clickPt)
 {
     if (m_appCtx && m_appCtx->configService)
     {
+        if (UIStyle::Animation::IsEnabled())
+        {
+            CaptureTransitionSnapshot();
+        }
+
         m_appCtx->configService->SetWindowMode(mode);
         NotifyConfigChanged();
         UIStyle::SetWindowMode(mode);
         m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+
+        if (UIStyle::Animation::IsEnabled())
+        {
+            StartThemeTransition(clickPt);
+        }
     }
 }
 
@@ -744,6 +808,40 @@ int ConfigWindow::GetDockHeight()
 void ConfigWindow::SetDockHeight(int height)
 {
     if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetDockHeight(height);
+}
+
+bool ConfigWindow::GetAnimationEnabled()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetAnimationEnabled();
+    return true;
+}
+
+void ConfigWindow::SetAnimationEnabled(bool enabled)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetAnimationEnabled(enabled);
+        UIStyle::Animation::SetEnabled(enabled);
+        NotifyConfigChanged();
+        StartAnimation();
+    }
+}
+
+int ConfigWindow::GetAnimationDuration()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetAnimationDuration();
+    return 200;
+}
+
+void ConfigWindow::SetAnimationDuration(int duration)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetAnimationDuration(duration);
+        UIStyle::Animation::SetDurationMs((float)duration);
+        NotifyConfigChanged();
+        StartAnimation();
+    }
 }
 
 void ConfigWindow::AddCategory(const std::wstring&)
@@ -1195,6 +1293,12 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
 
     case WM_TIMER:
+        if (wParam == 101)
+        {
+            KillTimer(hWnd, 101);
+            SaveConfig();
+            return 0;
+        }
         if (wParam == 2)
         {
             if (m_animating)

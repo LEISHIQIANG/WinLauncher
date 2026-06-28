@@ -75,13 +75,17 @@ public:
     virtual int GetPopupWndPadding() override;
     virtual void SetPopupWndPadding(int padding) override;
     virtual int GetTheme() override;
-    virtual void SetTheme(int theme) override;
+    virtual void SetTheme(int theme, POINT clickPt = { -1, -1 }) override;
     virtual int GetThemeColor() override;
-    virtual void SetThemeColor(int colorIndex) override;
+    virtual void SetThemeColor(int colorIndex, POINT clickPt = { -1, -1 }) override;
     virtual int GetWindowMode() override;
-    virtual void SetWindowMode(int mode) override;
+    virtual void SetWindowMode(int mode, POINT clickPt = { -1, -1 }) override;
     virtual int GetDockHeight() override;
     virtual void SetDockHeight(int height) override;
+    virtual bool GetAnimationEnabled() override;
+    virtual void SetAnimationEnabled(bool enabled) override;
+    virtual int GetAnimationDuration() override;
+    virtual void SetAnimationDuration(int duration) override;
     void ImportJsonConfig();
 
 protected:

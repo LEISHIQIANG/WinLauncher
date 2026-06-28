@@ -19,12 +19,16 @@ namespace UIStyle
         {
             d2d = D2D1::ColorF(r, g, b, a);
             // Add 0.5f before casting to BYTE to round correctly rather than truncate
-            gdi = RGB((BYTE)(r * 255.0f + 0.5f), (BYTE)(g * 255.0f + 0.5f), (BYTE)(b * 255.0f + 0.5f));
+            gdi = RGB((BYTE)(fminf(fmaxf(r, 0.0f), 1.0f) * 255.0f + 0.5f), 
+                      (BYTE)(fminf(fmaxf(g, 0.0f), 1.0f) * 255.0f + 0.5f), 
+                      (BYTE)(fminf(fmaxf(b, 0.0f), 1.0f) * 255.0f + 0.5f));
         }
         Color(D2D1_COLOR_F d2dVal)
         {
             d2d = d2dVal;
-            gdi = RGB((BYTE)(d2dVal.r * 255.0f + 0.5f), (BYTE)(d2dVal.g * 255.0f + 0.5f), (BYTE)(d2dVal.b * 255.0f + 0.5f));
+            gdi = RGB((BYTE)(fminf(fmaxf(d2dVal.r, 0.0f), 1.0f) * 255.0f + 0.5f), 
+                      (BYTE)(fminf(fmaxf(d2dVal.g, 0.0f), 1.0f) * 255.0f + 0.5f), 
+                      (BYTE)(fminf(fmaxf(d2dVal.b, 0.0f), 1.0f) * 255.0f + 0.5f));
         }
     };
 
@@ -65,7 +69,7 @@ namespace UIStyle
     inline ThemeConfig g_DarkConfig = { 32.0f, 20.0f, 0.50f, 0.90f, 0.11f, 1.8f };
     inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.91f, 1.6f };
     inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 1.7f };
-    inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.36f, 0.90f, 0.96f, 1.5f };
+    inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 1.5f };
 
     inline ThemeConfig ToThemeConfig(const Model::ThemeEffectConfig& config)
     {
@@ -227,9 +231,16 @@ namespace UIStyle
 
     inline D2D1_COLOR_F HslToRgb(float h, float s, float l, float a)
     {
-        float c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;
+        float actualL = l * 1.5f;
+        float overflow = 0.0f;
+        if (actualL > 1.0f)
+        {
+            overflow = actualL - 1.0f;
+            actualL = 1.0f;
+        }
+        float c = (1.0f - fabsf(2.0f * actualL - 1.0f)) * s;
         float x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
-        float m = l - c / 2.0f;
+        float m = actualL - c / 2.0f;
         float r = 0, g = 0, b = 0;
         if (h < 0) h = 0;
         if (h >= 360) h = fmodf(h, 360.0f);
@@ -239,7 +250,7 @@ namespace UIStyle
         else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
         else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
         else if (300 <= h && h <= 360) { r = c; g = 0; b = x; }
-        return D2D1::ColorF(r + m, g + m, b + m, a);
+        return D2D1::ColorF(r + m + overflow, g + m + overflow, b + m + overflow, a);
     }
 
     // Shared theme tokens
@@ -434,4 +445,27 @@ namespace UIStyle
         {
         }
     };
+
+    namespace Animation
+    {
+        inline bool g_Enabled = true;
+        inline float g_DurationMs = 200.0f;
+
+        inline bool IsEnabled() { return g_Enabled; }
+        inline void SetEnabled(bool enable) { g_Enabled = enable; }
+
+        inline float GetDurationMs() { return g_DurationMs; }
+        inline void SetDurationMs(float duration) { g_DurationMs = duration; }
+    }
+
+    inline D2D1_COLOR_F LerpColor(const D2D1_COLOR_F& c1, const D2D1_COLOR_F& c2, float t)
+    {
+        return D2D1::ColorF(
+            c1.r + (c2.r - c1.r) * t,
+            c1.g + (c2.g - c1.g) * t,
+            c1.b + (c2.b - c1.b) * t,
+            c1.a + (c2.a - c1.a) * t
+        );
+    }
 }
+

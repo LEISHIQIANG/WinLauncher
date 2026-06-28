@@ -36,6 +36,8 @@ public:
         , m_windowMode(0)
         , m_dockHeight(1)
         , m_searchMode(false)
+        , m_animationEnabled(true)
+        , m_animationDuration(200)
     {
         m_configDir = ConfigPath::PrepareUserConfigDirectory();
         m_configFilePath = m_configDir + L"\\launcher_config.ini";
@@ -210,6 +212,14 @@ public:
                     {
                         try { m_searchMode = (std::stoi(val) != 0); } catch (...) { m_searchMode = false; }
                     }
+                    else if (key == L"AnimationEnabled")
+                    {
+                        try { m_animationEnabled = (std::stoi(val) != 0); } catch (...) { m_animationEnabled = true; }
+                    }
+                    else if (key == L"AnimationDuration")
+                    {
+                        try { m_animationDuration = std::stoi(val); } catch (...) { m_animationDuration = 200; }
+                    }
                     else if (key == L"DarkHue")
                     {
                         try { m_appearance.dark.hue = std::stof(val); } catch (...) {}
@@ -228,7 +238,10 @@ public:
                     }
                     else if (key == L"DarkBrightness")
                     {
-                        try { m_appearance.dark.brightness = std::stof(val); } catch (...) {}
+                        try {
+                            m_appearance.dark.brightness = std::stof(val);
+                            if (m_appearance.dark.brightness > 0.99f) m_appearance.dark.brightness = 0.99f;
+                        } catch (...) {}
                     }
                     else if (key == L"DarkSaturation")
                     {
@@ -252,7 +265,10 @@ public:
                     }
                     else if (key == L"LightBrightness")
                     {
-                        try { m_appearance.light.brightness = std::stof(val); } catch (...) {}
+                        try {
+                            m_appearance.light.brightness = std::stof(val);
+                            if (m_appearance.light.brightness > 0.99f) m_appearance.light.brightness = 0.99f;
+                        } catch (...) {}
                     }
                     else if (key == L"LightSaturation")
                     {
@@ -272,7 +288,10 @@ public:
                     }
                     else if (key == L"AcrylicDarkBrightness")
                     {
-                        try { m_appearance.acrylicDark.brightness = std::stof(val); } catch (...) {}
+                        try {
+                            m_appearance.acrylicDark.brightness = std::stof(val);
+                            if (m_appearance.acrylicDark.brightness > 0.99f) m_appearance.acrylicDark.brightness = 0.99f;
+                        } catch (...) {}
                     }
                     else if (key == L"AcrylicLightHue")
                     {
@@ -288,7 +307,10 @@ public:
                     }
                     else if (key == L"AcrylicLightBrightness")
                     {
-                        try { m_appearance.acrylicLight.brightness = std::stof(val); } catch (...) {}
+                        try {
+                            m_appearance.acrylicLight.brightness = std::stof(val);
+                            if (m_appearance.acrylicLight.brightness > 0.99f) m_appearance.acrylicLight.brightness = 0.99f;
+                        } catch (...) {}
                     }
                 }
             }
@@ -427,6 +449,8 @@ public:
         content += L"WindowMode=" + std::to_wstring(m_windowMode) + L"\r\n";
         content += L"DockHeight=" + std::to_wstring(m_dockHeight) + L"\r\n";
         content += L"SearchMode=" + std::to_wstring(m_searchMode ? 1 : 0) + L"\r\n";
+        content += L"AnimationEnabled=" + std::to_wstring(m_animationEnabled ? 1 : 0) + L"\r\n";
+        content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
         content += L"DarkHue=" + std::to_wstring(m_appearance.dark.hue) + L"\r\n";
         content += L"DarkBlur=" + std::to_wstring(m_appearance.dark.blur) + L"\r\n";
         content += L"DarkOpacity=" + std::to_wstring(m_appearance.dark.opacity) + L"\r\n";
@@ -526,6 +550,10 @@ public:
     virtual void SetDockHeight(int height) override { m_dockHeight = height; }
     virtual bool GetSearchMode() override { return m_searchMode; }
     virtual void SetSearchMode(bool enabled) override { m_searchMode = enabled; }
+    virtual bool GetAnimationEnabled() override { return m_animationEnabled; }
+    virtual void SetAnimationEnabled(bool enabled) override { m_animationEnabled = enabled; }
+    virtual int GetAnimationDuration() override { return m_animationDuration; }
+    virtual void SetAnimationDuration(int duration) override { m_animationDuration = duration; }
 
     virtual bool GetAutoStart() override
     {
@@ -705,5 +733,7 @@ private:
     int m_windowMode = 0;
     int m_dockHeight = 50;
     bool m_searchMode = false;
+    bool m_animationEnabled = true;
+    int m_animationDuration = 200;
     FolderWatcher m_folderWatcher;
 };

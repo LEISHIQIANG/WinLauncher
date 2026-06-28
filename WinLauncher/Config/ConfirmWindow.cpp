@@ -95,6 +95,11 @@ bool ConfirmWindow::Show(HWND parent, const wchar_t* title, const wchar_t* promp
         DispatchMessageW(&msg);
     }
 
+    if (msg.message == WM_QUIT)
+    {
+        PostQuitMessage((int)msg.wParam);
+    }
+
     bool ok = win->m_okPressed;
     g_confirmInstance = nullptr;
     delete win;
@@ -123,12 +128,12 @@ LRESULT ConfirmWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
         if (id == IDOK)
         {
             m_okPressed = true;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         else if (id == IDCANCEL)
         {
             m_okPressed = false;
-            DestroyWindow(hWnd);
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
         return 0;
     }

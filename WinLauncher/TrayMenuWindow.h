@@ -15,6 +15,10 @@ public:
     static void Hide();
     static void Release();
 
+    // Called from Application to keep the menu label in sync
+    static void SetPaused(bool paused) { s_popupPaused = paused; }
+    static bool IsPaused()             { return s_popupPaused; }
+
 protected:
     virtual const wchar_t* ClassName() const override { return L"WinLauncherTrayMenu"; }
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
@@ -26,6 +30,7 @@ private:
     static TrayMenuWindow* s_instance;
     static HWND s_hMainWnd;
     static AppContext* s_ctx;
+    static bool s_popupPaused;   // mirrors Application::m_popupPaused
 
     int m_hovered;
 };

@@ -47,4 +47,8 @@ private:
     int m_dragCurrentInsertIndex;
     float m_grabOffsetY;
     bool m_animating;
+
+    float m_selectAnimCurrentY = -1.0f;
+    float m_selectAnimTargetY = -1.0f;
+    bool m_isAnimatingSelect = false;
 };

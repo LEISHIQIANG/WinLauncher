@@ -128,6 +128,11 @@ bool HotkeyDialog::Show(HWND parent, const wchar_t* title,
         DispatchMessageW(&msg);
     }
 
+    if (msg.message == WM_QUIT)
+    {
+        PostQuitMessage((int)msg.wParam);
+    }
+
     bool ok = win->m_okPressed;
     if (ok)
     {
@@ -162,7 +167,7 @@ LRESULT HotkeyDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         EnsureD2D();
         m_form.Create(hWnd, m_dw.Get(), D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), m_init);
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
-        return 0;
+        return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
     }
 
     case WM_TIMER:
@@ -171,19 +176,19 @@ LRESULT HotkeyDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         {
             m_form.BlinkCaret();
             InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
         }
-        return 0;
+        break;
     }
 
     case WM_DESTROY:
     {
         KillTimer(hWnd, 0x999);
-        // Make sure recording stops if the dialog is force-closed
         if (KeyboardHook::IsRecording()) KeyboardHook::StopRecording();
         m_form.Destroy();
         g_hotkeyDialogBrushCache.clear();
-        // Wake the local modal loop without sending WM_QUIT to the whole app
         PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
+        GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         return 0;
     }
 
@@ -347,12 +352,6 @@ LRESULT HotkeyDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         bool repaint = false;
         m_form.OnKeyDown(hWnd, wParam, lParam, repaint);
         if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
-        return 0;
-    }
-
-    case WM_CLOSE:
-    {
-        DestroyWindow(hWnd);
         return 0;
     }
 
