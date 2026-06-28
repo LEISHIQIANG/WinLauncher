@@ -46,6 +46,7 @@ private:
     int HitTestDot(POINT pt);
     int HitTestDock(POINT pt);
     void EnsureIcons();
+    void RefreshIcons();
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
@@ -110,4 +111,6 @@ private:
     // EventBus subscription token (for cleanup)
     EventBus::Token m_configChangedToken = 0;
     EventBus::Token m_themeChangedToken = 0;
+
+    bool m_refreshingIcons = false;
 };

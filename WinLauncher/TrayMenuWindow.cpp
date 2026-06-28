@@ -61,7 +61,7 @@ void TrayMenuWindow::Show(POINT pt)
         return;
     }
 
-    SetWindowDisplayAffinity(s_instance->GetHWND(), WDA_MONITOR | 0x10);
+    SetWindowDisplayAffinitySafe(s_instance->GetHWND());
     s_instance->ApplySystemBackdrop();
     s_instance->EnsureD2D();
 

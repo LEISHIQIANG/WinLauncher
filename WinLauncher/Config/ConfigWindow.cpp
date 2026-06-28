@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "ConfigWindow.h"
 #include "PromptWindow.h"
+#include "ConfirmWindow.h"
 #include "WaitWindow.h"
 #include "HotkeyDialog.h"
 #include "UrlDialog.h"
@@ -9,6 +10,8 @@
 #include "../MouseHook.h"
 #include "../UI/Controls/IconRenderer.h"
 #include "../Services/SyncFolderService.h"
+#include "../Services/QuickLauncherConfigImport.h"
+#include "UIStyle.h"
 #include <windowsx.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -37,6 +40,7 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
     , m_lastRt(nullptr)
 {
     m_appCtx = ctx;
+    m_settingsPage.OnImportJsonClicked = [this]() { ImportJsonConfig(); };
     if (ctx)
     {
         m_viewModel = std::make_unique<ConfigViewModel>(ctx);
@@ -246,7 +250,7 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
     s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, x, y, w_px, h_px, parent);
     if (s_instance->GetHWND())
     {
-        SetWindowDisplayAffinity(s_instance->GetHWND(), WDA_MONITOR | 0x10);
+        SetWindowDisplayAffinitySafe(s_instance->GetHWND());
         s_instance->ApplySystemBackdrop();
         s_instance->EnsureD2D();
         s_instance->EnsureIcons();
@@ -354,6 +358,138 @@ void ConfigWindow::OpenConfigDir()
     std::wstring dir = GetConfigDir();
     if (!dir.empty())
         ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void ConfigWindow::ImportJsonConfig()
+{
+    // 1. Open file dialog to select JSON file
+    wchar_t filePath[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetHWND();
+    ofn.lpstrFilter = L"JSON\u6587\u4EF6 (*.json)\0*.json\0\u5168\u90E8\u6587\u4EF6 (*.*)\0*.*\0\0";
+    ofn.lpstrFile = filePath;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"\u9009\u62E9 QuickLauncher \u914D\u7F6E\u6587\u4EF6 (data.json)";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+    if (!GetOpenFileNameW(&ofn))
+        return;
+
+    // 2. Import with waiting spinner (JSON parsing + icon copying on background thread)
+    QuickLauncherConfigImport importer;
+    std::wstring configDir = GetConfigDir();
+    IConfigImportService::ImportResult result;
+
+    WaitWindow::Show(GetHWND(), L"\u8BF7\u7A0D\u5019", L"\u6B63\u5728\u5BFC\u5165 QuickLauncher \u914D\u7F6E\uFF0C\u8BF7\u7A0D\u5019...",
+        [&]() {
+            result = importer.Import(filePath, configDir);
+        }, m_appCtx);
+
+    // 3. Handle errors with project-style UI
+    if (!result.success)
+    {
+        ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u5931\u8D25", result.errorMsg.c_str(), m_appCtx);
+        return;
+    }
+
+    if (result.pages.empty() && !result.hasAutoStart)
+    {
+        ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u7ED3\u679C",
+            L"JSON \u6587\u4EF6\u4E2D\u672A\u627E\u5230\u53EF\u8F6C\u6362\u7684\u5FEB\u6377\u65B9\u5F0F\u3001\u5FEB\u6377\u952E\u6216 URL\u3002", m_appCtx);
+        return;
+    }
+
+    // 4. Count shortcuts BEFORE the move
+    int totalShortcuts = 0;
+    for (const auto& p : result.pages)
+        totalShortcuts += (int)p.shortcuts.size();
+    int totalPages = (int)result.pages.size();
+
+    // 5. Ask merge strategy BEFORE the second wait (user interaction on main thread)
+    bool replaceExisting = false;
+    auto& viewPages = m_viewModel->GetPages();
+    bool hasExisting = false;
+    for (const auto& p : viewPages)
+    {
+        if (!p.shortcuts.empty())
+        {
+            hasExisting = true;
+            break;
+        }
+    }
+
+    if (hasExisting)
+    {
+        replaceExisting = ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u914D\u7F6E",
+            L"\u68C0\u6D4B\u5230\u5F53\u524D\u5DF2\u6709\u5FEB\u6377\u65B9\u5F0F\uFF0C\u662F\u5426\u8981\u6E05\u9664\u5E76\u66FF\u6362\u4E3A\u5BFC\u5165\u7684\u914D\u7F6E\uFF1F\n\u70B9\u201C\u786E\u5B9A\u201D\u66FF\u6362\uFF0C\u70B9\u201C\u53D6\u6D88\u201D\u4FDD\u7559\u5E76\u8FFD\u52A0\u3002",
+            m_appCtx);
+    }
+
+    // 6. Apply merge, settings and save inside WaitWindow
+    WaitWindow::Show(GetHWND(), L"\u8BF7\u7A0D\u5019", L"\u6B63\u5728\u5E94\u7528\u5BFC\u5165\u7684\u914D\u7F6E\uFF0C\u8BF7\u7A0D\u5019...",
+        [&]() {
+            if (m_appCtx && m_appCtx->configService)
+            {
+                if (result.hasAutoStart)
+                    m_appCtx->configService->SetAutoStart(true);
+                if (result.popupColumns > 0)
+                    m_appCtx->configService->SetPopupColumns(result.popupColumns);
+                if (result.popupRows > 0)
+                    m_appCtx->configService->SetPopupRows(result.popupRows);
+                if (result.dockHeight > 0)
+                    m_appCtx->configService->SetDockHeight(result.dockHeight);
+            }
+
+            if (hasExisting && replaceExisting)
+                viewPages = std::move(result.pages);
+            else if (hasExisting)
+            {
+                for (auto& page : result.pages)
+                {
+                    bool found = false;
+                    for (auto& existingPage : viewPages)
+                    {
+                        if (existingPage.name == page.name)
+                        {
+                            for (auto& sc : page.shortcuts)
+                                existingPage.shortcuts.push_back(std::move(sc));
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        viewPages.push_back(std::move(page));
+                }
+            }
+            else
+                viewPages = std::move(result.pages);
+
+            bool hasDock = false;
+            for (const auto& p : viewPages)
+                if (p.name == L"DOCK") { hasDock = true; break; }
+            if (!hasDock)
+            {
+                Model::PopupPage dockPage;
+                dockPage.name = L"DOCK";
+                viewPages.insert(viewPages.begin(), std::move(dockPage));
+            }
+
+            m_viewModel->SaveConfig();
+        }, m_appCtx);
+
+    // 7. Reload UI on main thread
+    LoadConfig();
+    if (m_appCtx && m_appCtx->configService)
+        m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
+    InvalidateRect(GetHWND(), nullptr, FALSE);
+
+    // 8. Show result with project-style UI
+    ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u6210\u529F",
+        (std::wstring(L"\u5BFC\u5165\u5B8C\u6210\uFF01\u5171 ") +
+            std::to_wstring(totalPages) + L" \u4E2A\u5206\u7EC4\uFF0C" +
+            std::to_wstring(totalShortcuts) + L" \u4E2A\u5FEB\u6377\u65B9\u5F0F\u3002").c_str(),
+        m_appCtx);
 }
 
 void ConfigWindow::StartAnimation()

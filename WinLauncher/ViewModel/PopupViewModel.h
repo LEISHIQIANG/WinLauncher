@@ -61,6 +61,12 @@ public:
 
     bool IsAnimating() const { return m_animating; }
 
+    void SetCurrentPage(int page)
+    {
+        if (page >= 0 && page < (int)m_pages.size())
+            m_currentPage = page;
+    }
+
     bool SwitchToPage(int newPage)
     {
         if (m_pages.size() <= 1) return false;
@@ -99,15 +105,28 @@ public:
 
         float target = (float)m_currentPage;
         float error = target - m_scrollPosition;
+        int numPages = (int)m_pages.size();
+        if (numPages > 1)
+        {
+            float halfN = (float)numPages / 2.0f;
+            if (error > halfN) error -= (float)numPages;
+            else if (error < -halfN) error += (float)numPages;
+        }
 
-        float stiffness = 200.0f;
-        float damping = 22.0f;
+        float stiffness = 400.0f;
+        float damping = 40.0f;
 
         float force = error * stiffness - m_scrollVelocity * damping;
         m_scrollVelocity += force * dt;
         m_scrollPosition += m_scrollVelocity * dt;
 
-        if (std::abs(target - m_scrollPosition) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
+        if (numPages > 1)
+        {
+            while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
+            while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
+        }
+
+        if (std::abs(error) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
         {
             m_scrollPosition = target;
             m_scrollVelocity = 0.0f;

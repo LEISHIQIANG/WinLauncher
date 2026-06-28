@@ -74,6 +74,9 @@ protected:
     ComPtr<ID2D1RadialGradientBrush>    m_sheenBrush;
     D2D1_SIZE_F               m_effectWinSize = {};
 
+    // Corner radius for window decoration; 0 = no DWM rounded corners (Win10)
+    float m_cornerRadius = 8.0f;
+
     // Background refresh rate (ms). 11 = ~90 fps for live background behind the window.
     UINT     m_bgRefreshMs = 11;
 

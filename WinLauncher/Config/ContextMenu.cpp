@@ -75,7 +75,7 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
         return;
     }
 
-    SetWindowDisplayAffinity(s_instance->GetHWND(), WDA_MONITOR | 0x10);
+    SetWindowDisplayAffinitySafe(s_instance->GetHWND());
     s_instance->ApplySystemBackdrop();
     s_instance->EnsureD2D();
 

@@ -1,6 +1,7 @@
 #include "SettingsPage.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
+#include "..\version.h"
 #include <cmath>
 #include <vector>
 
@@ -660,6 +661,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const D2D1_RECT_F dirValueRect = D2D1::RectF(180.0f, 120.0f, 480.0f, 156.0f);
             const D2D1_RECT_F openConfigFileRect = D2D1::RectF(160.0f, 178.0f, 325.0f, 214.0f);
             const D2D1_RECT_F openLogFileRect = D2D1::RectF(335.0f, 178.0f, 500.0f, 214.0f);
+            const D2D1_RECT_F importJsonRect = D2D1::RectF(160.0f, 226.0f, 500.0f, 262.0f);
 
             ID2D1SolidColorBrush* tbNormal = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
@@ -766,6 +768,39 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 }
             }
 
+            // 3. Draw "导入QuickLauncher配置" Button
+            {
+                D2D1_ROUNDED_RECT btnRect = D2D1::RoundedRect(importJsonRect, 6.0f, 6.0f);
+                ID2D1SolidColorBrush* btnBg = nullptr;
+                D2D1_COLOR_F btnClr = m_hoveredImportJson ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float btnAlpha = m_hoveredImportJson ? 0.12f : 0.035f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(btnClr.r, btnClr.g, btnClr.b, btnAlpha), &btnBg);
+                if (btnBg)
+                {
+                    rt->FillRoundedRectangle(btnRect, btnBg);
+                    btnBg->Release();
+                }
+
+                ID2D1SolidColorBrush* btnBorder = nullptr;
+                D2D1_COLOR_F borderClr = m_hoveredImportJson ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                float borderAlpha = m_hoveredImportJson ? 0.26f : 0.07f;
+                rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &btnBorder);
+                if (btnBorder)
+                {
+                    rt->DrawRoundedRectangle(btnRect, btnBorder, UIStyle::Metrics::ControlStroke());
+                    btnBorder->Release();
+                }
+
+                if (tbNormal)
+                {
+                    std::wstring btnText = L"\u5BFC\u5165 QuickLauncher \u914D\u7F6E";
+                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), tfDefault, importJsonRect, tbNormal);
+                    tfDefault->SetTextAlignment(oldAlignment);
+                }
+            }
+
             if (tbNormal) tbNormal->Release();
             if (tbMuted) tbMuted->Release();
             if (cardBg) cardBg->Release();
@@ -785,7 +820,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 // App Name & Version
                 rt->DrawTextW(L"WinLauncher", 11, tfTitle, D2D1::RectF(160, 90, 510, 115), tbNormal);
-                rt->DrawTextW(L"版本: v1.1.0", 9, tfDefault, D2D1::RectF(160, 125, 510, 145), tbMuted);
+                std::wstring verText = std::wstring(L"版本: v") + WINLAUNCHER_VERSION_WSTR;
+                rt->DrawTextW(verText.c_str(), (UINT32)verText.size(), tfDefault, D2D1::RectF(160, 125, 510, 145), tbMuted);
 
                 // Description
                 std::wstring desc = L"一个极简、快速、带毛玻璃特效的快捷方式启动工具。\n可以通过鼠标中键或侧键快速唤醒，方便管理并运行常用程序。";
@@ -893,11 +929,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         bool hConfigFile = HitTestOpenConfigFile(pt);
         bool hLogFile = HitTestOpenLogFile(pt);
         bool hConfigDirText = HitTestConfigDirText(pt);
-        if (hConfigFile != m_hoveredOpenConfigFile || hLogFile != m_hoveredOpenLogFile || hConfigDirText != m_hoveredConfigDirText)
+        bool hImportJson = HitTestImportJson(pt);
+        if (hConfigFile != m_hoveredOpenConfigFile || hLogFile != m_hoveredOpenLogFile || hConfigDirText != m_hoveredConfigDirText || hImportJson != m_hoveredImportJson)
         {
             m_hoveredOpenConfigFile = hConfigFile;
             m_hoveredOpenLogFile = hLogFile;
             m_hoveredConfigDirText = hConfigDirText;
+            m_hoveredImportJson = hImportJson;
             repaint = true;
         }
     }
@@ -905,12 +943,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0)
+    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0)
     {
         m_hoveredAutoStart = false;
         m_hoveredOpenConfigFile = false;
         m_hoveredOpenLogFile = false;
         m_hoveredConfigDirText = false;
+        m_hoveredImportJson = false;
         m_hoveredTrigger = -1;
         m_hoveredTheme = -1;
         m_hoveredThemeColor = -1;
@@ -1093,6 +1132,12 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_owner->OpenConfigDir();
             repaint = true;
         }
+        else if (HitTestImportJson(pt))
+        {
+            if (OnImportJsonClicked)
+                OnImportJsonClicked();
+            repaint = true;
+        }
     }
 }
 
@@ -1208,6 +1253,12 @@ bool SettingsPage::HitTestConfigDirText(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
     return (pt.x >= 180 && pt.x <= 480 && pt.y >= 120 && pt.y <= 156);
+}
+
+bool SettingsPage::HitTestImportJson(POINT pt)
+{
+    if (m_categoryIndex != 3) return false;
+    return (pt.x >= 160 && pt.x <= 500 && pt.y >= 226 && pt.y <= 262);
 }
 
 bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType)

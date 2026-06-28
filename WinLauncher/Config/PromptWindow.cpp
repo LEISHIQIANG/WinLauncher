@@ -80,7 +80,7 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
         return false;
     }
 
-    SetWindowDisplayAffinity(win->GetHWND(), WDA_MONITOR | 0x10);
+    SetWindowDisplayAffinitySafe(win->GetHWND());
 
     win->ApplySystemBackdrop();
     win->EnsureD2D();

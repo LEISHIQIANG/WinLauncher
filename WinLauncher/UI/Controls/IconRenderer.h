@@ -6,6 +6,7 @@
 #include <string>
 #include <cmath>
 #include "../../Config/UIStyle.h"
+#include "../../App/Logger.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -14,7 +15,16 @@ class IconRenderer
 public:
     static ComPtr<ID2D1Bitmap> HicontoD2D(ID2D1HwndRenderTarget* rt, HICON hIcon, int size = 48)
     {
-        if (!rt) return nullptr;
+        if (!rt)
+        {
+            LOG_G_ERRA(L"HicontoD2D: rt is null");
+            return nullptr;
+        }
+        if (size <= 0 || size > 512)
+        {
+            LOG_G_ERRA(L"HicontoD2D: invalid size=%d", size);
+            return nullptr;
+        }
         HICON hi = hIcon ? hIcon : LoadIcon(nullptr, IDI_APPLICATION);
         const int SZ = size;
 
@@ -28,9 +38,27 @@ public:
 
         void* bits = nullptr;
         HDC cdc = CreateCompatibleDC(nullptr);
+        if (!cdc)
+        {
+            LOG_G_ERRA(L"HicontoD2D: CreateCompatibleDC failed, size=%d, err=%d", SZ, GetLastError());
+            return nullptr;
+        }
+
         HBITMAP dib = CreateDIBSection(cdc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (!dib || !bits)
+        {
+            LOG_G_ERRA(L"HicontoD2D: CreateDIBSection failed, size=%d, dib=%p, bits=%p, err=%d",
+                SZ, (void*)dib, bits, GetLastError());
+            DeleteDC(cdc);
+            return nullptr;
+        }
+
         SelectObject(cdc, dib);
-        DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL);
+        if (!DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL))
+        {
+            LOG_G_WORNING(L"HicontoD2D: DrawIconEx returned FALSE, hIcon=%p, size=%d, err=%d",
+                (void*)hi, SZ, GetLastError());
+        }
         GdiFlush();
 
         DWORD* p = (DWORD*)bits;
@@ -49,7 +77,15 @@ public:
         D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96.0f, 96.0f);
         ComPtr<ID2D1Bitmap> bmp;
-        rt->CreateBitmap(D2D1::SizeU(SZ, SZ), bits, SZ * 4, &props, &bmp);
+        HRESULT hr = rt->CreateBitmap(D2D1::SizeU(SZ, SZ), bits, SZ * 4, &props, &bmp);
+        if (FAILED(hr))
+        {
+            LOG_G_ERRA(L"HicontoD2D: CreateBitmap failed, size=%d, hr=0x%08X, err=%d",
+                SZ, hr, GetLastError());
+            DeleteObject(dib);
+            DeleteDC(cdc);
+            return nullptr;
+        }
 
         DeleteObject(dib);
         DeleteDC(cdc);

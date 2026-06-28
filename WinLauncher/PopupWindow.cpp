@@ -24,6 +24,7 @@ static const int WND_PAD        = 8;
 
 static const UINT_PTR AUTO_HIDE_TIMER_ID = 1;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
+static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
 
 static double GetTimeInSeconds()
 {
@@ -448,7 +449,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
         s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, pt.x, pt.y, w_px, h_px, parent);
         if (s_instance->GetHWND())
         {
-            SetWindowDisplayAffinity(s_instance->GetHWND(), WDA_MONITOR | 0x10);
+            SetWindowDisplayAffinitySafe(s_instance->GetHWND());
             s_instance->ApplySystemBackdrop();
             if (s_instance->EnsureD2D())
             {
@@ -510,7 +511,10 @@ void PopupWindow::Hide()
         if (h) ShowWindow(h, SW_HIDE);
 
         if (s_instance->m_viewModel)
+        {
+            s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
             s_instance->m_viewModel->NotifyPopupHidden();
+        }
     }
 }
 
@@ -767,6 +771,11 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 
                 // Dynamic opacity transition based on m_scrollPosition distance
                 float dist = std::abs((float)i - m_scrollPosition);
+                if (numPages > 1)
+                {
+                    float halfN = (float)numPages / 2.0f;
+                    if (dist > halfN) dist = (float)numPages - dist;
+                }
                 float factor = 1.0f - dist;
                 if (factor < 0.0f) factor = 0.0f;
                 if (factor > 1.0f) factor = 1.0f;
@@ -1014,6 +1023,39 @@ void PopupWindow::EnsureIcons()
     }
 }
 
+void PopupWindow::RefreshIcons()
+{
+    if (!m_rt || m_refreshingIcons) return;
+    m_refreshingIcons = true;
+
+    // Step 1: Destroy all HICONs and clear D2D bitmaps → icons become default placeholders
+    for (auto& page : m_pages)
+    {
+        for (auto& sc : page.shortcuts)
+        {
+            if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
+        }
+        for (auto* bmp : page.iconBitmaps)
+            if (bmp) bmp->Release();
+        page.iconBitmaps.clear();
+    }
+    for (auto& sc : m_dockPage.shortcuts)
+    {
+        if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
+    }
+    for (auto* bmp : m_dockPage.iconBitmaps)
+        if (bmp) bmp->Release();
+    m_dockPage.iconBitmaps.clear();
+    m_bmpBrushCache.clear();
+
+    // Force immediate redraw so user sees default icons flash in
+    InvalidateRect(GetHWND(), nullptr, FALSE);
+    UpdateWindow(GetHWND());
+
+    // Step 2: re-extract HICONs and rebuild bitmaps in next message
+    PostMessage(GetHWND(), WM_USER_REFRESH_ICONS, 0, 0);
+}
+
 void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
 {
     if (pageIndex < 0 || pageIndex >= (int)m_pages.size()) return;
@@ -1164,9 +1206,18 @@ void PopupWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         D2D1_MATRIX_3X2_F originalTransform;
         rt->GetTransform(&originalTransform);
 
-        for (int i = 0; i < (int)m_pages.size(); i++)
+        int numPages = (int)m_pages.size();
+        for (int i = 0; i < numPages; i++)
         {
-            float offsetX = (i - m_scrollPosition) * w;
+            float diff = (float)i - m_scrollPosition;
+            if (numPages > 1)
+            {
+                float halfN = (float)numPages / 2.0f;
+                if (diff > halfN) diff -= (float)numPages;
+                else if (diff < -halfN) diff += (float)numPages;
+            }
+
+            float offsetX = diff * w;
             if (std::abs(offsetX) < w)
             {
                 rt->SetTransform(D2D1::Matrix3x2F::Translation(offsetX, 0.0f) * originalTransform);
@@ -1435,15 +1486,28 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
             float target = (float)m_currentPage;
             float error = target - m_scrollPosition;
+            int numPages = (int)m_pages.size();
+            if (numPages > 1)
+            {
+                float halfN = (float)numPages / 2.0f;
+                if (error > halfN) error -= (float)numPages;
+                else if (error < -halfN) error += (float)numPages;
+            }
 
-            float stiffness = 350.0f;
-            float damping = 30.0f;
+            float stiffness = 400.0f;
+            float damping = 40.0f;
 
             float force = error * stiffness - m_scrollVelocity * damping;
             m_scrollVelocity += force * dt;
             m_scrollPosition += m_scrollVelocity * dt;
 
-            if (std::abs(target - m_scrollPosition) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
+            if (numPages > 1)
+            {
+                while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
+                while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
+            }
+
+            if (std::abs(error) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
             {
                 m_scrollPosition = target;
                 m_scrollVelocity = 0.0f;
@@ -1461,6 +1525,37 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 PostMessage(hWnd, WM_USER_ANIMATE, 0, 0);
             }
         }
+        return 0;
+    }
+
+    case WM_USER_REFRESH_ICONS:
+    {
+        if (!m_refreshingIcons) return 0;
+        m_refreshingIcons = false;
+
+        // Re-extract HICONs from source
+        for (auto& page : m_pages)
+        {
+            for (auto& sc : page.shortcuts)
+                ShortcutManager::RefreshShortcutIcon(sc);
+        }
+        for (auto& sc : m_dockPage.shortcuts)
+            ShortcutManager::RefreshShortcutIcon(sc);
+
+        // Clear bitmaps to force recreate from fresh HICONs
+        for (auto& page : m_pages)
+        {
+            for (auto* bmp : page.iconBitmaps)
+                if (bmp) bmp->Release();
+            page.iconBitmaps.clear();
+        }
+        for (auto* bmp : m_dockPage.iconBitmaps)
+            if (bmp) bmp->Release();
+        m_dockPage.iconBitmaps.clear();
+        m_bmpBrushCache.clear();
+
+        EnsureIcons();
+        InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
     }
 
@@ -1552,16 +1647,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             m_currentPage = targetPage;
             m_hovered = -1;
-
-            float target = (float)m_currentPage;
-            if (target - m_scrollPosition > 1.0f)
-            {
-                m_scrollPosition = target - 1.0f;
-            }
-            else if (target - m_scrollPosition < -1.0f)
-            {
-                m_scrollPosition = target + 1.0f;
-            }
+            if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
 
             if (!m_animating)
             {
@@ -1613,25 +1699,12 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
         }
 
-        // Handle dock click (check before normal hit test so dock takes priority)
-        int dockHit = HitTestDock(pt);
-        if ((!m_searchActive || m_searchQuery.empty()) && dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
-        {
-            auto& sc = m_dockPage.shortcuts[dockHit];
-            if (!sc.targetPath.empty())
-            {
-                LOG_G_INFO(L"PopupWindow::LButtonDown: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                LaunchShortcut(sc);
-            }
-            if (!m_pinned) Hide();
-            return 0;
-        }
-
         int hit = HitTest(pt);
         if (m_searchActive && !m_searchQuery.empty())
         {
             if (hit >= 0 && hit < (int)m_searchResults.size())
             {
+                if (!m_pinned) Hide();
                 auto& sc = m_searchResults[hit].shortcut;
                 if (!sc.targetPath.empty())
                 {
@@ -1645,7 +1718,6 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                         m_searchResults[hit].originalShortcutIndex
                     );
                 }
-                if (!m_pinned) Hide();
             }
             else
             {
@@ -1654,9 +1726,24 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         else
         {
+            // Handle dock click (check before normal hit test so dock takes priority)
+            int dockHit = HitTestDock(pt);
+            if (dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
+            {
+                auto& sc = m_dockPage.shortcuts[dockHit];
+                if (!m_pinned) Hide();
+                if (!sc.targetPath.empty())
+                {
+                    LOG_G_INFO(L"PopupWindow::LButtonDown: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                    LaunchShortcut(sc);
+                }
+                return 0;
+            }
+
             if (hit >= 0 && hit < (int)m_pages[m_currentPage].shortcuts.size())
             {
                 auto& sc = m_pages[m_currentPage].shortcuts[hit];
+                if (!m_pinned) Hide();
                 if (!sc.targetPath.empty())
                 {
                     LOG_G_INFO(L"PopupWindow::LButtonDown: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -1664,16 +1751,35 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 }
                 if (m_viewModel)
                     m_viewModel->NotifyShortcutLaunched(m_currentPage, hit);
-                if (!m_pinned) Hide();
             }
             else if (m_pinned)
             {
                 ReleaseCapture();
                 SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
-            else
+        }
+        return 0;
+    }
+
+    case WM_LBUTTONDBLCLK:
+    {
+        POINT pt_px{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        float scale = GetWindowScale(hWnd);
+        POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
+
+        // On blank area double-click → refresh icons
+        if (!m_searchActive || m_searchQuery.empty())
+        {
+            bool onTab = pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22;
+            int dockHit = HitTestDock(pt);
+            int hit = HitTest(pt);
+            bool onShortcut = hit >= 0 && hit < (int)m_pages[m_currentPage].shortcuts.size();
+            bool onDock = dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size();
+
+            if (!onTab && !onShortcut && !onDock)
             {
-                Hide();
+                RefreshIcons();
+                return 0;
             }
         }
         return 0;
@@ -1814,16 +1920,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     m_currentPage = targetPage;
                     m_hovered = -1;
-
-                    float target = (float)m_currentPage;
-                    if (target - m_scrollPosition > 1.0f)
-                    {
-                        m_scrollPosition = target - 1.0f;
-                    }
-                    else if (target - m_scrollPosition < -1.0f)
-                    {
-                        m_scrollPosition = target + 1.0f;
-                    }
+                    if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
 
                     if (!m_animating)
                     {
@@ -1855,16 +1952,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     m_currentPage = targetPage;
                     m_hovered = -1;
-
-                    float target = (float)m_currentPage;
-                    if (target - m_scrollPosition > 1.0f)
-                    {
-                        m_scrollPosition = target - 1.0f;
-                    }
-                    else if (target - m_scrollPosition < -1.0f)
-                    {
-                        m_scrollPosition = target + 1.0f;
-                    }
+                    if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
 
                     if (!m_animating)
                     {

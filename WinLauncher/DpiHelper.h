@@ -1,6 +1,14 @@
 #pragma once
 #include <Windows.h>
 
+static void SetWindowDisplayAffinitySafe(HWND hwnd)
+{
+    if (!SetWindowDisplayAffinity(hwnd, WDA_MONITOR | 0x10))
+    {
+        SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+    }
+}
+
 class DpiHelper
 {
 public:

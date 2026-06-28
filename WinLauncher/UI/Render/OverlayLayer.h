@@ -7,6 +7,7 @@ class OverlayLayer : public IRenderLayer
 {
 public:
     OverlayLayer() = default;
+    void SetCornerRadius(float r) { m_cornerRadius = r; }
     ~OverlayLayer() { ReleaseResources(); }
 
     virtual void Render(ID2D1HwndRenderTarget* rt, ID2D1DeviceContext* dc,
@@ -48,7 +49,7 @@ public:
         if (m_sheenBrush)
         {
             rt->FillRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1, h - 1), 8, 8), m_sheenBrush.Get());
+                D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1, h - 1), m_cornerRadius, m_cornerRadius), m_sheenBrush.Get());
         }
 
         // Tint
@@ -61,7 +62,7 @@ public:
         if (m_borderBrush)
         {
             rt->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), 8, 8),
+                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
                 m_borderBrush.Get(), 1.0f);
         }
     }
@@ -86,6 +87,7 @@ private:
     }
 
     D2D1_SIZE_F m_size = {};
+    float m_cornerRadius = 8.0f;
     ComPtr<ID2D1GradientStopCollection> m_gsc;
     ComPtr<ID2D1RadialGradientBrush> m_sheenBrush;
     ComPtr<ID2D1SolidColorBrush> m_tintBrush;

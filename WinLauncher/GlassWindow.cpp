@@ -87,13 +87,32 @@ ComPtr<ID2D1SolidColorBrush> GlassWindow::GetCachedBrush(const D2D1_COLOR_F& col
     return nullptr;
 }
 
+static bool IsWindows11OrLater()
+{
+    auto ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return false;
+    auto fn = (LONG(WINAPI*)(void*))GetProcAddress(ntdll, "RtlGetVersion");
+    if (!fn) return false;
+    OSVERSIONINFOW vi = { sizeof(vi) };
+    if (fn(&vi) != 0) return false;
+    return vi.dwBuildNumber >= 22000;
+}
+
 void GlassWindow::ApplySystemBackdrop()
 {
     MARGINS m{ -1, -1, -1, -1 };
     DwmExtendFrameIntoClientArea(m_hWnd, &m);
 
-    DWORD corner = 2;
-    DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+    if (IsWindows11OrLater())
+    {
+        DWORD corner = 2;
+        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+        m_cornerRadius = 8.0f;
+    }
+    else
+    {
+        m_cornerRadius = 0.0f;
+    }
 
     DWORD border = 0xFFFFFFFE;
     DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
@@ -382,7 +401,7 @@ void GlassWindow::CompositeBackgroundToCache()
         if (m_sheenBrush)
         {
             bmpRt->FillRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1, h - 1), 8, 8), m_sheenBrush.Get());
+                D2D1::RoundedRect(D2D1::RectF(1, 1, w - 1, h - 1), m_cornerRadius, m_cornerRadius), m_sheenBrush.Get());
         }
     }
 
@@ -399,7 +418,7 @@ void GlassWindow::CompositeBackgroundToCache()
         if (bo)
         {
             bmpRt->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), 8, 8),
+                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
                 bo.Get(), 1.0f);
         }
     }
@@ -462,7 +481,7 @@ void GlassWindow::DoPaint()
             if (bo)
             {
                 m_rt->DrawRoundedRectangle(
-                    D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), 8, 8),
+                    D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
                     bo.Get(), 1.0f);
             }
         }

@@ -1,6 +1,7 @@
 #pragma once
 #include "ConfigPage.h"
 #include <string>
+#include <functional>
 
 class IConfigWindow;
 
@@ -17,6 +18,8 @@ public:
     virtual void OnMouseLeave(bool& repaint) override;
     virtual void OnLButtonDown(POINT pt, bool& repaint) override;
 
+    std::function<void()> OnImportJsonClicked;
+
 private:
     bool HitTestAutoStart(POINT pt);
     int HitTestTrigger(POINT pt);
@@ -26,6 +29,7 @@ private:
     bool HitTestOpenConfigFile(POINT pt);
     bool HitTestOpenLogFile(POINT pt);
     bool HitTestConfigDirText(POINT pt);
+    bool HitTestImportJson(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
 
@@ -37,6 +41,7 @@ private:
     bool m_hoveredOpenConfigFile = false;
     bool m_hoveredOpenLogFile = false;
     bool m_hoveredConfigDirText = false;
+    bool m_hoveredImportJson = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredTheme = -1;   // 0 = dark, 1 = light
     int m_hoveredThemeColor = -1; // 0 to 9

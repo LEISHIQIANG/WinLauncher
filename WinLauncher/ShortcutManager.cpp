@@ -659,6 +659,27 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
     return GetDefaultIconForType(shortcut.type, kind);
 }
 
+void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut)
+{
+    if (shortcut.hIcon)
+    {
+        DestroyIcon(shortcut.hIcon);
+        shortcut.hIcon = nullptr;
+    }
+    shortcut.hIcon = GetShortcutIcon(shortcut);
+}
+
+void ShortcutManager::RefreshShortcutIcons(std::vector<RendPopupPage>& pages)
+{
+    for (auto& page : pages)
+    {
+        for (auto& sc : page.shortcuts)
+        {
+            RefreshShortcutIcon(sc);
+        }
+    }
+}
+
 HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)
 {
     RendShortcutInfo renderInfo;

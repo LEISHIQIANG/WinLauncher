@@ -82,6 +82,7 @@ public:
     virtual void SetWindowMode(int mode) override;
     virtual int GetDockHeight() override;
     virtual void SetDockHeight(int height) override;
+    void ImportJsonConfig();
 
 protected:
     virtual const wchar_t* ClassName() const override { return L"WinLauncherConfig"; }
