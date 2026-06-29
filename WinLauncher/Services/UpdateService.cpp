@@ -545,14 +545,15 @@ void UpdateService::ApplyUpdate(AppContext* ctx)
     GetTempPathW(MAX_PATH, tempDir);
     std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
 
-    std::wstring params = L"/c :loop & taskkill /F /PID " + std::to_wstring(GetCurrentProcessId()) + 
-                          L" >nul 2>&1 & ping 127.0.0.1 -n 2 >nul & del /F /Q \"" + currentExePath + 
-                          L"\" & if exist \"" + currentExePath + L"\" goto loop & move /Y \"" + targetPath + 
-                          L"\" \"" + currentExePath + L"\" & start \"\" \"" + currentExePath + L"\" --updated";
+    std::wstring params = L"-WindowStyle Hidden -Command \"Stop-Process -Id " + std::to_wstring(GetCurrentProcessId()) + 
+                          L" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; for ($i=0; $i -lt 10; $i++) { try { Remove-Item -Path '" + currentExePath + 
+                          L"' -Force -ErrorAction Stop; Move-Item -Path '" + targetPath + 
+                          L"' -Destination '" + currentExePath + L"' -Force -ErrorAction Stop; Start-Process -FilePath '" + currentExePath + 
+                          L"' -ArgumentList '--updated'; break; } catch { Start-Sleep -Seconds 1; } }\"";
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
-    sei.lpFile = L"cmd.exe";
+    sei.lpFile = L"powershell.exe";
     sei.lpParameters = params.c_str();
     sei.nShow = SW_HIDE;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
