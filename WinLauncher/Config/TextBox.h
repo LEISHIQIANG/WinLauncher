@@ -3,6 +3,7 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl.h>
+#include <atomic>
 #include <string>
 #include "UIStyle.h"
 
@@ -25,8 +26,10 @@ public:
 
     void OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool& repaint);
-    void OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint);
+    void OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repaint);
+    void OnMouseWheel(HWND hWnd, short zDelta, POINT pt, float scale, bool& repaint);
+    void OnRButtonUp(HWND hWnd, bool& repaint);
 
     void BlinkCaret();
     void ResetCaretBlink();
@@ -46,8 +49,9 @@ public:
     void SetBounds(const D2D1_RECT_F& bounds) { m_bounds = bounds; }
     D2D1_RECT_F GetBounds() const { return m_bounds; }
 
-    void SetFocus(bool focus) { m_hasFocus = focus; ResetCaretBlink(); }
+    void SetFocus(bool focus);
     bool HasFocus() const { return m_hasFocus; }
+    static bool IsAnyTextBoxFocused();
 
     bool HitTest(POINT pt) const
     {
@@ -58,10 +62,18 @@ public:
     void SetStyle(const UIStyle::TextBoxStyle& style);
     const UIStyle::TextBoxStyle& GetStyle() const { return m_style; }
 
+    void SetMultiline(bool ml) { m_multiline = ml; }
+    bool IsMultiline() const { return m_multiline; }
+
 private:
     void RecreateTextLayout();
+    void UpdateScrollRange();
+    void DrawScrollbar(ID2D1HwndRenderTarget* rt, float scale);
+    void EnsureCaretVisible();
+    bool HitTestScrollbar(POINT pt, float scale) const;
     bool DeleteSelection(bool& repaint);
     size_t GetCaretIndexFromPoint(POINT pt, float scale) const;
+    void MoveCaretVertical(HWND hWnd, int direction, bool shift, bool& repaint); // direction: -1 up, +1 down
 
     HWND m_parent = nullptr;
     IDWriteFactory* m_dwFactory = nullptr;
@@ -76,7 +88,23 @@ private:
     bool m_hasFocus = false;
     bool m_caretVisible = false;
     bool m_dragSelecting = false;
+    bool m_multiline = false;
+    bool m_draggingScrollbar = false;
     UIStyle::TextBoxStyle m_style;
     std::wstring m_compText;
     size_t m_compCaretOffset = 0;
+
+    // Scroll state (multiline only)
+    float m_scrollOffset = 0.0f;   // current scroll position in pixels
+    float m_scrollMax    = 0.0f;   // max scroll range in pixels
+    float m_sbDragStartY = 0.0f;   // mouse Y when scrollbar drag started
+    float m_sbDragStartOff = 0.0f; // scrollOffset when drag started
+
+    // Triple-click tracking
+    int     m_clickCount = 0;
+    DWORD   m_lastClickTime = 0;
+    size_t  m_tripleClickLineStart = 0;
+    size_t  m_tripleClickLineEnd = 0;
+
+    static std::atomic<int> s_focusedTextBoxCount;
 };

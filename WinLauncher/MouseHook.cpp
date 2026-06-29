@@ -1,6 +1,8 @@
 #include "MouseHook.h"
 #include "App/AppMessages.h"
 #include "App/Logger.h"
+#include "InputFocusGuard.h"
+#include "Services/MacroService.h"
 
 std::atomic<int>    MouseHook::s_triggerType(0);
 std::atomic<HHOOK>  MouseHook::s_hHook       = nullptr;
@@ -8,7 +10,15 @@ std::atomic<HWND>   MouseHook::s_hTargetWnd  = nullptr;
 HANDLE              MouseHook::s_hThread     = nullptr;
 HANDLE              MouseHook::s_hReadyEvent = nullptr;
 std::atomic<bool>   MouseHook::s_running(false);
+std::atomic<DWORD>  MouseHook::s_suppressButtonUpMask(0);
 HMODULE             MouseHook::s_hModule     = nullptr;
+
+namespace
+{
+    constexpr DWORD SuppressMiddleUp  = 0x01;
+    constexpr DWORD SuppressXButton1Up = 0x02;
+    constexpr DWORD SuppressXButton2Up = 0x04;
+}
 
 void MouseHook::SetTriggerType(int type)
 {
@@ -21,6 +31,7 @@ bool MouseHook::Install(HWND hTargetWnd)
     if (s_running.load()) return true;
 
     s_hTargetWnd = hTargetWnd;
+    s_suppressButtonUpMask.store(0);
 
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!s_hReadyEvent)
@@ -82,6 +93,7 @@ void MouseHook::Uninstall()
 
     s_hHook      = nullptr;
     s_hTargetWnd = nullptr;
+    s_suppressButtonUpMask.store(0);
     LOG_G_INFO(L"MouseHook::Uninstall: uninstalled successfully");
 }
 
@@ -124,30 +136,80 @@ DWORD WINAPI MouseHook::ThreadProc(LPVOID)
 
 LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode == HC_ACTION && s_hTargetWnd)
+    if (nCode == HC_ACTION && s_hTargetWnd && !MacroRecorder::IsRecording())
     {
+        MSLLHOOKSTRUCT* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+        DWORD suppressMask = s_suppressButtonUpMask.load();
+        if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
+        {
+            s_suppressButtonUpMask.fetch_and(~SuppressMiddleUp);
+            return 1;
+        }
+        if (wParam == WM_XBUTTONUP)
+        {
+            WORD btn = HIWORD(pMsh->mouseData);
+            if (btn == XBUTTON1 && (suppressMask & SuppressXButton1Up))
+            {
+                s_suppressButtonUpMask.fetch_and(~SuppressXButton1Up);
+                return 1;
+            }
+            if (btn == XBUTTON2 && (suppressMask & SuppressXButton2Up))
+            {
+                s_suppressButtonUpMask.fetch_and(~SuppressXButton2Up);
+                return 1;
+            }
+        }
+
+        if (MacroPlayer::IsPlaying())
+        {
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+
         int trigger = s_triggerType.load();
         bool activated = false;
+        DWORD suppressUpMask = 0;
 
         if (trigger == 0) // Middle Click
         {
-            if (wParam == WM_MBUTTONDOWN) activated = true;
+            if (wParam == WM_MBUTTONDOWN)
+            {
+                activated = true;
+                suppressUpMask = SuppressMiddleUp;
+            }
         }
         else if (trigger == 1 || trigger == 2) // Side button 4 or 5
         {
             if (wParam == WM_XBUTTONDOWN)
             {
-                MSLLHOOKSTRUCT* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
                 WORD btn = HIWORD(pMsh->mouseData);
-                if (trigger == 1 && btn == XBUTTON1) activated = true;
-                if (trigger == 2 && btn == XBUTTON2) activated = true;
+                if (trigger == 1 && btn == XBUTTON1)
+                {
+                    activated = true;
+                    suppressUpMask = SuppressXButton1Up;
+                }
+                if (trigger == 2 && btn == XBUTTON2)
+                {
+                    activated = true;
+                    suppressUpMask = SuppressXButton2Up;
+                }
             }
         }
 
         if (activated)
         {
+            if (InputFocusGuard::IsTextInputContextActive())
+            {
+                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger ignored because text input is active");
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
+
             LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger detected (type=%d), posting ShowPopup message", trigger);
             PostMessage(s_hTargetWnd, AppMessages::ShowPopup, 0, 0);
+            if (suppressUpMask != 0)
+            {
+                s_suppressButtonUpMask.fetch_or(suppressUpMask);
+            }
+            return 1;
         }
     }
 

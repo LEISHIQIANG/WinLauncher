@@ -166,7 +166,7 @@ LRESULT UrlDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     case WM_CREATE:
     {
         EnsureD2D();
-        m_form.Create(hWnd, m_dw.Get(), D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), m_init);
+        m_form.Create(hWnd, m_dw.Get(), D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), m_init, m_appCtx);
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
         return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
     }
@@ -382,8 +382,8 @@ void UrlDialog::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     D2D1_SIZE_F sz = rt->GetSize();
     float scale = DpiHelper::GetWindowScale(GetHWND());
-    float W = sz.width / scale;
-    float H = sz.height / scale;
+    float W = sz.width;
+    float H = sz.height;
 
     if (m_tfTitle)
     {

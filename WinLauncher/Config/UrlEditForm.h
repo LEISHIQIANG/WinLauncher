@@ -11,6 +11,8 @@
 
 using Microsoft::WRL::ComPtr;
 
+struct AppContext;
+
 struct UrlEditFormResult
 {
     std::wstring name;
@@ -41,7 +43,7 @@ public:
 
     static constexpr float PreferredContentHeight() { return 348.0f; }
 
-    bool Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const UrlEditFormInitParams& init);
+    bool Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const UrlEditFormInitParams& init, AppContext* ctx = nullptr);
     void Destroy();
 
     void Paint(ID2D1HwndRenderTarget* rt, float scale);
@@ -94,6 +96,7 @@ private:
     void DrawIconPreview(ID2D1HwndRenderTarget* rt);
     HICON GetFileIconForPreview(const std::wstring& path);
 
+    AppContext*     m_ctx = nullptr;
     HWND            m_parentHWND = nullptr;
     D2D1_RECT_F     m_bounds = {};
     UrlEditFormInitParams m_init;

@@ -8,11 +8,15 @@
 #include "Config/PromptWindow.h"
 #include "Config/ConfirmWindow.h"
 #include "App/Logger.h"
+#include "App/AppMessages.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <algorithm>
 #include <imm.h>
+#include <string>
 #pragma comment(lib, "imm32.lib")
+#include "Services/MacroService.h"
+#include "Services/BatchLaunchService.h"
 
 PopupWindow* PopupWindow::s_instance = nullptr;
 
@@ -28,11 +32,32 @@ static const int WND_PAD        = 8;
 static const UINT_PTR AUTO_HIDE_TIMER_ID = 1;
 static const UINT_PTR POPUP_ANIMATION_TIMER_ID = 2;
 static const UINT POPUP_ANIMATION_FRAME_MS = 8;
+static const UINT_PTR TIMELINE_ANIMATION_TIMER_ID = 3;
+static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
+static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
 static const double POPUP_SLOW_SHOW_MS = 24.0;
 static const double POPUP_SLOW_FRAME_MS = 16.0;
 static const double POPUP_SLOW_ICON_REFRESH_MS = 40.0;
+static const double FILE_SELECTION_VALIDITY_DURATION = 5.0;
+
+static bool ShouldRenderGeneratedDefaultIcon(const RendPopupPage& page, const RendShortcutInfo& shortcut)
+{
+    return !page.isSyncFolder && ShortcutManager::UsesGeneratedDefaultIcon(shortcut);
+}
+
+static bool HasLaunchAction(const RendShortcutInfo& shortcut)
+{
+    switch (shortcut.type)
+    {
+    case Model::ShortcutType::Macro:
+    case Model::ShortcutType::Batch:
+        return !shortcut.arguments.empty();
+    default:
+        return !shortcut.targetPath.empty();
+    }
+}
 
 static double GetTimeInSeconds()
 {
@@ -158,6 +183,10 @@ PopupWindow::PopupWindow(AppContext* ctx)
 
             UpdateTheme();
         });
+        m_uiScaleChangedToken = m_appCtx->eventBus->Subscribe(EventType::UiScaleChanged, [this]() {
+            UpdateWindowSize();
+            if (GetHWND()) InvalidateRect(GetHWND(), nullptr, FALSE);
+        });
     }
     else
     {
@@ -174,6 +203,8 @@ PopupWindow::~PopupWindow()
             m_appCtx->eventBus->Unsubscribe(EventType::ConfigChanged, m_configChangedToken);
         if (m_themeChangedToken)
             m_appCtx->eventBus->Unsubscribe(EventType::ThemeChanged, m_themeChangedToken);
+        if (m_uiScaleChangedToken)
+            m_appCtx->eventBus->Unsubscribe(EventType::UiScaleChanged, m_uiScaleChangedToken);
     }
     ClearPages();
 }
@@ -347,8 +378,18 @@ bool PopupWindow::IsVisible()
     return s_instance && s_instance->GetHWND() && IsWindowVisible(s_instance->GetHWND());
 }
 
+HWND PopupWindow::GetRestoreForegroundWindow()
+{
+    if (!s_instance)
+        return nullptr;
+
+    HWND hWnd = s_instance->m_restoreForegroundWnd;
+    return (hWnd && IsWindow(hWnd)) ? hWnd : nullptr;
+}
+
 void PopupWindow::Show(HWND parent, POINT pt)
 {
+    HWND prevActive = GetForegroundWindow();
     double showStart = GetTimeInSeconds();
 
     if (!s_instance)
@@ -357,6 +398,13 @@ void PopupWindow::Show(HWND parent, POINT pt)
     }
 
     if (!s_instance) return;
+
+    if (prevActive && prevActive != s_instance->GetHWND())
+    {
+        s_instance->m_restoreForegroundWnd = prevActive;
+    }
+
+    POINT clickPt = pt; // Store the original click position
 
     // 1. Load configuration and page data if not already loaded
     if (s_instance->m_pages.empty())
@@ -406,6 +454,12 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
     pt.x = targetX;
     pt.y = targetY;
+
+    POINT popupCenter;
+    popupCenter.x = targetX + w_px / 2;
+    popupCenter.y = targetY + h_px / 2;
+
+    s_instance->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
 
     // 3. Handle window (create or reposition) and ensure stable render target
     HWND hwnd = s_instance->GetHWND();
@@ -476,6 +530,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
         s_instance->m_hoveredTab = -1;
         s_instance->m_hoveredDock = -1;
         s_instance->m_cursorBlink = true;
+        s_instance->ResetPressedShortcut();
 
         // Initialize or update the bounds of the search textbox
         D2D1_RECT_F topRect = D2D1::RectF(
@@ -554,8 +609,14 @@ void PopupWindow::Hide()
         HWND h = s_instance->GetHWND();
         if (h)
         {
+            if (GetCapture() == h)
+            {
+                ReleaseCapture();
+            }
+            s_instance->ResetPressedShortcut();
             s_instance->StopAutoHideTimer();
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+            KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
             s_instance->m_animating = false;
         }
 
@@ -582,6 +643,13 @@ void PopupWindow::Hide()
     }
 }
 
+void PopupWindow::ResetPressedShortcut()
+{
+    m_pressedShortcutKind = PressedShortcutKind::None;
+    m_pressedShortcutIndex = -1;
+    m_pressedShortcutPage = -1;
+}
+
 void PopupWindow::Release()
 {
     if (s_instance)
@@ -594,6 +662,7 @@ void PopupWindow::Release()
         {
             inst->StopAutoHideTimer();
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+            KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
             DestroyWindow(h);
         }
 
@@ -628,9 +697,10 @@ float PopupWindow::GetFontSize() const
 {
     // Dynamically relate font size to the icon size:
     // Base size is 8.0f at icon size 16.0f, scaling linearly by 0.15f per pixel of icon size.
-    // E.g., at default 24px icon size, fontSize = 8.0f + 8 * 0.15f = 9.2f (reduced from 11.0f).
+    // E.g., at default 24px icon size, fontSize = 8.0f + 8 * 0.15f = 9.2f (minimum 9.0f).
     // For 32px icon size, fontSize = 8.0f + 16 * 0.15f = 10.4f.
-    return 8.0f + (GetIconSize() - 16.0f) * 0.15f;
+    float size = 8.0f + (GetIconSize() - 16.0f) * 0.15f;
+    return size < 9.0f ? 9.0f : size; // 限制最小字体尺寸不低于 9.0f，防止中文小字号时缩为一坨黑
 }
 
 int PopupWindow::GetLabelHeight() const
@@ -915,47 +985,8 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
         {
             float iconX = ix + cellMarginX;
             float iconY = iy + cellMarginY;
-            D2D1_RECT_F iconRect = D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize);
-            D2D1_ROUNDED_RECT roundedIconRect = D2D1::RoundedRect(iconRect, iconRad, iconRad);
-
-            auto it = m_bmpBrushCache.find(bmp);
-            ComPtr<ID2D1BitmapBrush> bmpBrush;
-            if (it != m_bmpBrushCache.end())
-            {
-                bmpBrush = it->second;
-            }
-            else
-            {
-                rt->CreateBitmapBrush(bmp, &bmpBrush);
-                if (bmpBrush)
-                {
-                    m_bmpBrushCache[bmp] = bmpBrush;
-                }
-            }
-
-            if (bmpBrush)
-            {
-                bmpBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-                bmpBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-
-                float scale = 0.5f;
-                D2D1_MATRIX_3X2_F transform = D2D1::Matrix3x2F::Scale(scale, scale) *
-                                              D2D1::Matrix3x2F::Translation(iconX, iconY);
-                bmpBrush->SetTransform(transform);
-
-                auto sh = GetOrCreateBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.12f));
-                if (sh)
-                {
-                    D2D1_ROUNDED_RECT shadowRect = D2D1::RoundedRect(
-                        D2D1::RectF(iconRect.left, iconRect.top + 1.0f, iconRect.right, iconRect.bottom + 1.0f), iconRad, iconRad);
-                    rt->FillRoundedRectangle(shadowRect, sh.Get());
-                }
-
-                rt->FillRoundedRectangle(roundedIconRect, bmpBrush.Get());
-
-                auto border = GetOrCreateBrush(UIStyle::ThemeColor::CardBorder().d2d);
-                if (border) rt->DrawRoundedRectangle(roundedIconRect, border.Get(), UIStyle::Metrics::HairlineStroke());
-            }
+            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
+            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
     }
 
@@ -984,7 +1015,7 @@ void PopupWindow::EnsureIcons()
 {
     UpdateTextFormat();
 
-    if (m_pages.empty()) return;
+    if (m_pages.empty() || !m_rt) return;
 
     float currentDpi = 96.0f;
     if (m_rt)
@@ -993,11 +1024,13 @@ void PopupWindow::EnsureIcons()
         m_rt->GetDpi(&currentDpi, &dpiY);
     }
 
-    bool rtChanged = (m_rt.Get() != m_lastRt) || (currentDpi != m_lastDpi);
+    const int iconBitmapSize = IconRenderer::GetRecommendedBitmapSize(m_rt.Get(), static_cast<float>(GetIconSize()));
+    bool rtChanged = (m_rt.Get() != m_lastRt) || (currentDpi != m_lastDpi) || (iconBitmapSize != m_lastIconBitmapSize);
     if (rtChanged)
     {
         m_lastRt = m_rt.Get();
         m_lastDpi = currentDpi;
+        m_lastIconBitmapSize = iconBitmapSize;
         m_bmpBrushCache.clear();
     }
 
@@ -1022,13 +1055,13 @@ void PopupWindow::EnsureIcons()
             for (int i = 0; i < n; i++)
             {
                 bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? page.shortcuts[i].iconInvertLight : page.shortcuts[i].iconInvertDark;
-                if (page.shortcuts[i].hIcon == nullptr)
+                if (ShouldRenderGeneratedDefaultIcon(page, page.shortcuts[i]) || page.shortcuts[i].hIcon == nullptr)
                 {
-                    page.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), page.shortcuts[i].name, GetIconSize() * 2).Detach();
+                    page.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), page.shortcuts[i].name, iconBitmapSize).Detach();
                 }
                 else
                 {
-                    page.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), page.shortcuts[i].hIcon, GetIconSize() * 2, invert);
+                    page.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), page.shortcuts[i].hIcon, iconBitmapSize, invert);
                 }
             }
         }
@@ -1049,13 +1082,13 @@ void PopupWindow::EnsureIcons()
             for (int i = 0; i < dn; i++)
             {
                 bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? m_dockPage.shortcuts[i].iconInvertLight : m_dockPage.shortcuts[i].iconInvertDark;
-                if (m_dockPage.shortcuts[i].hIcon == nullptr)
+                if (ShouldRenderGeneratedDefaultIcon(m_dockPage, m_dockPage.shortcuts[i]) || m_dockPage.shortcuts[i].hIcon == nullptr)
                 {
-                    m_dockPage.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), m_dockPage.shortcuts[i].name, GetIconSize() * 2).Detach();
+                    m_dockPage.iconBitmaps[i] = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), m_dockPage.shortcuts[i].name, iconBitmapSize).Detach();
                 }
                 else
                 {
-                    m_dockPage.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), m_dockPage.shortcuts[i].hIcon, GetIconSize() * 2, invert);
+                    m_dockPage.iconBitmaps[i] = iconSvc->IconToBitmap(m_rt.Get(), m_dockPage.shortcuts[i].hIcon, iconBitmapSize, invert);
                 }
             }
         }
@@ -1150,49 +1183,10 @@ void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
         {
             float iconX = ix + cellMarginX;
             float iconY = iy + cellMarginY;
-            D2D1_RECT_F iconRect = D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize);
-            D2D1_ROUNDED_RECT roundedIconRect = D2D1::RoundedRect(iconRect, iconRad, iconRad);
+            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
 
             auto* bmp = page.iconBitmaps[i];
-            auto it = m_bmpBrushCache.find(bmp);
-            ComPtr<ID2D1BitmapBrush> bmpBrush;
-            if (it != m_bmpBrushCache.end())
-            {
-                bmpBrush = it->second;
-            }
-            else
-            {
-                rt->CreateBitmapBrush(bmp, &bmpBrush);
-                if (bmpBrush)
-                {
-                    m_bmpBrushCache[bmp] = bmpBrush;
-                }
-            }
-
-            if (bmpBrush)
-            {
-                bmpBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-                bmpBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-
-                float scale = 0.5f;
-                D2D1_MATRIX_3X2_F transform = D2D1::Matrix3x2F::Scale(scale, scale) *
-                                              D2D1::Matrix3x2F::Translation(iconX, iconY);
-                bmpBrush->SetTransform(transform);
-
-                // Shadow
-                auto sh = GetOrCreateBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.12f));
-                if (sh)
-                {
-                    D2D1_ROUNDED_RECT shadowRect = D2D1::RoundedRect(
-                        D2D1::RectF(iconRect.left, iconRect.top + 1.0f, iconRect.right, iconRect.bottom + 1.0f), iconRad, iconRad);
-                    rt->FillRoundedRectangle(shadowRect, sh.Get());
-                }
-
-                rt->FillRoundedRectangle(roundedIconRect, bmpBrush.Get());
-
-                auto border = GetOrCreateBrush(UIStyle::ThemeColor::CardBorder().d2d);
-                if (border) rt->DrawRoundedRectangle(roundedIconRect, border.Get(), UIStyle::Metrics::HairlineStroke());
-            }
+            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
     }
 
@@ -1309,6 +1303,64 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
             D2D1::Point2F(totalW, (float)lineY),
             lineBrush.Get(), 0.3f);
 
+    // Active file selection feedback (timeline)
+    double now = GetTimeInSeconds();
+    double elapsed = 0.0;
+    bool hasActiveSelection = false;
+    {
+        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty())
+        {
+            elapsed = now - m_selectedFilesCtx.capturedTime;
+            if (elapsed < FILE_SELECTION_VALIDITY_DURATION)
+            {
+                hasActiveSelection = true;
+            }
+        }
+    }
+
+    if (hasActiveSelection)
+    {
+        float progress = (float)(1.0 - (elapsed / FILE_SELECTION_VALIDITY_DURATION));
+        if (progress < 0.0f) progress = 0.0f;
+        if (progress > 1.0f) progress = 1.0f;
+
+        float midX = totalW / 2.0f;
+        float halfLength = (totalW / 2.0f) * progress;
+        float left = midX - halfLength;
+        float right = midX + halfLength;
+
+        if (right > left + 0.1f)
+        {
+            D2D1_POINT_2F startPt = D2D1::Point2F(left, (float)lineY);
+            D2D1_POINT_2F endPt = D2D1::Point2F(right, (float)lineY);
+
+            D2D1_GRADIENT_STOP stops[3];
+            stops[0].position = 0.0f;
+            stops[0].color = UIStyle::ThemeColor::AccentSubtle().d2d;
+            stops[1].position = 0.5f;
+            stops[1].color = UIStyle::ThemeColor::Accent().d2d;
+            stops[2].position = 1.0f;
+            stops[2].color = UIStyle::ThemeColor::AccentSubtle().d2d;
+
+            ComPtr<ID2D1GradientStopCollection> stopCollection;
+            HRESULT hr = rt->CreateGradientStopCollection(stops, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &stopCollection);
+            if (SUCCEEDED(hr) && stopCollection)
+            {
+                ComPtr<ID2D1LinearGradientBrush> gradientBrush;
+                hr = rt->CreateLinearGradientBrush(
+                    D2D1::LinearGradientBrushProperties(startPt, endPt),
+                    stopCollection.Get(),
+                    &gradientBrush
+                );
+                if (SUCCEEDED(hr) && gradientBrush)
+                {
+                    rt->DrawLine(startPt, endPt, gradientBrush.Get(), 1.5f);
+                }
+            }
+        }
+    }
+
     int n = (int)m_dockPage.shortcuts.size();
     if (n == 0) return;
 
@@ -1342,40 +1394,10 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
         {
             float iconX = ix + cellMarginX;
             float iconY = iy + cellMarginY;
-            D2D1_RECT_F iconRect = D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize);
-            D2D1_ROUNDED_RECT roundedIconRect = D2D1::RoundedRect(iconRect, iconRad, iconRad);
+            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
 
             auto* bmp = m_dockPage.iconBitmaps[i];
-            auto it = m_bmpBrushCache.find(bmp);
-            ComPtr<ID2D1BitmapBrush> bmpBrush;
-            if (it != m_bmpBrushCache.end())
-                bmpBrush = it->second;
-            else
-            {
-                rt->CreateBitmapBrush(bmp, &bmpBrush);
-                if (bmpBrush) m_bmpBrushCache[bmp] = bmpBrush;
-            }
-
-            if (bmpBrush)
-            {
-                bmpBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-                bmpBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-                D2D1_MATRIX_3X2_F transform = D2D1::Matrix3x2F::Scale(0.5f, 0.5f) *
-                                              D2D1::Matrix3x2F::Translation(iconX, iconY);
-                bmpBrush->SetTransform(transform);
-
-                auto sh = GetOrCreateBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.12f));
-                if (sh)
-                {
-                    D2D1_ROUNDED_RECT shadowRect = D2D1::RoundedRect(
-                        D2D1::RectF(iconRect.left, iconRect.top + 1.0f, iconRect.right, iconRect.bottom + 1.0f),
-                        iconRad, iconRad);
-                    rt->FillRoundedRectangle(shadowRect, sh.Get());
-                }
-                rt->FillRoundedRectangle(roundedIconRect, bmpBrush.Get());
-                auto brd = GetOrCreateBrush(UIStyle::ThemeColor::CardBorder().d2d);
-                if (brd) rt->DrawRoundedRectangle(roundedIconRect, brd.Get(), UIStyle::Metrics::HairlineStroke());
-            }
+            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
     }
 
@@ -1616,7 +1638,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         RECT* const prcNewWindow = (RECT*)lParam;
         if (prcNewWindow)
         {
-            float newDpiScale = LOWORD(wParam) / 96.0f;
+            float newDpiScale = UIStyle::Scaling::EffectiveScaleFactor(LOWORD(wParam) / 96.0f);
             
             int cols = GetColumns();
             int rows = GetRows();
@@ -1691,6 +1713,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
 
             if (m_pinned) return 0;
+            if (m_pressedShortcutKind != PressedShortcutKind::None) return 0;
 
             POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
@@ -1728,12 +1751,42 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             StepPageAnimationFrame(hWnd);
             return 0;
         }
+        if (wParam == TIMELINE_ANIMATION_TIMER_ID)
+        {
+            double now = GetTimeInSeconds();
+            double elapsed = 0.0;
+            bool isEmpty = false;
+            {
+                std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+                elapsed = now - m_selectedFilesCtx.capturedTime;
+                isEmpty = m_selectedFilesCtx.filePaths.empty();
+            }
+
+            if (elapsed >= FILE_SELECTION_VALIDITY_DURATION || isEmpty)
+            {
+                KillTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID);
+                if (elapsed >= FILE_SELECTION_VALIDITY_DURATION)
+                {
+                    std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+                    m_selectedFilesCtx.filePaths.clear();
+                }
+            }
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
         break;
     }
 
     case WM_USER_ANIMATE:
     {
         StepPageAnimationFrame(hWnd);
+        return 0;
+    }
+
+    case WM_USER_SELECTION_UPDATED:
+    {
+        SetTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID, TIMELINE_ANIMATION_FRAME_MS, nullptr);
+        InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
     }
 
@@ -1788,6 +1841,13 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         RECT cr; GetClientRect(hWnd, &cr);
         if (pt_px.x < 0 || pt_px.y < 0 || pt_px.x >= cr.right || pt_px.y >= cr.bottom)
         {
+            if (m_pressedShortcutKind != PressedShortcutKind::None)
+            {
+                m_hovered = -1;
+                m_hoveredDock = -1;
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
             Hide();
             return 0;
         }
@@ -1950,23 +2010,15 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             if (hit >= 0 && hit < (int)m_searchResults.size())
             {
-                if (!m_pinned) Hide();
-                auto& sc = m_searchResults[hit].shortcut;
-                if (!sc.targetPath.empty())
-                {
-                    LOG_G_INFO(L"PopupWindow::LButtonDown: launching search result shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                    LaunchShortcut(sc);
-                }
-                if (m_viewModel)
-                {
-                    m_viewModel->NotifyShortcutLaunched(
-                        m_searchResults[hit].originalPageIndex,
-                        m_searchResults[hit].originalShortcutIndex
-                    );
-                }
+                m_pressedShortcutKind = PressedShortcutKind::SearchResult;
+                m_pressedShortcutIndex = hit;
+                m_pressedShortcutPage = -1;
+                SetCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
             }
             else if (m_pinned)
             {
+                ResetPressedShortcut();
                 ReleaseCapture();
                 SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
@@ -1977,30 +2029,25 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             int dockHit = HitTestDock(pt);
             if (dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
             {
-                auto& sc = m_dockPage.shortcuts[dockHit];
-                if (!m_pinned) Hide();
-                if (!sc.targetPath.empty())
-                {
-                    LOG_G_INFO(L"PopupWindow::LButtonDown: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                    LaunchShortcut(sc);
-                }
+                m_pressedShortcutKind = PressedShortcutKind::Dock;
+                m_pressedShortcutIndex = dockHit;
+                m_pressedShortcutPage = -1;
+                SetCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
 
             if (hit >= 0 && hit < (int)m_pages[m_currentPage].shortcuts.size())
             {
-                auto& sc = m_pages[m_currentPage].shortcuts[hit];
-                if (!m_pinned) Hide();
-                if (!sc.targetPath.empty())
-                {
-                    LOG_G_INFO(L"PopupWindow::LButtonDown: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                    LaunchShortcut(sc);
-                }
-                if (m_viewModel)
-                    m_viewModel->NotifyShortcutLaunched(m_currentPage, hit);
+                m_pressedShortcutKind = PressedShortcutKind::Page;
+                m_pressedShortcutIndex = hit;
+                m_pressedShortcutPage = m_currentPage;
+                SetCapture(hWnd);
+                InvalidateRect(hWnd, nullptr, FALSE);
             }
             else if (m_pinned)
             {
+                ResetPressedShortcut();
                 ReleaseCapture();
                 SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
@@ -2049,11 +2096,84 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_LBUTTONUP:
     {
+        POINT pt_px{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        float scale = GetWindowScale(hWnd);
+        POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
+
+        if (m_pressedShortcutKind != PressedShortcutKind::None)
+        {
+            PressedShortcutKind pressedKind = m_pressedShortcutKind;
+            int pressedIndex = m_pressedShortcutIndex;
+            int pressedPage = m_pressedShortcutPage;
+            ResetPressedShortcut();
+            if (GetCapture() == hWnd)
+            {
+                ReleaseCapture();
+            }
+
+            if (pressedKind == PressedShortcutKind::SearchResult && m_searchActive && !m_searchQuery.empty())
+            {
+                int hit = HitTest(pt);
+                if (hit == pressedIndex && hit >= 0 && hit < (int)m_searchResults.size())
+                {
+                    auto& sc = m_searchResults[hit].shortcut;
+                    if (!m_pinned) Hide();
+                    if (HasLaunchAction(sc))
+                    {
+                        LOG_G_INFO(L"PopupWindow::LButtonUp: launching search result shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                        LaunchShortcut(sc);
+                    }
+                    if (m_viewModel)
+                    {
+                        m_viewModel->NotifyShortcutLaunched(
+                            m_searchResults[hit].originalPageIndex,
+                            m_searchResults[hit].originalShortcutIndex
+                        );
+                    }
+                }
+            }
+            else if (pressedKind == PressedShortcutKind::Dock)
+            {
+                int dockHit = HitTestDock(pt);
+                if (dockHit == pressedIndex && dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
+                {
+                    auto& sc = m_dockPage.shortcuts[dockHit];
+                    if (!m_pinned) Hide();
+                    if (HasLaunchAction(sc))
+                    {
+                        LOG_G_INFO(L"PopupWindow::LButtonUp: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                        LaunchShortcut(sc);
+                    }
+                }
+            }
+            else if (pressedKind == PressedShortcutKind::Page)
+            {
+                int hit = HitTest(pt);
+                if (pressedPage == m_currentPage &&
+                    hit == pressedIndex &&
+                    pressedPage >= 0 &&
+                    pressedPage < (int)m_pages.size() &&
+                    hit >= 0 &&
+                    hit < (int)m_pages[pressedPage].shortcuts.size())
+                {
+                    auto& sc = m_pages[pressedPage].shortcuts[hit];
+                    if (!m_pinned) Hide();
+                    if (HasLaunchAction(sc))
+                    {
+                        LOG_G_INFO(L"PopupWindow::LButtonUp: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                        LaunchShortcut(sc);
+                    }
+                    if (m_viewModel)
+                        m_viewModel->NotifyShortcutLaunched(pressedPage, hit);
+                }
+            }
+
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+
         if (m_searchActive)
         {
-            POINT pt_px{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            float scale = GetWindowScale(hWnd);
-            POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
             bool repaint = false;
             m_searchTextBox.OnLButtonUp(hWnd, pt, scale, repaint);
             if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
@@ -2075,6 +2195,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_CAPTURECHANGED:
+        ResetPressedShortcut();
         m_trackMouse = false;
         m_hovered = -1;
         if (!m_pinned)
@@ -2141,7 +2262,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (m_selectedSearchResult >= 0 && m_selectedSearchResult < (int)m_searchResults.size())
                 {
                     auto& sc = m_searchResults[m_selectedSearchResult].shortcut;
-                    if (!sc.targetPath.empty())
+                    if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::OnKeyDown (Enter): launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
                         LaunchShortcut(sc);
@@ -2416,11 +2537,11 @@ static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, A
     return s;
 }
 
-static void LaunchUrl(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
+static bool LaunchUrl(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
 {
     bool cancelled = false;
     std::wstring url = ExpandVariables(sc.targetPath, parent, ctx, cancelled);
-    if (cancelled) return;
+    if (cancelled) return false;
     
     std::wstring browserPath, browserArgs;
     size_t sep = sc.arguments.find(L"|||");
@@ -2436,12 +2557,13 @@ static void LaunchUrl(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
     
     if (browserPath.empty())
     {
-        ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        HINSTANCE hInst = ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return (reinterpret_cast<INT_PTR>(hInst) > 32);
     }
     else
     {
         std::wstring args = ExpandVariables(browserArgs, parent, ctx, cancelled);
-        if (cancelled) return;
+        if (cancelled) return false;
         
         size_t urlPos = args.find(L"{{url}}");
         if (urlPos != std::wstring::npos)
@@ -2454,11 +2576,109 @@ static void LaunchUrl(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
             args += url;
         }
         
-        PrivilegeLaunchService::Launch(browserPath, args, false);
+        return PrivilegeLaunchService::Launch(browserPath, args, false);
     }
 }
 
-static void LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
+// Find bash.exe by locating git.exe first, then checking sibling directories.
+static std::wstring FindBashExe()
+{
+    wchar_t foundPath[MAX_PATH]{};
+    DWORD len = SearchPathW(nullptr, L"git.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH)
+    {
+        std::wstring gp(foundPath);
+        size_t cmdPos = gp.rfind(L"\\cmd\\");
+        if (cmdPos != std::wstring::npos)
+        {
+            std::wstring root = gp.substr(0, cmdPos);
+            std::wstring candidate = root + L"\\bin\\bash.exe";
+            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
+                return candidate;
+            candidate = root + L"\\usr\\bin\\bash.exe";
+            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
+                return candidate;
+        }
+    }
+
+    // Fall back to common install locations
+    static const wchar_t* commonPaths[] = {
+        L"C:\\Program Files\\Git\\bin\\bash.exe",
+        L"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        L"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+        L"C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
+    };
+    for (auto p : commonPaths)
+    {
+        if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES)
+            return p;
+    }
+
+    return L""; // not found
+}
+
+static std::wstring QuoteArg(const std::wstring& value)
+{
+    std::wstring quoted = L"\"";
+    for (wchar_t ch : value)
+    {
+        if (ch == L'"')
+            quoted += L"\\\"";
+        else
+            quoted += ch;
+    }
+    quoted += L"\"";
+    return quoted;
+}
+
+static std::string ToUtf8Bytes(const std::wstring& value)
+{
+    if (value.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), (int)value.size(), nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string result((size_t)len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.c_str(), (int)value.size(), result.data(), len, nullptr, nullptr);
+    return result;
+}
+
+static std::wstring CreateTempCommandScript(const std::wstring& script, const wchar_t* extension)
+{
+    wchar_t tempDir[MAX_PATH]{};
+    if (!GetTempPathW(MAX_PATH, tempDir))
+        return L"";
+
+    wchar_t tempFile[MAX_PATH]{};
+    if (!GetTempFileNameW(tempDir, L"wlc", 0, tempFile))
+        return L"";
+
+    std::wstring path = tempFile;
+    std::wstring ext = extension ? extension : L".txt";
+    std::wstring scriptPath = path + ext;
+    if (!MoveFileExW(path.c_str(), scriptPath.c_str(), MOVEFILE_REPLACE_EXISTING))
+    {
+        DeleteFileW(path.c_str());
+        return L"";
+    }
+
+    std::string bytes = ToUtf8Bytes(script);
+    HANDLE hFile = CreateFileW(scriptPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE)
+        return L"";
+
+    DWORD written = 0;
+    BOOL ok = WriteFile(hFile, bytes.data(), (DWORD)bytes.size(), &written, nullptr);
+    CloseHandle(hFile);
+    if (!ok || written != static_cast<DWORD>(bytes.size()))
+    {
+        DeleteFileW(scriptPath.c_str());
+        return L"";
+    }
+
+    MoveFileExW(scriptPath.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+    return scriptPath;
+}
+
+static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
 {
     std::vector<std::wstring> segments;
     std::wstring s = sc.arguments;
@@ -2470,49 +2690,223 @@ static void LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     }
     segments.push_back(s);
     
-    std::wstring type = L"cmd", builtin;
+    std::wstring type = L"cmd";
+    // Note: segments[1] was builtinCmd — now deprecated
     
     if (segments.size() > 0) type = segments[0];
-    if (segments.size() > 1) builtin = segments[1];
     
-    if (type == L"builtin")
-    {
-        std::wstring msg = L"触发内置命令: " + builtin;
-        ConfirmWindow::Show(parent, L"WinLauncher Command", msg.c_str(), ctx, false);
-    }
-    else if (type == L"cmd")
+    if (type == L"cmd")
     {
         std::wstring cmdArgs = L"/c " + sc.targetPath;
-        PrivilegeLaunchService::Launch(L"cmd.exe", cmdArgs, sc.runAsAdmin);
+        return PrivilegeLaunchService::Launch(L"cmd.exe", cmdArgs, sc.runAsAdmin);
     }
     else if (type == L"powershell")
     {
-        std::wstring psArgs = L"-NoProfile -NonInteractive -Command \"" + sc.targetPath + L"\"";
-        PrivilegeLaunchService::Launch(L"powershell.exe", psArgs, sc.runAsAdmin);
+        if (sc.runAsAdmin)
+        {
+            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".ps1");
+            if (scriptPath.empty()) return false;
+            return PrivilegeLaunchService::Launch(
+                L"powershell.exe",
+                L"-NoProfile -ExecutionPolicy Bypass -File " + QuoteArg(scriptPath),
+                true);
+        }
+
+        // Pipe script via stdin instead of -Command "..." to avoid quoting issues
+        return PrivilegeLaunchService::LaunchWithStdin(
+            L"powershell.exe", sc.targetPath,
+            L"-NoProfile -NonInteractive -Command -",
+            sc.runAsAdmin);
     }
+    else if (type == L"python")
+    {
+        if (sc.runAsAdmin)
+        {
+            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".py");
+            if (scriptPath.empty()) return false;
+            return PrivilegeLaunchService::Launch(L"python.exe", QuoteArg(scriptPath), true);
+        }
+
+        // Pipe script via stdin instead of -c "..." to avoid quoting issues
+        return PrivilegeLaunchService::LaunchWithStdin(
+            L"python.exe", sc.targetPath,
+            L"-",
+            sc.runAsAdmin);
+    }
+    else if (type == L"gitbash")
+    {
+        std::wstring bashPath = FindBashExe();
+        if (bashPath.empty())
+        {
+            LOG_G_ERRA(L"LaunchCommand: gitbash — bash.exe not found (git.exe not in PATH or Git not installed?)");
+            return false;
+        }
+        if (sc.runAsAdmin)
+        {
+            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".sh");
+            if (scriptPath.empty()) return false;
+            return PrivilegeLaunchService::Launch(bashPath, QuoteArg(scriptPath), true);
+        }
+
+        // Pipe script via stdin instead of -c "..." to avoid quoting issues
+        return PrivilegeLaunchService::LaunchWithStdin(
+            bashPath, sc.targetPath,
+            L"-s",
+            sc.runAsAdmin);
+    }
+    return false;
 }
 
 void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
 {
     HWND hWnd = GetHWND();
+    std::vector<std::wstring> files;
+    bool hasFiles = false;
+    {
+        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+        double now = GetTimeInSeconds();
+        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty() && (now - m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
+        {
+            files = m_selectedFilesCtx.filePaths;
+            hasFiles = true;
+            m_selectedFilesCtx.filePaths.clear();
+        }
+    }
+
+    const bool acceptsSelectedFiles =
+        (sc.type == Model::ShortcutType::File || sc.type == Model::ShortcutType::System) &&
+        (sc.targetKind == Model::ShortcutTargetKind::Exe ||
+         sc.targetKind == Model::ShortcutTargetKind::File ||
+         sc.targetKind == Model::ShortcutTargetKind::Link ||
+         sc.targetKind == Model::ShortcutTargetKind::Unknown);
+
+    if (hasFiles && acceptsSelectedFiles)
+    {
+        std::wstring newArgs = sc.arguments;
+        for (const auto& file : files)
+        {
+            if (!newArgs.empty()) newArgs += L" ";
+            newArgs += L"\"" + file + L"\"";
+        }
+
+        LOG_G_INFO(L"PopupWindow::LaunchShortcut: Launching with selected files. target=%s, args=%s", sc.targetPath.c_str(), newArgs.c_str());
+        if (!PrivilegeLaunchService::Launch(sc.targetPath, newArgs, sc.runAsAdmin))
+        {
+            LOG_G_ERRA(L"PopupWindow::LaunchShortcut: failed to launch shortcut %s with files", sc.name.c_str());
+        }
+    }
+    else
+    {
+        ExecuteShortcut(sc, hWnd, m_appCtx);
+    }
+}
+
+bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
+{
     if (sc.type == Model::ShortcutType::Hotkey)
     {
         bool afterClose = sc.runAsAdmin;
         SimulateHotkey(sc.targetPath, afterClose);
+        return true;
     }
     else if (sc.type == Model::ShortcutType::Url)
     {
-        LaunchUrl(sc, hWnd, m_appCtx);
+        return LaunchUrl(sc, parent, ctx);
     }
     else if (sc.type == Model::ShortcutType::Command)
     {
-        LaunchCommand(sc, hWnd, m_appCtx);
+        return LaunchCommand(sc, parent, ctx);
+    }
+    else if (sc.type == Model::ShortcutType::System)
+    {
+        if (sc.targetPath == L":config_window")
+        {
+            PostMessageW(ctx->hMainWnd, AppMessages::ShowConfigWindow, 0, 0);
+            return true;
+        }
+        else if (sc.targetPath == L":topmost_toggle")
+        {
+            HWND targetWnd = GetForegroundWindow();
+            if (targetWnd)
+            {
+                LONG_PTR exStyle = GetWindowLongPtrW(targetWnd, GWL_EXSTYLE);
+                if (exStyle & WS_EX_TOPMOST)
+                {
+                    SetWindowPos(targetWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+                else
+                {
+                    SetWindowPos(targetWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+                return true;
+            }
+            return false;
+        }
+        else
+        {
+            return PrivilegeLaunchService::Launch(sc.targetPath, sc.arguments, sc.runAsAdmin);
+        }
+    }
+    else if (sc.type == Model::ShortcutType::Macro)
+    {
+        double speed = 1.0;
+        std::wstring triggerMode = L"immediate";
+        std::vector<MacroEvent> events;
+        if (MacroHelper::Parse(sc.arguments, speed, triggerMode, events))
+        {
+            bool launchedFromPopup = (s_instance && parent == s_instance->GetHWND());
+            bool popupWillHide = launchedFromPopup && !s_instance->m_pinned;
+            bool waitForClose = popupWillHide || triggerMode == L"after_close";
+            HWND restoreWnd = waitForClose ? PopupWindow::GetRestoreForegroundWindow() : nullptr;
+            return MacroPlayer::Play(events, speed, waitForClose ? L"after_close" : triggerMode, parent, restoreWnd);
+        }
+        return false;
+    }
+    else if (sc.type == Model::ShortcutType::Batch)
+    {
+        return BatchLaunchService::Execute(sc.arguments, parent, ctx);
     }
     else
     {
-        if (!PrivilegeLaunchService::Launch(sc.targetPath, sc.arguments, sc.runAsAdmin))
-        {
-            LOG_G_ERRA(L"PopupWindow::LaunchShortcut: failed to launch shortcut %s", sc.name.c_str());
-        }
+        return PrivilegeLaunchService::Launch(sc.targetPath, sc.arguments, sc.runAsAdmin);
     }
+}
+
+void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter)
+{
+    HWND hWnd = GetHWND();
+    if (hWnd)
+    {
+        KillTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+        m_selectedFilesCtx.filePaths.clear();
+        m_selectedFilesCtx.sourceHwnd = activeHwnd;
+        m_selectedFilesCtx.capturedTime = GetTimeInSeconds();
+        m_selectedFilesCtx.isPending = true;
+    }
+
+    Services::FileSelectionService::CaptureSelectedFilesAsync(activeHwnd, clickPt, popupCenter, [activeHwnd](const Services::SelectionContext& ctx) {
+        bool hasFiles = false;
+        HWND hWnd = nullptr;
+        if (s_instance)
+        {
+            std::lock_guard<std::mutex> lock(s_instance->m_selectedFilesMutex);
+            if (s_instance->m_selectedFilesCtx.sourceHwnd == ctx.sourceHwnd)
+            {
+                s_instance->m_selectedFilesCtx = ctx;
+                if (!s_instance->m_selectedFilesCtx.filePaths.empty())
+                {
+                    hasFiles = true;
+                    hWnd = s_instance->GetHWND();
+                }
+            }
+        }
+        if (hasFiles && hWnd && IsWindow(hWnd))
+        {
+            PostMessageW(hWnd, WM_USER_SELECTION_UPDATED, 0, 0);
+        }
+    });
 }

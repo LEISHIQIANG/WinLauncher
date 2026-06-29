@@ -22,6 +22,9 @@ public:
     void ShowAddHotkeyDialog();
     void ShowAddUrlDialog();
     void ShowAddCommandDialog();
+    void ShowAddMacroDialog();
+    void ShowAddBatchDialog();
+    void ShowBuiltinIconDialog();
 
     virtual void OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect) override;
     virtual void OnMouseMove(POINT pt, bool& repaint) override;
@@ -45,6 +48,7 @@ private:
     void UpdateDragAndSortState(POINT clientPt);
     void AddShortcutFromPath(const std::wstring& filePath);
     void AddShortcutFromSingleFile(const std::wstring& path);
+    ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
 
     int HitTestShortcut(POINT pt);
     bool HitTestAddShortcut(POINT pt);
@@ -84,6 +88,8 @@ private:
     POINT m_dragStartPt;
 
     ID2D1HwndRenderTarget* m_lastRt;
+    float m_lastDpi = 96.0f;
+    int m_lastIconBitmapSize = 0;
     bool m_trackMouse;
 
     // Cached D2D brushes for OnPaint

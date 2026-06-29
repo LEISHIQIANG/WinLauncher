@@ -4,6 +4,7 @@
 #include "PromptWindow.h"
 #include "ContextMenu.h"
 #include "UIStyle.h"
+#include "../DpiHelper.h"
 #include "../GlassWindow.h"
 #include "../ShortcutManager.h"
 #include "../Services/SyncFolderService.h"
@@ -495,8 +496,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
         repaint = true;
 
         HWND hwnd = m_owner->GetWindowHWND();
-        POINT screenPt = pt;
-        ClientToScreen(hwnd, &screenPt);
+        POINT screenPt = DpiHelper::LogicalClientToScreen(hwnd, pt);
 
         RendPopupPage* page = m_owner->GetPageByIndex(hc);
 

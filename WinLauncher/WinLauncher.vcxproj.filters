@@ -81,6 +81,9 @@
     <ClCompile Include="Services\PrivilegeLaunchService.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Services\FileSelectionService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\HotkeyDialog.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -99,6 +102,33 @@
     <ClCompile Include="Config\CommandEditForm.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\BuiltinIconDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\SystemIconDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\SystemIconEditForm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Services\MacroService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Services\BatchLaunchService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\MacroDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\MacroEditForm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\BatchLaunchDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\BatchLaunchEditForm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App\AppMessages.h">
@@ -108,6 +138,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="MouseHook.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="InputFocusGuard.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="AutoStartHelper.h">
@@ -185,6 +218,9 @@
     <ClInclude Include="Services\PrivilegeLaunchService.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Services\FileSelectionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Config\HotkeyDialog.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -201,6 +237,33 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\CommandEditForm.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\BuiltinIconDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\SystemIconDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\SystemIconEditForm.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\MacroService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\BatchLaunchService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\MacroDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\MacroEditForm.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\BatchLaunchDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\BatchLaunchEditForm.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

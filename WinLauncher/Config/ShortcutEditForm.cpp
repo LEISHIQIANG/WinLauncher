@@ -529,27 +529,19 @@ void ShortcutEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& rep
     }
 
     if (HitTestInvertLightCheckbox(pt))
-
     {
-
         m_iconInvertLight = !m_iconInvertLight;
-
+        if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
         repaint = true;
-
         return;
-
     }
 
     if (HitTestInvertDarkCheckbox(pt))
-
     {
-
         m_iconInvertDark = !m_iconInvertDark;
-
+        if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
         repaint = true;
-
         return;
-
     }
 
 
@@ -1274,29 +1266,20 @@ void ShortcutEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F
 
 
 void ShortcutEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
-
 {
+    bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
+    bool invert = isLight ? m_iconInvertLight : m_iconInvertDark;
 
     if (m_previewIcon)
-
     {
-
         if (!m_previewBitmap)
-
         {
-
-            auto bmp = IconRenderer::HicontoD2D(rt, m_previewIcon, 36);
-
+            auto bmp = IconRenderer::HicontoD2D(rt, m_previewIcon, 36, invert);
             if (bmp)
-
             {
-
                 m_previewBitmap = bmp.Detach();
-
             }
-
         }
-
     }
 
     else
@@ -1347,8 +1330,6 @@ void ShortcutEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 
 
 
-    bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
-
     D2D1_COLOR_F bgClr = isLight ? D2D1::ColorF(0.f, 0.f, 0.f, 0.05f) : D2D1::ColorF(1.f, 1.f, 1.f, 0.07f);
 
     auto bgBrush = GetOrCreateBrush(rt, bgClr);
@@ -1366,27 +1347,9 @@ void ShortcutEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 
 
     if (m_previewBitmap)
-
     {
-
-        ComPtr<ID2D1BitmapBrush> bmpBrush;
-
-        rt->CreateBitmapBrush(m_previewBitmap, &bmpBrush);
-
-        if (bmpBrush)
-
-        {
-
-            bmpBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-
-            bmpBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-
-            bmpBrush->SetTransform(D2D1::Matrix3x2F::Translation(previewRect.left, previewRect.top));
-
-            rt->FillRoundedRectangle(rrPreview, bmpBrush.Get());
-
-        }
-
+        D2D1_RECT_F alignedRect = IconRenderer::AlignToPixels(rt, previewRect.left, previewRect.top, previewSize, previewSize);
+        rt->DrawBitmap(m_previewBitmap, alignedRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
 
 }

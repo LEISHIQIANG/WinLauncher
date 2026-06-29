@@ -61,6 +61,8 @@ public:
     virtual void SetTriggerType(int type) override;
     virtual bool GetAutoStart() override;
     virtual void SetAutoStart(bool enable) override;
+    virtual bool GetHideTrayIcon() override;
+    virtual void SetHideTrayIcon(bool hide) override;
 
     virtual int GetPopupColumns() override;
     virtual void SetPopupColumns(int columns) override;
@@ -80,6 +82,8 @@ public:
     virtual void SetThemeColor(int colorIndex, POINT clickPt = { -1, -1 }) override;
     virtual int GetWindowMode() override;
     virtual void SetWindowMode(int mode, POINT clickPt = { -1, -1 }) override;
+    virtual int GetGlobalScalePercent() override;
+    virtual void SetGlobalScalePercent(int percent) override;
     virtual int GetDockHeight() override;
     virtual void SetDockHeight(int height) override;
     virtual bool GetAnimationEnabled() override;
@@ -102,6 +106,7 @@ private:
     void SaveConfig();
     static void ShowMode(HWND parent, AppContext* ctx, bool settingsMode);
     void SetSettingsMode(bool settingsMode);
+    void ResizeToCurrentScale();
     bool HitTestCloseButton(POINT pt);
     bool HitTestSettingsButton(POINT pt);
     bool HitTestAddButton(POINT pt);

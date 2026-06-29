@@ -12,7 +12,8 @@ namespace Model
         Command = 3,
         Macro = 4,
         Batch = 5,
-        BuiltinIcon = 6
+        BuiltinIcon = 6,
+        System = 7
     };
 
     enum class ShortcutTargetKind
@@ -33,6 +34,7 @@ namespace Model
 
     struct ShortcutInfo
     {
+        std::wstring id;
         std::wstring name;
         std::wstring targetPath;
         std::wstring arguments;
@@ -67,6 +69,7 @@ namespace Model
         case ShortcutType::Macro:       return L"macro";
         case ShortcutType::Batch:       return L"batch";
         case ShortcutType::BuiltinIcon: return L"builtinIcon";
+        case ShortcutType::System:      return L"system";
         default:                        return L"shortcut";
         }
     }
@@ -82,6 +85,7 @@ namespace Model
         case ShortcutType::Macro:       return L"宏";
         case ShortcutType::Batch:       return L"批量启动";
         case ShortcutType::BuiltinIcon: return L"内置图标";
+        case ShortcutType::System:      return L"系统图标";
         default:                        return L"快捷方式";
         }
     }
@@ -94,6 +98,7 @@ namespace Model
         if (key == L"macro") return ShortcutType::Macro;
         if (key == L"batch") return ShortcutType::Batch;
         if (key == L"builtinIcon") return ShortcutType::BuiltinIcon;
+        if (key == L"system") return ShortcutType::System;
         return ShortcutType::File;
     }
 

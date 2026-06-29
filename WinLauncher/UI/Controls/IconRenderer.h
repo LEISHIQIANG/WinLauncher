@@ -1,10 +1,15 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl.h>
 #include <string>
 #include <cmath>
+#include <algorithm>
+#include <vector>
 #include "../../Config/UIStyle.h"
 #include "../../App/Logger.h"
 
@@ -13,6 +18,46 @@ using Microsoft::WRL::ComPtr;
 class IconRenderer
 {
 public:
+    static D2D1_RECT_F AlignToPixels(ID2D1RenderTarget* rt, float x, float y, float w, float h)
+    {
+        if (!rt)
+            return D2D1::RectF(x, y, x + w, y + h);
+
+        float dpiX = 96.0f;
+        float dpiY = 96.0f;
+        rt->GetDpi(&dpiX, &dpiY);
+        float scaleX = dpiX / 96.0f;
+        float scaleY = dpiY / 96.0f;
+
+        float alignedX = std::round(x * scaleX) / scaleX;
+        float alignedY = std::round(y * scaleY) / scaleY;
+        float alignedR = std::round((x + w) * scaleX) / scaleX;
+        float alignedB = std::round((y + h) * scaleY) / scaleY;
+
+        return D2D1::RectF(alignedX, alignedY, alignedR, alignedB);
+    }
+
+    static int GetRecommendedBitmapSize(ID2D1RenderTarget* rt, float logicalSize)
+    {
+        if (logicalSize <= 0.0f)
+            return 1;
+
+        float dpiX = 96.0f;
+        float dpiY = 96.0f;
+        if (rt)
+        {
+            rt->GetDpi(&dpiX, &dpiY);
+        }
+
+        const float dpiScale = (std::max)(dpiX, dpiY) / 96.0f;
+        const int dpiPixels = static_cast<int>(std::ceil(logicalSize * dpiScale));
+        const int oversampledPixels = static_cast<int>(std::ceil(logicalSize * dpiScale * 2.0f));
+        const int minPixels = static_cast<int>(std::ceil(logicalSize * 2.0f));
+        int result = (std::max)({ dpiPixels, oversampledPixels, minPixels, 32 });
+        result = (result + 1) & ~1;
+        return (std::min)(result, 512);
+    }
+
     static ComPtr<ID2D1Bitmap> HicontoD2D(ID2D1HwndRenderTarget* rt, HICON hIcon, int size = 48, bool invert = false)
     {
         if (!rt)
@@ -53,7 +98,8 @@ public:
             return nullptr;
         }
 
-        SelectObject(cdc, dib);
+        HGDIOBJ oldObj = SelectObject(cdc, dib);
+        ZeroMemory(bits, SZ * SZ * 4);
         if (!DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL))
         {
             LOG_G_WORNING(L"HicontoD2D: DrawIconEx returned FALSE, hIcon=%p, size=%d, err=%d",
@@ -62,6 +108,86 @@ public:
         GdiFlush();
 
         DWORD* p = (DWORD*)bits;
+
+        // Check if GDI wrote any non-zero alpha (which indicates a 32-bit alpha icon)
+        bool hasAlpha = false;
+        for (int i = 0; i < SZ * SZ; i++)
+        {
+            if (((p[i] >> 24) & 0xFF) != 0)
+            {
+                hasAlpha = true;
+                break;
+            }
+        }
+
+        // If no alpha was written, reconstruct alpha channel using the AND mask stretched to SZ * SZ
+        if (!hasAlpha)
+        {
+            HDC monoDC = CreateCompatibleDC(cdc);
+            if (monoDC)
+            {
+                BITMAPINFO monoBmi{};
+                monoBmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+                monoBmi.bmiHeader.biWidth = SZ;
+                monoBmi.bmiHeader.biHeight = -SZ; // top-down
+                monoBmi.bmiHeader.biPlanes = 1;
+                monoBmi.bmiHeader.biBitCount = 1; // 1-bit monochrome
+                monoBmi.bmiHeader.biCompression = BI_RGB;
+
+                void* monoBits = nullptr;
+                HBITMAP monoDib = CreateDIBSection(monoDC, &monoBmi, DIB_RGB_COLORS, &monoBits, nullptr, 0);
+                if (monoDib && monoBits)
+                {
+                    HGDIOBJ oldMono = SelectObject(monoDC, monoDib);
+                    int monoRowWidth = ((SZ + 31) & ~31) / 8;
+                    memset(monoBits, 0xFF, monoRowWidth * SZ);
+
+                    if (DrawIconEx(monoDC, 0, 0, hi, SZ, SZ, 0, nullptr, DI_MASK))
+                    {
+                        GdiFlush();
+                        BYTE* mBytes = (BYTE*)monoBits;
+                        for (int y = 0; y < SZ; y++)
+                        {
+                            for (int x = 0; x < SZ; x++)
+                            {
+                                int byteIdx = y * monoRowWidth + (x / 8);
+                                int bitIdx = 7 - (x % 8);
+                                bool isTransparent = (mBytes[byteIdx] & (1 << bitIdx)) != 0;
+                                int i = y * SZ + x;
+                                if (isTransparent)
+                                {
+                                    p[i] = 0; // transparent black
+                                }
+                                else
+                                {
+                                    p[i] |= 0xFF000000; // set alpha to 255 (opaque)
+                                }
+                            }
+                        }
+                    }
+                    SelectObject(monoDC, oldMono);
+                    DeleteObject(monoDib);
+                }
+                DeleteDC(monoDC);
+            }
+        }
+
+        bool sourceLooksStraightAlpha = false;
+        for (int i = 0; i < SZ * SZ; i++)
+        {
+            BYTE a = (p[i] >> 24) & 0xFF;
+            if (a == 0 || a == 0xFF)
+                continue;
+            BYTE r = (p[i] >> 16) & 0xFF;
+            BYTE g = (p[i] >> 8) & 0xFF;
+            BYTE b = p[i] & 0xFF;
+            if (r > a || g > a || b > a)
+            {
+                sourceLooksStraightAlpha = true;
+                break;
+            }
+        }
+
         for (int i = 0; i < SZ * SZ; i++)
         {
             BYTE a = (p[i] >> 24) & 0xFF;
@@ -71,12 +197,34 @@ public:
 
             if (invert)
             {
-                r = 255 - r;
-                g = 255 - g;
-                b = 255 - b;
-            }
+                if (a > 0)
+                {
+                    BYTE sr = sourceLooksStraightAlpha ? r : (BYTE)(std::min)(255, (int)r * 255 / (int)a);
+                    BYTE sg = sourceLooksStraightAlpha ? g : (BYTE)(std::min)(255, (int)g * 255 / (int)a);
+                    BYTE sb = sourceLooksStraightAlpha ? b : (BYTE)(std::min)(255, (int)b * 255 / (int)a);
 
-            if (a < 255)
+                    sr = 255 - sr;
+                    sg = 255 - sg;
+                    sb = 255 - sb;
+
+                    r = (BYTE)((sr * a) / 255);
+                    g = (BYTE)((sg * a) / 255);
+                    b = (BYTE)((sb * a) / 255);
+                }
+                else
+                {
+                    r = 0;
+                    g = 0;
+                    b = 0;
+                }
+            }
+            else if (a == 0)
+            {
+                r = 0;
+                g = 0;
+                b = 0;
+            }
+            else if (sourceLooksStraightAlpha)
             {
                 r = (BYTE)((r * a) / 255);
                 g = (BYTE)((g * a) / 255);
@@ -94,11 +242,13 @@ public:
         {
             LOG_G_ERRA(L"HicontoD2D: CreateBitmap failed, size=%d, hr=0x%08X, err=%d",
                 SZ, hr, GetLastError());
+            SelectObject(cdc, oldObj);
             DeleteObject(dib);
             DeleteDC(cdc);
             return nullptr;
         }
 
+        SelectObject(cdc, oldObj);
         DeleteObject(dib);
         DeleteDC(cdc);
         return bmp;

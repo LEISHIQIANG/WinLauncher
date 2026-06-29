@@ -48,6 +48,11 @@ float GlassWindow::GetWindowScale(HWND hwnd)
     return DpiHelper::GetWindowScale(hwnd);
 }
 
+float GlassWindow::GetSystemWindowScale(HWND hwnd)
+{
+    return DpiHelper::GetSystemWindowScale(hwnd);
+}
+
 GlassWindow::GlassWindow()
 {
     m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
@@ -161,21 +166,54 @@ ShadowSettings GlassWindow::GetShadowSettings() const
     return s;
 }
 
+void GlassWindow::UpdateWindowCornerRadius()
+{
+    m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
+}
+
+void GlassWindow::UpdateWindowRoundRegion()
+{
+    if (!m_hWnd)
+        return;
+
+    RECT cr{};
+    if (!GetClientRect(m_hWnd, &cr))
+        return;
+
+    int width = cr.right - cr.left;
+    int height = cr.bottom - cr.top;
+    if (width <= 0 || height <= 0)
+        return;
+
+    if (m_cornerRadius <= 0.0f)
+    {
+        SetWindowRgn(m_hWnd, nullptr, TRUE);
+        return;
+    }
+
+    float systemScale = GetSystemWindowScale(m_hWnd);
+    int radiusPx = (int)std::round(m_cornerRadius * systemScale);
+    if (radiusPx < 1) radiusPx = 1;
+
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radiusPx * 2, radiusPx * 2);
+    if (region && SetWindowRgn(m_hWnd, region, TRUE) == 0)
+    {
+        DeleteObject(region);
+    }
+}
+
 void GlassWindow::ApplySystemBackdrop()
 {
     MARGINS m{ -1, -1, -1, -1 };
     DwmExtendFrameIntoClientArea(m_hWnd, &m);
 
-    if (IsWindows11OrLater())
+    UpdateWindowCornerRadius();
+    if (m_cornerRadius > 0.0f)
     {
         DWORD corner = 2;
         DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-        m_cornerRadius = 8.0f;
     }
-    else
-    {
-        m_cornerRadius = 0.0f;
-    }
+    UpdateWindowRoundRegion();
 
     DWORD border = 0xFFFFFFFE;
     DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
@@ -423,6 +461,12 @@ void GlassWindow::CompositeBackgroundToCache()
     float h = rtSize.height;
     if (w <= 0.0f || h <= 0.0f) return;
 
+    float scale = GetWindowScale(m_hWnd);
+    float systemScale = GetSystemWindowScale(m_hWnd);
+    float drawCornerRadius = m_cornerRadius * (systemScale / scale);
+    float borderOffset = (0.5f * systemScale) / scale;
+    float borderWidth = (1.0f * systemScale) / scale;
+
     // Reuse bitmap render target if size matches
     bool sizeChanged = false;
     if (m_compositeRt)
@@ -559,9 +603,9 @@ void GlassWindow::CompositeBackgroundToCache()
             {
                 m_sheenLayerRt->FillRoundedRectangle(
                     D2D1::RoundedRect(
-                        D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
-                        (std::max)(0.0f, m_cornerRadius - 0.5f),
-                        (std::max)(0.0f, m_cornerRadius - 0.5f)),
+                        D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset),
+                        (std::max)(0.0f, drawCornerRadius - borderOffset),
+                        (std::max)(0.0f, drawCornerRadius - borderOffset)),
                     m_sheenBrush.Get());
             }
 
@@ -609,8 +653,8 @@ void GlassWindow::CompositeBackgroundToCache()
         if (bo)
         {
             bmpRt->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
-                bo.Get(), 1.0f);
+                D2D1::RoundedRect(D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset), drawCornerRadius, drawCornerRadius),
+                bo.Get(), borderWidth);
         }
     }
 
@@ -713,9 +757,13 @@ void GlassWindow::DoPaint()
             ComPtr<ID2D1SolidColorBrush> bo = GetOrCreateBrush(UIStyle::ThemeColor::WindowBorder().d2d);
             if (bo)
             {
+                float systemScale = GetSystemWindowScale(m_hWnd);
+                float drawCornerRadius = m_cornerRadius * (systemScale / scale);
+                float borderOffset = (0.5f * systemScale) / scale;
+                float borderWidth = (1.0f * systemScale) / scale;
                 m_rt->DrawRoundedRectangle(
-                    D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
-                    bo.Get(), 1.0f);
+                    D2D1::RoundedRect(D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset), drawCornerRadius, drawCornerRadius),
+                    bo.Get(), borderWidth);
             }
         }
     }
@@ -828,9 +876,37 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (m_compositor)
                     m_compositor->OnResize(m_rt->GetSize());
             }
-            if ((sizeChanged || posChanged) && m_rt)
+            if (sizeChanged || posChanged)
             {
-                m_bgDirty = true;
+                UpdateWindowCornerRadius();
+                UpdateWindowRoundRegion();
+
+                if (m_rt)
+                {
+                    float effectiveDpi = GetWindowScale(hWnd) * 96.0f;
+                    FLOAT currentDpiX = 96.0f;
+                    FLOAT currentDpiY = 96.0f;
+                    m_rt->GetDpi(&currentDpiX, &currentDpiY);
+                    if (fabsf(currentDpiX - effectiveDpi) > 0.5f || fabsf(currentDpiY - effectiveDpi) > 0.5f)
+                    {
+                        m_rt->SetDpi(effectiveDpi, effectiveDpi);
+                        UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
+                        m_bgCap.Reset();
+                        m_bgFinal.Reset();
+                        m_compositeRt.Reset();
+                        m_blurEffect.Reset();
+                        m_satEffect.Reset();
+                        m_sheenBlurEffect.Reset();
+                        m_sheenGsc.Reset();
+                        m_sheenBrush.Reset();
+                        m_sheenLayerRt.Reset();
+                        m_sheenLayerBitmap.Reset();
+                        m_effectWinSize = {};
+                        if (m_compositor)
+                            m_compositor->MarkAllDirty();
+                    }
+                    m_bgDirty = true;
+                }
             }
 
             // Sync shadow window
@@ -847,10 +923,13 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int mainW = wr.right - wr.left;
                 int mainH = wr.bottom - wr.top;
                 float scale = GetWindowScale(hWnd);
+                float systemScale = GetSystemWindowScale(hWnd);
+                float physicalRadius = m_cornerRadius * systemScale;
 
                 if (sizeChanged)
                 {
-                    m_shadowWindow->UpdateShadow(mainW, mainH, m_cornerRadius, scale);
+                    UpdateWindowCornerRadius();
+                    m_shadowWindow->UpdateShadow(mainW, mainH, physicalRadius, scale);
                 }
                 else
                 {
@@ -898,7 +977,12 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             RECT wr;
             GetWindowRect(hWnd, &wr);
-            m_shadowWindow->UpdateShadow(wr.right - wr.left, wr.bottom - wr.top, m_cornerRadius, GetWindowScale(hWnd));
+            UpdateWindowCornerRadius();
+            UpdateWindowRoundRegion();
+            float scale = GetWindowScale(hWnd);
+            float systemScale = GetSystemWindowScale(hWnd);
+            float physicalRadius = m_cornerRadius * systemScale;
+            m_shadowWindow->UpdateShadow(wr.right - wr.left, wr.bottom - wr.top, physicalRadius, scale);
 
             if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
             {
@@ -1026,10 +1110,26 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_DPICHANGED:
     {
-        float newDpiX = (float)LOWORD(wParam);
-        float newDpiY = (float)HIWORD(wParam);
+        float oldScale = 1.0f;
+        if (m_rt)
+        {
+            float dpiX = 96.0f, dpiY = 96.0f;
+            m_rt->GetDpi(&dpiX, &dpiY);
+            oldScale = dpiX / 96.0f;
+        }
+        else
+        {
+            oldScale = GetWindowScale(hWnd);
+        }
+
+        float newSystemScale = LOWORD(wParam) / 96.0f;
+        float newScale = UIStyle::Scaling::EffectiveScaleFactor(newSystemScale);
+        float newDpiX = newScale * 96.0f;
+        float newDpiY = newDpiX;
+
         if (m_appCtx && m_appCtx->logger)
-            LOG_INFO(m_appCtx->logger, L"GlassWindow: DPI changed: newDpiX = %.2f, newDpiY = %.2f", newDpiX, newDpiY);
+            LOG_INFO(m_appCtx->logger, L"GlassWindow: DPI changed: oldScale = %.2f, newScale = %.2f, newSystemScale = %.2f", oldScale, newScale, newSystemScale);
+
         if (m_rt)
         {
             m_rt->SetDpi(newDpiX, newDpiY);
@@ -1049,13 +1149,30 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 m_compositor->MarkAllDirty();
             m_bgDirty = true;
         }
+
         RECT* const prcNewWindow = (RECT*)lParam;
         if (prcNewWindow)
         {
+            int newW = prcNewWindow->right - prcNewWindow->left;
+            int newH = prcNewWindow->bottom - prcNewWindow->top;
+
+            if (ShouldAutoResizeOnDpiChange())
+            {
+                RECT wr{};
+                GetWindowRect(hWnd, &wr);
+                int currentW = wr.right - wr.left;
+                int currentH = wr.bottom - wr.top;
+
+                newW = (int)std::round(currentW * (newScale / oldScale));
+                newH = (int)std::round(currentH * (newScale / oldScale));
+
+                prcNewWindow->right = prcNewWindow->left + newW;
+                prcNewWindow->bottom = prcNewWindow->top + newH;
+            }
+
             SetWindowPos(hWnd, nullptr,
                 prcNewWindow->left, prcNewWindow->top,
-                prcNewWindow->right - prcNewWindow->left,
-                prcNewWindow->bottom - prcNewWindow->top,
+                newW, newH,
                 SWP_NOZORDER | SWP_NOACTIVATE);
         }
         return 0;
@@ -1087,7 +1204,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 
-void GlassWindow::StartOpenTransition()
+void GlassWindow::StartOpenTransition(bool fromWindowCenter)
 {
     if (!UIStyle::Animation::IsEnabled()) return;
 
@@ -1095,21 +1212,7 @@ void GlassWindow::StartOpenTransition()
     m_animProgress = 0.0f;
     m_animStartTime = GetTickCount64();
 
-    // Determine Apple-style animation center from the current mouse cursor position
-    RECT cr;
-    GetClientRect(m_hWnd, &cr);
-    float scale = GetWindowScale(m_hWnd);
-    float w = (float)cr.right / scale;
-    float h = (float)cr.bottom / scale;
-
-    POINT cursorPt;
-    GetCursorPos(&cursorPt);
-    ScreenToClient(m_hWnd, &cursorPt);
-    float cx = (float)cursorPt.x / scale;
-    float cy = (float)cursorPt.y / scale;
-    cx = (std::max)(0.0f, (std::min)(w, cx));
-    cy = (std::max)(0.0f, (std::min)(h, cy));
-    m_animCenter = D2D1::Point2F(cx, cy);
+    SetAnimationCenter(fromWindowCenter);
 
     LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
     if (!(exStyle & WS_EX_LAYERED))
@@ -1125,7 +1228,7 @@ void GlassWindow::StartOpenTransition()
     SetTimer(m_hWnd, 0x889, 10, nullptr);
 }
 
-void GlassWindow::StartCloseTransition(std::function<void()> onComplete)
+void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fromWindowCenter)
 {
     if (!UIStyle::Animation::IsEnabled())
     {
@@ -1138,12 +1241,30 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete)
     m_animStartTime = GetTickCount64();
     m_animOnComplete = onComplete;
 
-    // Determine Apple-style animation center from the current mouse cursor position
+    SetAnimationCenter(fromWindowCenter);
+
+    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+    if (!(exStyle & WS_EX_LAYERED))
+    {
+        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+
+    SetTimer(m_hWnd, 0x889, 10, nullptr);
+}
+
+void GlassWindow::SetAnimationCenter(bool fromWindowCenter)
+{
     RECT cr;
     GetClientRect(m_hWnd, &cr);
     float scale = GetWindowScale(m_hWnd);
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
+
+    if (fromWindowCenter)
+    {
+        m_animCenter = D2D1::Point2F(w * 0.5f, h * 0.5f);
+        return;
+    }
 
     POINT cursorPt;
     GetCursorPos(&cursorPt);
@@ -1153,14 +1274,6 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete)
     cx = (std::max)(0.0f, (std::min)(w, cx));
     cy = (std::max)(0.0f, (std::min)(h, cy));
     m_animCenter = D2D1::Point2F(cx, cy);
-
-    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-    if (!(exStyle & WS_EX_LAYERED))
-    {
-        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-    }
-
-    SetTimer(m_hWnd, 0x889, 10, nullptr);
 }
 
 void GlassWindow::GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform)

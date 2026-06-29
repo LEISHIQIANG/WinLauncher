@@ -20,6 +20,8 @@ public:
     virtual void SetTriggerType(int type) = 0;
     virtual bool GetAutoStart() = 0;
     virtual void SetAutoStart(bool enable) = 0;
+    virtual bool GetHideTrayIcon() = 0;
+    virtual void SetHideTrayIcon(bool hide) = 0;
 
     virtual int GetPopupColumns() = 0;
     virtual void SetPopupColumns(int columns) = 0;
@@ -39,6 +41,9 @@ public:
     virtual void SetThemeColor(int colorIndex) = 0;
     virtual int GetWindowMode() = 0;
     virtual void SetWindowMode(int mode) = 0;
+    virtual int GetGlobalScalePercent() = 0;
+    virtual bool HasCustomGlobalScalePercent() = 0;
+    virtual void SetGlobalScalePercent(int percent) = 0;
     virtual int GetDockHeight() = 0;
     virtual void SetDockHeight(int height) = 0;
     virtual bool GetSearchMode() = 0;

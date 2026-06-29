@@ -144,7 +144,6 @@ bool CommandDialog::Show(HWND parent, const wchar_t* title,
         result.iconInvertLight = formRes.iconInvertLight;
         result.iconInvertDark = formRes.iconInvertDark;
         result.commandType = formRes.commandType;
-        result.builtinCmd = formRes.builtinCmd;
         result.showWindow = formRes.showWindow;
         result.captureOutput = formRes.captureOutput;
         result.timeoutSeconds = formRes.timeoutSeconds;
@@ -171,7 +170,7 @@ LRESULT CommandDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
     case WM_CREATE:
     {
         EnsureD2D();
-        m_form.Create(hWnd, m_dw.Get(), D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), m_init);
+        m_form.Create(hWnd, m_dw.Get(), D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), m_init, m_appCtx);
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
         return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
     }
@@ -317,6 +316,20 @@ LRESULT CommandDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
         return 0;
     }
 
+    case WM_MOUSEWHEEL:
+    {
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        ScreenToClient(hWnd, &pt);
+        float scale = DpiHelper::GetWindowScale(hWnd);
+        pt.x = (int)(pt.x / scale);
+        pt.y = (int)(pt.y / scale);
+
+        bool repaint = false;
+        m_form.OnMouseWheel(hWnd, GET_WHEEL_DELTA_WPARAM(wParam), pt, scale, repaint);
+        if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    }
+
     case WM_IME_STARTCOMPOSITION:
     case WM_IME_COMPOSITION:
     case WM_IME_ENDCOMPOSITION:
@@ -387,8 +400,8 @@ void CommandDialog::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     D2D1_SIZE_F sz = rt->GetSize();
     float scale = DpiHelper::GetWindowScale(GetHWND());
-    float W = sz.width / scale;
-    float H = sz.height / scale;
+    float W = sz.width;
+    float H = sz.height;
 
     if (m_tfTitle)
     {

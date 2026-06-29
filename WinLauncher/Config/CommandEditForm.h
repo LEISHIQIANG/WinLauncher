@@ -9,6 +9,8 @@
 
 using Microsoft::WRL::ComPtr;
 
+struct AppContext;
+
 struct CommandEditFormResult
 {
     std::wstring name;
@@ -49,7 +51,7 @@ public:
 
     static constexpr float PreferredContentHeight() { return 338.0f; }
 
-    bool Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const CommandEditFormInitParams& init);
+    bool Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const CommandEditFormInitParams& init, AppContext* ctx = nullptr);
     void Destroy();
 
     void Paint(ID2D1HwndRenderTarget* rt, float scale);
@@ -62,6 +64,7 @@ public:
     void OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint);
     void OnChar(HWND hWnd, WPARAM wParam, bool& repaint);
     void OnKeyDown(HWND hWnd, WPARAM wParam, LPARAM lParam, bool& repaint);
+    void OnMouseWheel(HWND hWnd, short zDelta, POINT pt, float scale, bool& repaint);
     void BlinkCaret();
 
     // Focus helpers
@@ -97,6 +100,7 @@ private:
     void DrawIconPreview(ID2D1HwndRenderTarget* rt);
     HICON GetFileIconForPreview(const std::wstring& path);
 
+    AppContext*     m_ctx = nullptr;
     HWND            m_parentHWND = nullptr;
     D2D1_RECT_F     m_bounds = {};
     CommandEditFormInitParams m_init;

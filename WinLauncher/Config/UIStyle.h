@@ -56,6 +56,63 @@ namespace UIStyle
     inline void SetWindowMode(int mode) { g_WindowMode = mode; }
     inline int GetWindowMode() { return g_WindowMode; }
 
+    namespace Scaling
+    {
+        inline constexpr int MinPercent = 80;
+        inline constexpr int MaxPercent = 250;
+        inline constexpr int StepPercent = 10;
+        inline int g_GlobalScalePercent = 100;
+        inline bool g_HasCustomGlobalScalePercent = false;
+
+        inline int ClampPercent(int percent)
+        {
+            if (percent < MinPercent) percent = MinPercent;
+            if (percent > MaxPercent) percent = MaxPercent;
+            return percent;
+        }
+
+        inline int NormalizePercent(int percent)
+        {
+            percent = ClampPercent(percent);
+            int remainder = percent % StepPercent;
+            if (remainder != 0)
+                percent += (remainder >= StepPercent / 2) ? (StepPercent - remainder) : -remainder;
+            return ClampPercent(percent);
+        }
+
+        inline void SetGlobalScalePercent(int percent)
+        {
+            g_GlobalScalePercent = NormalizePercent(percent);
+            g_HasCustomGlobalScalePercent = true;
+        }
+
+        inline void SetDefaultGlobalScalePercent(int percent)
+        {
+            g_GlobalScalePercent = ClampPercent(percent);
+            g_HasCustomGlobalScalePercent = false;
+        }
+
+        inline int GetGlobalScalePercent()
+        {
+            return g_GlobalScalePercent;
+        }
+
+        inline bool HasCustomGlobalScalePercent()
+        {
+            return g_HasCustomGlobalScalePercent;
+        }
+
+        inline float GetGlobalScaleFactor()
+        {
+            return g_GlobalScalePercent / 100.0f;
+        }
+
+        inline float EffectiveScaleFactor(float systemScale)
+        {
+            return g_HasCustomGlobalScalePercent ? GetGlobalScaleFactor() : systemScale;
+        }
+    }
+
     namespace Performance
     {
         inline bool g_HardwareAccelerationEnabled = true;

@@ -26,10 +26,11 @@ public:
         Closing
     };
 
-    void StartOpenTransition();
-    void StartCloseTransition(std::function<void()> onComplete = nullptr);
+    void StartOpenTransition(bool fromWindowCenter = false);
+    void StartCloseTransition(std::function<void()> onComplete = nullptr, bool fromWindowCenter = false);
 
     static float GetWindowScale(HWND hwnd);
+    static float GetSystemWindowScale(HWND hwnd);
     static float GetDpiScaleForMonitor(HMONITOR hMonitor);
 
     ID2D1Factory* GetD2DFactory() const { return m_d2d.Get(); }
@@ -46,6 +47,7 @@ public:
 protected:
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) = 0;
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
+    virtual bool ShouldAutoResizeOnDpiChange() const { return true; }
 
     void ApplySystemBackdrop();
     bool EnsureD2D();
@@ -53,6 +55,9 @@ protected:
     void CaptureBackground();
     void CompositeBackgroundToCache();
     void DoPaint();
+    void UpdateWindowCornerRadius();
+    void UpdateWindowRoundRegion();
+    void SetAnimationCenter(bool fromWindowCenter);
 
     // Compositor-based rendering (long-term)
     void SetCompositor(std::unique_ptr<Compositor> compositor)

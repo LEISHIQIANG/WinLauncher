@@ -13,6 +13,7 @@
 #include "FolderWatcher.h"
 #include "SyncFolderService.h"
 #include "ConfigPath.h"
+#include <objbase.h>
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -34,19 +35,40 @@ public:
         , m_themeMode(0)
         , m_themeColorIndex(0)
         , m_windowMode(0)
+        , m_globalScalePercent(100)
         , m_dockHeight(1)
         , m_searchMode(false)
         , m_animationEnabled(true)
         , m_animationDuration(200)
         , m_hardwareAccelerationEnabled(true)
+        , m_hideTrayIcon(false)
     {
         m_configDir = ConfigPath::PrepareUserConfigDirectory();
         m_configFilePath = m_configDir + L"\\launcher_config.ini";
     }
 
+private:
+    static std::wstring GenerateGUID()
+    {
+        GUID guid;
+        if (SUCCEEDED(CoCreateGuid(&guid)))
+        {
+            wchar_t buf[40]{};
+            if (StringFromGUID2(guid, buf, 40) > 0)
+            {
+                return buf;
+            }
+        }
+        return L"{" + std::to_wstring(GetTickCount64()) + L"-" + std::to_wstring(rand()) + L"}";
+    }
+
+public:
+
     virtual std::vector<Model::PopupPage> LoadConfig() override
     {
         std::vector<Model::PopupPage> pages;
+        m_hasGlobalScalePercent = false;
+        m_globalScalePercent = 100;
 
         if (GetFileAttributesW(m_configFilePath.c_str()) == INVALID_FILE_ATTRIBUTES)
         {
@@ -205,6 +227,10 @@ public:
                     {
                         try { m_windowMode = std::stoi(val); } catch (...) { m_windowMode = 0; }
                     }
+                    else if (key == L"GlobalScalePercent")
+                    {
+                        try { SetGlobalScalePercent(std::stoi(val)); } catch (...) { m_globalScalePercent = 100; m_hasGlobalScalePercent = false; }
+                    }
                     else if (key == L"DockHeight")
                     {
                         try { m_dockHeight = std::stoi(val); if (m_dockHeight < 1) m_dockHeight = 1; if (m_dockHeight > 5) m_dockHeight = 5; } catch (...) { m_dockHeight = 1; }
@@ -224,6 +250,10 @@ public:
                     else if (key == L"HardwareAccelerationEnabled")
                     {
                         try { m_hardwareAccelerationEnabled = (std::stoi(val) != 0); } catch (...) { m_hardwareAccelerationEnabled = true; }
+                    }
+                    else if (key == L"HideTrayIcon")
+                    {
+                        try { m_hideTrayIcon = (std::stoi(val) != 0); } catch (...) { m_hideTrayIcon = false; }
                     }
                     else if (key == L"DarkHue")
                     {
@@ -329,6 +359,7 @@ public:
                     Trim(key); Trim(val);
 
                     if (key == L"Name") currentItem->name = val;
+                    else if (key == L"Id") currentItem->id = val;
                     else if (key == L"Type") currentItem->type = Model::ShortcutTypeFromKey(val);
                     else if (key == L"TargetKind") currentItem->targetKind = Model::ShortcutTargetKindFromKey(val);
                     else if (key == L"TargetPath") currentItem->targetPath = val;
@@ -374,6 +405,17 @@ public:
             return CreateDefaultConfig();
         }
 
+        for (auto& page : pages)
+        {
+            for (auto& sc : page.shortcuts)
+            {
+                if (sc.id.empty())
+                {
+                    sc.id = GenerateGUID();
+                }
+            }
+        }
+
         // Load and reconcile shortcuts for synchronized folders
         for (auto& page : pages)
         {
@@ -390,7 +432,9 @@ public:
                     });
                     if (it != diskShortcuts.end())
                     {
-                        reconciled.push_back(*it);
+                        Model::ShortcutInfo disk = *it;
+                        disk.id = saved.id;
+                        reconciled.push_back(std::move(disk));
                         matched[std::distance(diskShortcuts.begin(), it)] = true;
                     }
                 }
@@ -452,11 +496,16 @@ public:
         content += L"ThemeMode=" + std::to_wstring(m_themeMode) + L"\r\n";
         content += L"ThemeColorIndex=" + std::to_wstring(m_themeColorIndex) + L"\r\n";
         content += L"WindowMode=" + std::to_wstring(m_windowMode) + L"\r\n";
+        if (m_hasGlobalScalePercent)
+        {
+            content += L"GlobalScalePercent=" + std::to_wstring(m_globalScalePercent) + L"\r\n";
+        }
         content += L"DockHeight=" + std::to_wstring(m_dockHeight) + L"\r\n";
         content += L"SearchMode=" + std::to_wstring(m_searchMode ? 1 : 0) + L"\r\n";
         content += L"AnimationEnabled=" + std::to_wstring(m_animationEnabled ? 1 : 0) + L"\r\n";
         content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
         content += L"HardwareAccelerationEnabled=" + std::to_wstring(m_hardwareAccelerationEnabled ? 1 : 0) + L"\r\n";
+        content += L"HideTrayIcon=" + std::to_wstring(m_hideTrayIcon ? 1 : 0) + L"\r\n";
         content += L"DarkHue=" + std::to_wstring(m_appearance.dark.hue) + L"\r\n";
         content += L"DarkBlur=" + std::to_wstring(m_appearance.dark.blur) + L"\r\n";
         content += L"DarkOpacity=" + std::to_wstring(m_appearance.dark.opacity) + L"\r\n";
@@ -496,6 +545,7 @@ public:
             for (const auto& sc : page.shortcuts)
             {
                 content += L"[Item:" + std::to_wstring(pageIndex) + L":" + std::to_wstring(shortcutIndex) + L"]\r\n";
+                content += L"Id=" + EscapeValue(sc.id.empty() ? GenerateGUID() : sc.id) + L"\r\n";
                 content += L"Name=" + EscapeValue(sc.name) + L"\r\n";
                 content += L"Type=" + std::wstring(Model::ShortcutTypeKey(sc.type)) + L"\r\n";
                 content += L"TargetKind=" + std::wstring(Model::ShortcutTargetKindKey(sc.targetKind)) + L"\r\n";
@@ -552,6 +602,20 @@ public:
     }
     virtual int GetWindowMode() override { return m_windowMode; }
     virtual void SetWindowMode(int mode) override { m_windowMode = mode; }
+    virtual int GetGlobalScalePercent() override { return m_globalScalePercent; }
+    virtual bool HasCustomGlobalScalePercent() override { return m_hasGlobalScalePercent; }
+    virtual void SetGlobalScalePercent(int percent) override
+    {
+        if (percent < 80) percent = 80;
+        if (percent > 250) percent = 250;
+        int remainder = percent % 10;
+        if (remainder != 0)
+            percent += (remainder >= 5) ? (10 - remainder) : -remainder;
+        if (percent < 80) percent = 80;
+        if (percent > 250) percent = 250;
+        m_globalScalePercent = percent;
+        m_hasGlobalScalePercent = true;
+    }
     virtual int GetDockHeight() override { return m_dockHeight; }
     virtual void SetDockHeight(int height) override { m_dockHeight = height; }
     virtual bool GetSearchMode() override { return m_searchMode; }
@@ -573,6 +637,9 @@ public:
     {
         AutoStartHelper::SetEnabled(enable);
     }
+
+    virtual bool GetHideTrayIcon() override { return m_hideTrayIcon; }
+    virtual void SetHideTrayIcon(bool hide) override { m_hideTrayIcon = hide; }
 
     virtual ~IniConfigRepository() override
     {
@@ -739,10 +806,13 @@ private:
     int m_themeMode = 0;
     int m_themeColorIndex = 0;
     int m_windowMode = 0;
+    int m_globalScalePercent = 100;
+    bool m_hasGlobalScalePercent = false;
     int m_dockHeight = 50;
     bool m_searchMode = false;
     bool m_animationEnabled = true;
     int m_animationDuration = 200;
     bool m_hardwareAccelerationEnabled = true;
+    bool m_hideTrayIcon;
     FolderWatcher m_folderWatcher;
 };

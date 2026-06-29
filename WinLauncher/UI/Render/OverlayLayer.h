@@ -1,6 +1,7 @@
 #pragma once
 #include "IRenderLayer.h"
 #include "../../Config/UIStyle.h"
+#include "../../DpiHelper.h"
 #include <algorithm>
 #include <d2d1effects.h>
 #include <d2d1helper.h>
@@ -17,6 +18,12 @@ public:
     {
         float w = size.width;
         float h = size.height;
+
+        HWND hwnd = rt->GetHwnd();
+        float systemScale = DpiHelper::GetSystemWindowScale(hwnd);
+        float drawCornerRadius = m_cornerRadius * (systemScale / scale);
+        float borderOffset = (0.5f * systemScale) / scale;
+        float borderWidth = (1.0f * systemScale) / scale;
 
         if (m_dirty || m_size.width != w || m_size.height != h)
         {
@@ -87,9 +94,9 @@ public:
             m_sheenLayerRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
             m_sheenLayerRt->FillRoundedRectangle(
                 D2D1::RoundedRect(
-                    D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
-                    (std::max)(0.0f, m_cornerRadius - 0.5f),
-                    (std::max)(0.0f, m_cornerRadius - 0.5f)),
+                    D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset),
+                    (std::max)(0.0f, drawCornerRadius - borderOffset),
+                    (std::max)(0.0f, drawCornerRadius - borderOffset)),
                 m_sheenBrush.Get());
             HRESULT sheenHr = m_sheenLayerRt->EndDraw();
             if (SUCCEEDED(sheenHr))
@@ -131,8 +138,8 @@ public:
         if (m_borderBrush)
         {
             rt->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), m_cornerRadius, m_cornerRadius),
-                m_borderBrush.Get(), 1.0f);
+                D2D1::RoundedRect(D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset), drawCornerRadius, drawCornerRadius),
+                m_borderBrush.Get(), borderWidth);
         }
     }
 

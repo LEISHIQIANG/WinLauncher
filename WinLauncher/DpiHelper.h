@@ -1,4 +1,5 @@
 #pragma once
+#include "Config/UIStyle.h"
 #include <Windows.h>
 
 static void SetWindowDisplayAffinitySafe(HWND hwnd)
@@ -12,7 +13,7 @@ static void SetWindowDisplayAffinitySafe(HWND hwnd)
 class DpiHelper
 {
 public:
-    static float GetDpiScaleForMonitor(HMONITOR hMonitor)
+    static float GetSystemDpiScaleForMonitor(HMONITOR hMonitor)
     {
         if (hMonitor)
         {
@@ -41,7 +42,13 @@ public:
         return dpiX / 96.0f;
     }
 
-    static float GetWindowScale(HWND hwnd)
+    static float GetDpiScaleForMonitor(HMONITOR hMonitor)
+    {
+        float systemScale = GetSystemDpiScaleForMonitor(hMonitor);
+        return UIStyle::Scaling::EffectiveScaleFactor(systemScale);
+    }
+
+    static float GetSystemWindowScale(HWND hwnd)
     {
         if (hwnd)
         {
@@ -55,9 +62,23 @@ public:
                 }
             }
             HMONITOR hm = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            return GetDpiScaleForMonitor(hm);
+            return GetSystemDpiScaleForMonitor(hm);
         }
         return 1.0f;
+    }
+
+    static float GetWindowScale(HWND hwnd)
+    {
+        float systemScale = GetSystemWindowScale(hwnd);
+        return UIStyle::Scaling::EffectiveScaleFactor(systemScale);
+    }
+
+    static int GetPrimaryDisplayScalePercent()
+    {
+        POINT origin{ 0, 0 };
+        HMONITOR hm = MonitorFromPoint(origin, MONITOR_DEFAULTTOPRIMARY);
+        int percent = (int)(GetSystemDpiScaleForMonitor(hm) * 100.0f + 0.5f);
+        return UIStyle::Scaling::ClampPercent(percent);
     }
 
     static float GetDpiScaleForPoint(POINT pt)
@@ -91,6 +112,14 @@ public:
         POINT physicalPt;
         physicalPt.x = (int)(logicalPt.x * scale);
         physicalPt.y = (int)(logicalPt.y * scale);
+        return physicalPt;
+    }
+
+    static POINT LogicalClientToScreen(HWND hwnd, POINT logicalPt)
+    {
+        float scale = GetWindowScale(hwnd);
+        POINT physicalPt = ToPhysical(logicalPt, scale);
+        ClientToScreen(hwnd, &physicalPt);
         return physicalPt;
     }
 };

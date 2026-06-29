@@ -13,7 +13,6 @@ struct CommandDialogResult
     bool         iconInvertLight = false;
     bool         iconInvertDark = false;
     std::wstring commandType;
-    std::wstring builtinCmd;
     bool         showWindow = false;
     bool         captureOutput = false;
     int          timeoutSeconds = 300;

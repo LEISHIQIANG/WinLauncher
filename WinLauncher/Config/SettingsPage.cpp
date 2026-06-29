@@ -6,6 +6,21 @@
 #include <cmath>
 #include <vector>
 
+namespace
+{
+    constexpr float GLOBAL_SCALE_CARD_LEFT = 160.0f;
+    constexpr float GLOBAL_SCALE_CARD_TOP = 112.0f;
+    constexpr float GLOBAL_SCALE_CARD_RIGHT = 510.0f;
+    constexpr float GLOBAL_SCALE_CARD_BOTTOM = 148.0f;
+    constexpr float GLOBAL_SCALE_TRACK_LEFT = 250.0f;
+    constexpr float GLOBAL_SCALE_TRACK_RIGHT = 402.0f;
+    constexpr float GLOBAL_SCALE_TRACK_Y = 130.0f;
+    constexpr float GLOBAL_SCALE_APPLY_LEFT = 448.0f;
+    constexpr float GLOBAL_SCALE_APPLY_TOP = 118.0f;
+    constexpr float GLOBAL_SCALE_APPLY_RIGHT = 506.0f;
+    constexpr float GLOBAL_SCALE_APPLY_BOTTOM = 142.0f;
+}
+
 SettingsPage::SettingsPage(IConfigWindow* owner)
     : m_owner(owner)
 {
@@ -15,10 +30,31 @@ SettingsPage::~SettingsPage()
 {
 }
 
+int SettingsPage::PendingGlobalScalePercent()
+{
+    if (m_pendingGlobalScalePercent == 0)
+    {
+        m_pendingGlobalScalePercent = m_owner ? m_owner->GetGlobalScalePercent() : 100;
+    }
+    return UIStyle::Scaling::ClampPercent(m_pendingGlobalScalePercent);
+}
+
+int SettingsPage::GlobalScaleFromPoint(POINT pt) const
+{
+    float x = (float)pt.x;
+    if (x < GLOBAL_SCALE_TRACK_LEFT) x = GLOBAL_SCALE_TRACK_LEFT;
+    if (x > GLOBAL_SCALE_TRACK_RIGHT) x = GLOBAL_SCALE_TRACK_RIGHT;
+
+    float t = (x - GLOBAL_SCALE_TRACK_LEFT) / (GLOBAL_SCALE_TRACK_RIGHT - GLOBAL_SCALE_TRACK_LEFT);
+    int steps = (int)std::round(t * ((UIStyle::Scaling::MaxPercent - UIStyle::Scaling::MinPercent) / UIStyle::Scaling::StepPercent));
+    return UIStyle::Scaling::MinPercent + steps * UIStyle::Scaling::StepPercent;
+}
+
 void SettingsPage::SetCategory(int categoryIndex)
 {
     m_categoryIndex = categoryIndex;
     m_hoveredAutoStart = false;
+    m_hoveredHideTrayIcon = false;
     m_hoveredOpenConfigFile = false;
     m_hoveredOpenLogFile = false;
     m_hoveredConfigDirText = false;
@@ -34,6 +70,10 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredHardwareAcceleration = false;
     m_hoveredAnimationDuration = false;
     m_hoveredAnimationDurationButton = 0;
+    m_hoveredGlobalScaleSlider = false;
+    m_hoveredGlobalScaleApply = false;
+    m_draggingGlobalScaleSlider = false;
+    m_pendingGlobalScalePercent = m_owner ? m_owner->GetGlobalScalePercent() : 100;
 }
 
 void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
@@ -110,15 +150,132 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 if (tb)
                 {
                     rt->DrawTextW(label, (UINT32)wcslen(label), tfDefault,
-                        D2D1::RectF(x + 26.0f, 83, x + 112.0f, 103), tb);
+                        D2D1::RectF(x + 26.0f, 83, x + 90.0f, 103), tb);
                     tb->Release();
                 }
             }
         };
 
         drawInlineCheckbox(160.0f, m_owner->GetAutoStart(), m_hoveredAutoStart, L"开机自启");
-        drawInlineCheckbox(280.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
-        drawInlineCheckbox(405.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
+        drawInlineCheckbox(245.0f, m_owner->GetHideTrayIcon(), m_hoveredHideTrayIcon, L"隐藏托盘");
+        drawInlineCheckbox(330.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
+        drawInlineCheckbox(415.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
+
+        // Draw Global Scale Slider
+        {
+            int currentScale = m_owner->GetGlobalScalePercent();
+            int pendingScale = PendingGlobalScalePercent();
+            bool hasPendingChange = (pendingScale != currentScale);
+            bool isRowHovered = m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider;
+
+            D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(
+                D2D1::RectF(GLOBAL_SCALE_CARD_LEFT, GLOBAL_SCALE_CARD_TOP, GLOBAL_SCALE_CARD_RIGHT, GLOBAL_SCALE_CARD_BOTTOM),
+                6.0f, 6.0f);
+
+            ID2D1SolidColorBrush* cardBg = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isRowHovered ? 0.06f : 0.018f), &cardBg);
+            if (cardBg)
+            {
+                rt->FillRoundedRectangle(roundedCard, cardBg);
+                cardBg->Release();
+            }
+
+            ID2D1SolidColorBrush* cardBorder = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isRowHovered ? 0.105f : 0.045f), &cardBorder);
+            if (cardBorder)
+            {
+                rt->DrawRoundedRectangle(roundedCard, cardBorder, UIStyle::Metrics::ControlStroke());
+                cardBorder->Release();
+            }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* textBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
+                if (textBrush)
+                {
+                    std::wstring label = L"全局缩放";
+                    rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
+                        D2D1::RectF(170.0f, 120.0f, 240.0f, 140.0f), textBrush);
+
+                    wchar_t valueBuf[32];
+                    swprintf_s(valueBuf, L"%d%%", pendingScale);
+                    std::wstring valueText = valueBuf;
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(valueText.c_str(), (UINT32)valueText.size(), tfDefault,
+                        D2D1::RectF(406.0f, 120.0f, 444.0f, 140.0f), textBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    textBrush->Release();
+                }
+            }
+
+            ID2D1SolidColorBrush* trackBrush = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, m_hoveredGlobalScaleSlider ? 0.20f : 0.12f), &trackBrush);
+            if (trackBrush)
+            {
+                rt->DrawLine(
+                    D2D1::Point2F(GLOBAL_SCALE_TRACK_LEFT, GLOBAL_SCALE_TRACK_Y),
+                    D2D1::Point2F(GLOBAL_SCALE_TRACK_RIGHT, GLOBAL_SCALE_TRACK_Y),
+                    trackBrush,
+                    3.0f);
+                trackBrush->Release();
+            }
+
+            float sliderT = (pendingScale - UIStyle::Scaling::MinPercent) / (float)(UIStyle::Scaling::MaxPercent - UIStyle::Scaling::MinPercent);
+            float thumbX = GLOBAL_SCALE_TRACK_LEFT + sliderT * (GLOBAL_SCALE_TRACK_RIGHT - GLOBAL_SCALE_TRACK_LEFT);
+
+            ID2D1SolidColorBrush* accentBrush = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
+            if (accentBrush)
+            {
+                rt->DrawLine(
+                    D2D1::Point2F(GLOBAL_SCALE_TRACK_LEFT, GLOBAL_SCALE_TRACK_Y),
+                    D2D1::Point2F(thumbX, GLOBAL_SCALE_TRACK_Y),
+                    accentBrush,
+                    3.0f);
+                rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(thumbX, GLOBAL_SCALE_TRACK_Y), 6.0f, 6.0f), accentBrush);
+                accentBrush->Release();
+            }
+
+            D2D1_COLOR_F applyBg = hasPendingChange ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+            applyBg.a = hasPendingChange ? (m_hoveredGlobalScaleApply ? 0.28f : 0.20f) : (m_hoveredGlobalScaleApply ? 0.075f : 0.035f);
+            ID2D1SolidColorBrush* applyBgBrush = nullptr;
+            rt->CreateSolidColorBrush(applyBg, &applyBgBrush);
+            D2D1_ROUNDED_RECT applyRect = D2D1::RoundedRect(
+                D2D1::RectF(GLOBAL_SCALE_APPLY_LEFT, GLOBAL_SCALE_APPLY_TOP, GLOBAL_SCALE_APPLY_RIGHT, GLOBAL_SCALE_APPLY_BOTTOM),
+                5.0f, 5.0f);
+            if (applyBgBrush)
+            {
+                rt->FillRoundedRectangle(applyRect, applyBgBrush);
+                applyBgBrush->Release();
+            }
+
+            ID2D1SolidColorBrush* applyBorderBrush = nullptr;
+            D2D1_COLOR_F applyBorder = hasPendingChange ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+            applyBorder.a = hasPendingChange ? 0.62f : 0.12f;
+            rt->CreateSolidColorBrush(applyBorder, &applyBorderBrush);
+            if (applyBorderBrush)
+            {
+                rt->DrawRoundedRectangle(applyRect, applyBorderBrush, UIStyle::Metrics::ControlStroke());
+                applyBorderBrush->Release();
+            }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* applyTextBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &applyTextBrush);
+                if (applyTextBrush)
+                {
+                    std::wstring applyText = L"应用";
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(applyText.c_str(), (UINT32)applyText.size(), tfDefault,
+                        D2D1::RectF(GLOBAL_SCALE_APPLY_LEFT, GLOBAL_SCALE_APPLY_TOP + 2.0f, GLOBAL_SCALE_APPLY_RIGHT, GLOBAL_SCALE_APPLY_BOTTOM),
+                        applyTextBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    applyTextBrush->Release();
+                }
+            }
+        }
 
         // Draw Theme Option Header
         if (tfDefault)
@@ -129,7 +286,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"软件主题";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 125, 510, 145), tb);
+                    D2D1::RectF(160, 158, 510, 178), tb);
                 tb->Release();
             }
         }
@@ -142,7 +299,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             bool isSelected = (i == currentTheme);
             bool isHovered = (i == m_hoveredTheme);
             float xStart = (i == 0) ? 160.0f : 345.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 150.0f, xStart + 165.0f, 182.0f);
+            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 180.0f, xStart + 165.0f, 212.0f);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -175,7 +332,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(themeLabels[i].c_str(), (UINT32)themeLabels[i].size(), tfDefault,
-                        D2D1::RectF(xStart, 150.0f + 6.0f, xStart + 165.0f, 182.0f), textBrush);
+                        D2D1::RectF(xStart, 186.0f, xStart + 165.0f, 212.0f), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -192,11 +349,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"主题颜色";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 197, 260, 217), tb);
+                    D2D1::RectF(160, 218, 260, 238), tb);
 
                 std::wstring currentLabel = UIStyle::GetThemeColorPresetName(currentThemeColor);
                 rt->DrawTextW(currentLabel.c_str(), (UINT32)currentLabel.size(), tfDefault,
-                    D2D1::RectF(430, 197, 510, 217), tb);
+                    D2D1::RectF(430, 218, 510, 238), tb);
                 tb->Release();
             }
         }
@@ -210,7 +367,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             bool isSelected = (i == currentThemeColor);
             bool isHovered = (i == m_hoveredThemeColor);
             float x = swatchLeft + i * swatchStep;
-            D2D1_RECT_F swatchRect = D2D1::RectF(x, 225.0f, x + swatchSize, 243.0f);
+            D2D1_RECT_F swatchRect = D2D1::RectF(x, 244.0f, x + swatchSize, 262.0f);
             D2D1_ROUNDED_RECT roundedSwatch = D2D1::RoundedRect(swatchRect, 5.0f, 5.0f);
 
             ID2D1SolidColorBrush* swatchBrush = nullptr;
@@ -237,8 +394,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextOnAccent().d2d, &checkBrush);
                 if (checkBrush)
                 {
-                    rt->DrawLine(D2D1::Point2F(x + 5.0f, 234.0f), D2D1::Point2F(x + 8.0f, 237.0f), checkBrush, 1.4f);
-                    rt->DrawLine(D2D1::Point2F(x + 8.0f, 237.0f), D2D1::Point2F(x + 14.0f, 230.0f), checkBrush, 1.4f);
+                    rt->DrawLine(D2D1::Point2F(x + 5.0f, 253.0f), D2D1::Point2F(x + 8.0f, 256.0f), checkBrush, 1.4f);
+                    rt->DrawLine(D2D1::Point2F(x + 8.0f, 256.0f), D2D1::Point2F(x + 14.0f, 249.0f), checkBrush, 1.4f);
                     checkBrush->Release();
                 }
             }
@@ -254,7 +411,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"窗口材质";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 265, 510, 285), tb);
+                    D2D1::RectF(160, 276, 510, 294), tb);
                 tb->Release();
             }
         }
@@ -266,7 +423,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             bool isSelected = (i == currentWindowMode);
             bool isHovered = (i == m_hoveredWindowMode);
             float xStart = (i == 0) ? 160.0f : 345.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 286.0f, xStart + 165.0f, 318.0f);
+            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 298.0f, xStart + 165.0f, 326.0f);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -299,7 +456,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(modeLabels[i].c_str(), (UINT32)modeLabels[i].size(), tfDefault,
-                        D2D1::RectF(xStart, 286.0f + 6.0f, xStart + 165.0f, 318.0f), textBrush);
+                        D2D1::RectF(xStart, 302.0f, xStart + 165.0f, 326.0f), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -317,7 +474,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     std::wstring label = L"背景效果调节";
                     rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                        D2D1::RectF(160, 335, 510, 351), tb);
+                        D2D1::RectF(160, 338, 510, 354), tb);
                     tb->Release();
                 }
             }
@@ -345,7 +502,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 int col = i % 2;
                 int row = i / 2;
                 float ix = 160.0f + col * 175.0f;
-                float iy = 358.0f + row * 42.0f;
+                float iy = 360.0f + row * 38.0f;
                 float cy = iy + 16.0f;
                 bool isRowHovered = (m_hoveredThemeDetailSetting == activeItems[i].originalIdx);
 
@@ -973,6 +1130,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             repaint = true;
         }
 
+        bool hht = HitTestHideTrayIcon(pt);
+        if (hht != m_hoveredHideTrayIcon)
+        {
+            m_hoveredHideTrayIcon = hht;
+            repaint = true;
+        }
+
         int htheme = HitTestTheme(pt);
         if (htheme != m_hoveredTheme)
         {
@@ -991,6 +1155,30 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         if (hhw != m_hoveredHardwareAcceleration)
         {
             m_hoveredHardwareAcceleration = hhw;
+            repaint = true;
+        }
+
+        bool hgs = HitTestGlobalScaleSlider(pt);
+        if (m_draggingGlobalScaleSlider)
+        {
+            int nextScale = GlobalScaleFromPoint(pt);
+            if (nextScale != m_pendingGlobalScalePercent)
+            {
+                m_pendingGlobalScalePercent = nextScale;
+                repaint = true;
+            }
+            hgs = true;
+        }
+        if (hgs != m_hoveredGlobalScaleSlider)
+        {
+            m_hoveredGlobalScaleSlider = hgs;
+            repaint = true;
+        }
+
+        bool hga = HitTestGlobalScaleApply(pt);
+        if (hga != m_hoveredGlobalScaleApply)
+        {
+            m_hoveredGlobalScaleApply = hga;
             repaint = true;
         }
 
@@ -1098,9 +1286,10 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0)
+    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider)
     {
         m_hoveredAutoStart = false;
+        m_hoveredHideTrayIcon = false;
         m_hoveredOpenConfigFile = false;
         m_hoveredOpenLogFile = false;
         m_hoveredConfigDirText = false;
@@ -1117,6 +1306,9 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredHardwareAcceleration = false;
         m_hoveredAnimationDuration = false;
         m_hoveredAnimationDurationButton = 0;
+        m_hoveredGlobalScaleSlider = false;
+        m_hoveredGlobalScaleApply = false;
+        m_draggingGlobalScaleSlider = false;
         repaint = true;
     }
 }
@@ -1132,6 +1324,13 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_owner->NotifyConfigChanged();
             repaint = true;
         }
+        else if (HitTestHideTrayIcon(pt))
+        {
+            bool current = m_owner->GetHideTrayIcon();
+            m_owner->SetHideTrayIcon(!current);
+            m_owner->NotifyConfigChanged();
+            repaint = true;
+        }
         else if (HitTestAnimationToggle(pt))
         {
             bool current = m_owner->GetAnimationEnabled();
@@ -1143,6 +1342,24 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             bool current = m_owner->GetHardwareAccelerationEnabled();
             m_owner->SetHardwareAccelerationEnabled(!current);
             m_owner->NotifyConfigChanged();
+            repaint = true;
+        }
+        else if (HitTestGlobalScaleSlider(pt))
+        {
+            m_draggingGlobalScaleSlider = true;
+            m_pendingGlobalScalePercent = GlobalScaleFromPoint(pt);
+            if (HWND hwnd = m_owner->GetWindowHWND())
+                SetCapture(hwnd);
+            repaint = true;
+        }
+        else if (HitTestGlobalScaleApply(pt))
+        {
+            int pendingScale = PendingGlobalScalePercent();
+            if (pendingScale != m_owner->GetGlobalScalePercent())
+            {
+                m_owner->SetGlobalScalePercent(pendingScale);
+                m_pendingGlobalScalePercent = pendingScale;
+            }
             repaint = true;
         }
         else
@@ -1336,6 +1553,17 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
     }
 }
 
+void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
+{
+    if (m_draggingGlobalScaleSlider)
+    {
+        m_draggingGlobalScaleSlider = false;
+        m_pendingGlobalScalePercent = GlobalScaleFromPoint(pt);
+        ReleaseCapture();
+        repaint = true;
+    }
+}
+
 bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
 {
     if (m_categoryIndex != 1) return false;
@@ -1370,14 +1598,20 @@ bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
 
 bool SettingsPage::HitTestAutoStart(POINT pt)
 {
-    // Bounds for the AutoStart checkbox and label
-    return (pt.x >= 160 && pt.x <= 272 && pt.y >= 80 && pt.y <= 110);
+    if (m_categoryIndex != 0) return false;
+    return (pt.x >= 160 && pt.x <= 240 && pt.y >= 80 && pt.y <= 110);
+}
+
+bool SettingsPage::HitTestHideTrayIcon(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return (pt.x >= 245 && pt.x <= 325 && pt.y >= 80 && pt.y <= 110);
 }
 
 bool SettingsPage::HitTestHardwareAcceleration(POINT pt)
 {
     if (m_categoryIndex != 0) return false;
-    return (pt.x >= 280 && pt.x <= 392 && pt.y >= 80 && pt.y <= 110);
+    return (pt.x >= 330 && pt.x <= 410 && pt.y >= 80 && pt.y <= 110);
 }
 
 int SettingsPage::HitTestTrigger(POINT pt)
@@ -1397,7 +1631,7 @@ int SettingsPage::HitTestTrigger(POINT pt)
 int SettingsPage::HitTestTheme(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y >= 150.0f && pt.y <= 182.0f)
+    if (pt.y >= 180.0f && pt.y <= 212.0f)
     {
         if (pt.x >= 160.0f && pt.x <= 325.0f) return 0; // Dark
         if (pt.x >= 345.0f && pt.x <= 510.0f) return 1; // Light
@@ -1408,7 +1642,7 @@ int SettingsPage::HitTestTheme(POINT pt)
 int SettingsPage::HitTestThemeColor(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y < 222.0f || pt.y > 246.0f) return -1;
+    if (pt.y < 241.0f || pt.y > 265.0f) return -1;
 
     const float swatchLeft = 160.0f;
     const float swatchRight = 510.0f;
@@ -1430,7 +1664,7 @@ int SettingsPage::HitTestThemeColor(POINT pt)
 int SettingsPage::HitTestWindowMode(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y >= 286.0f && pt.y <= 318.0f)
+    if (pt.y >= 298.0f && pt.y <= 326.0f)
     {
         if (pt.x >= 160.0f && pt.x <= 325.0f) return 0; // Glass
         if (pt.x >= 345.0f && pt.x <= 510.0f) return 1; // Acrylic
@@ -1474,7 +1708,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
         int col = i % 2;
         int row = i / 2;
         float ix = 160.0f + col * 175.0f;
-        float iy = 358.0f + row * 42.0f;
+        float iy = 360.0f + row * 38.0f;
         float cy = iy + 16.0f;
 
         if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
@@ -1501,7 +1735,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
 bool SettingsPage::HitTestAnimationToggle(POINT pt)
 {
     if (m_categoryIndex != 0) return false;
-    return (pt.x >= 405 && pt.x <= 510 && pt.y >= 80 && pt.y <= 110);
+    return (pt.x >= 415 && pt.x <= 505 && pt.y >= 80 && pt.y <= 110);
 }
 
 bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
@@ -1528,4 +1762,22 @@ bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
         return true;
     }
     return false;
+}
+
+bool SettingsPage::HitTestGlobalScaleSlider(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return pt.x >= (int)(GLOBAL_SCALE_TRACK_LEFT - 8.0f) &&
+        pt.x <= (int)(GLOBAL_SCALE_TRACK_RIGHT + 8.0f) &&
+        pt.y >= (int)(GLOBAL_SCALE_TRACK_Y - 12.0f) &&
+        pt.y <= (int)(GLOBAL_SCALE_TRACK_Y + 12.0f);
+}
+
+bool SettingsPage::HitTestGlobalScaleApply(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return pt.x >= (int)GLOBAL_SCALE_APPLY_LEFT &&
+        pt.x <= (int)GLOBAL_SCALE_APPLY_RIGHT &&
+        pt.y >= (int)GLOBAL_SCALE_APPLY_TOP &&
+        pt.y <= (int)GLOBAL_SCALE_APPLY_BOTTOM;
 }

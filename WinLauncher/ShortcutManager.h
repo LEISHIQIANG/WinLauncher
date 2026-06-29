@@ -10,6 +10,7 @@ struct ID2D1Bitmap;
 // These coexist alongside Model:: types via different namespaces
 struct RendShortcutInfo
 {
+    std::wstring id;
     std::wstring name;
     std::wstring targetPath;
     std::wstring arguments;
@@ -43,6 +44,7 @@ public:
     static HICON GetShortcutIcon(const std::wstring& targetPath);
     static HICON GetShortcutIcon(const RendShortcutInfo& shortcut);
     static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut);
+    static bool UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut);
     static Model::ShortcutTargetKind InferTargetKind(const std::wstring& path);
 
     static std::vector<RendPopupPage> LoadConfig(const std::wstring& configDir);

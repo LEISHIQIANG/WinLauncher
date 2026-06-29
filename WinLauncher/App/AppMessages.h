@@ -14,4 +14,8 @@ namespace AppMessages
     constexpr UINT KeyboardHookKeyCaptured  = WM_APP + 0x80;
     constexpr UINT KeyboardHookChordComplete = WM_APP + 0x81;
     constexpr UINT DoubleAltPressed       = WM_APP + 0x82; // 双击Alt热键触发
+    constexpr UINT MacroRecordingStopped  = WM_APP + 0x90; // 宏录制停止通知
+    constexpr UINT LaunchShortcutById     = WM_APP + 0x91;
+    constexpr UINT MacroRecordingUpdated  = WM_APP + 0x92; // 宏录制新增事件通知
+
 }

@@ -17,6 +17,7 @@ private:
     static HANDLE              s_hThread;
     static HANDLE              s_hReadyEvent;
     static std::atomic<bool>   s_running;
+    static std::atomic<DWORD>  s_suppressButtonUpMask;
     static HMODULE             s_hModule;
 
     static DWORD WINAPI ThreadProc(LPVOID lpParam);

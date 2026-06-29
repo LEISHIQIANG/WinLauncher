@@ -19,7 +19,7 @@ ContextMenu::~ContextMenu()
 {
 }
 
-void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx)
+void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth)
 {
     Hide();
 
@@ -48,6 +48,7 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
         itemW += 32.0f; // Padding/margins
         if (itemW > maxW) maxW = itemW;
     }
+    if (minWidth > maxW) maxW = minWidth;
 
     int w = (int)maxW;
     int h = (int)(pad * 2 + items.size() * itemH - 2.0f);
@@ -185,24 +186,34 @@ void ContextMenu::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     for (int i = 0; i < (int)m_items.size(); i++)
     {
+        bool isDisabled = m_items[i].disabled;
+        bool isHovered = (i == m_hovered) && !isDisabled;
+
         D2D1_RECT_F itemRect = D2D1::RectF(pad, pad + i * itemH, w - pad, pad + (i + 1) * itemH - 2.0f);
         D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 4.0f, 4.0f);
 
-        bool isHovered = (i == m_hovered);
-
-        auto bgBrush = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBgHover().d2d : UIStyle::ThemeColor::ButtonBgNormal().d2d);
+        // Background: no highlight for disabled items
+        D2D1_COLOR_F bgColor = UIStyle::ThemeColor::ButtonBgNormal().d2d;
+        if (isHovered) bgColor = UIStyle::ThemeColor::ButtonBgHover().d2d;
+        auto bgBrush = GetOrCreateBrush(bgColor);
         if (bgBrush) rt->FillRoundedRectangle(roundedItem, bgBrush.Get());
 
-        auto borderBrush = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBorderHover().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d);
+        // Border
+        D2D1_COLOR_F borderColor = isHovered
+            ? UIStyle::ThemeColor::ButtonBorderHover().d2d
+            : UIStyle::ThemeColor::ButtonBorderNormal().d2d;
+        auto borderBrush = GetOrCreateBrush(borderColor);
         if (borderBrush) rt->DrawRoundedRectangle(roundedItem, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
 
+        // Text: dimmed for disabled items
         IDWriteTextFormat* tf = m_tfMenu ? m_tfMenu.Get() : m_tf.Get();
         if (tf)
         {
-            auto tb = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
+            D2D1_COLOR_F textColor = UIStyle::ThemeColor::TextNormal().d2d;
+            if (isDisabled) textColor.a *= 0.35f; // dim to 35% alpha
+            auto tb = GetOrCreateBrush(textColor);
             if (tb)
             {
-                // Left padding of 12.0f for a cleaner layout
                 D2D1_RECT_F textRect = D2D1::RectF(itemRect.left + 12.0f, itemRect.top, itemRect.right, itemRect.bottom);
                 rt->DrawTextW(m_items[i].text.c_str(), (UINT32)m_items[i].text.size(), tf, textRect, tb.Get());
             }
@@ -224,6 +235,9 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         int h = HitTest(pt);
+        // Don't highlight disabled items
+        if (h >= 0 && h < (int)m_items.size() && m_items[h].disabled)
+            h = -1;
         if (h != m_hovered) { m_hovered = h; InvalidateRect(hWnd, nullptr, FALSE); }
         return 0;
     }
@@ -233,7 +247,7 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         int hit = HitTest(pt);
-        if (hit >= 0 && hit < (int)m_items.size())
+        if (hit >= 0 && hit < (int)m_items.size() && !m_items[hit].disabled)
         {
             auto callback = m_items[hit].callback;
             Hide(); // Hide menu before callback triggers modal dialogs

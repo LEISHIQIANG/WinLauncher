@@ -17,6 +17,7 @@ public:
     virtual void OnMouseMove(POINT pt, bool& repaint) override;
     virtual void OnMouseLeave(bool& repaint) override;
     virtual void OnLButtonDown(POINT pt, bool& repaint) override;
+    virtual void OnLButtonUp(POINT pt, bool& repaint) override;
 
     std::function<void()> OnImportJsonClicked;
 
@@ -35,12 +36,18 @@ private:
     bool HitTestHardwareAcceleration(POINT pt);
     bool HitTestAnimationToggle(POINT pt);
     bool HitTestAnimationDuration(POINT pt, int& buttonType);
+    bool HitTestGlobalScaleSlider(POINT pt);
+    bool HitTestGlobalScaleApply(POINT pt);
+    int GlobalScaleFromPoint(POINT pt) const;
+    int PendingGlobalScalePercent();
+    bool HitTestHideTrayIcon(POINT pt);
 
     IConfigWindow* m_owner;
     int m_categoryIndex = 0; // 0 = 常规设置, 1 = 关于
 
     // Hover states
     bool m_hoveredAutoStart = false;
+    bool m_hoveredHideTrayIcon = false;
     bool m_hoveredOpenConfigFile = false;
     bool m_hoveredOpenLogFile = false;
     bool m_hoveredConfigDirText = false;
@@ -60,4 +67,8 @@ private:
     bool m_hoveredHardwareAcceleration = false;
     bool m_hoveredAnimationDuration = false;
     int m_hoveredAnimationDurationButton = 0; // 1 = minus, 2 = plus, 0 = none
+    bool m_hoveredGlobalScaleSlider = false;
+    bool m_hoveredGlobalScaleApply = false;
+    bool m_draggingGlobalScaleSlider = false;
+    int m_pendingGlobalScalePercent = 0;
 };

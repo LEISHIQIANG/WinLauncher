@@ -76,8 +76,9 @@ UrlEditForm::~UrlEditForm()
     Destroy();
 }
 
-bool UrlEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const UrlEditFormInitParams& init)
+bool UrlEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const UrlEditFormInitParams& init, AppContext* ctx)
 {
+    m_ctx = ctx;
     m_parentHWND = parentHWND;
     m_bounds = logicalBounds;
     m_init = init;
@@ -477,12 +478,12 @@ bool UrlEditForm::Validate(HWND hWnd)
 
     if (name.empty())
     {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", nullptr, false);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", m_ctx, false);
         return false;
     }
     if (url.empty())
     {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入网址！", nullptr, false);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入网址！", m_ctx, false);
         return false;
     }
     return true;
@@ -850,11 +851,12 @@ void UrlEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rec
 
 void UrlEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 {
+    const int previewBitmapSize = IconRenderer::GetRecommendedBitmapSize(rt, 36.0f);
     if (m_previewIcon)
     {
         if (!m_previewBitmap)
         {
-            auto bmp = IconRenderer::HicontoD2D(rt, m_previewIcon, 36);
+            auto bmp = IconRenderer::HicontoD2D(rt, m_previewIcon, previewBitmapSize);
             if (bmp)
             {
                 m_previewBitmap = bmp.Detach();
@@ -871,7 +873,7 @@ void UrlEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
                 m_previewBitmap->Release();
                 m_previewBitmap = nullptr;
             }
-            auto bmp = IconRenderer::CreateDefaultIcon(rt, nullptr, currentName, 36);
+            auto bmp = IconRenderer::CreateDefaultIcon(rt, nullptr, currentName, previewBitmapSize);
             if (bmp)
             {
                 m_previewBitmap = bmp.Detach();
@@ -896,15 +898,8 @@ void UrlEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 
     if (m_previewBitmap)
     {
-        ComPtr<ID2D1BitmapBrush> bmpBrush;
-        rt->CreateBitmapBrush(m_previewBitmap, &bmpBrush);
-        if (bmpBrush)
-        {
-            bmpBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-            bmpBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-            bmpBrush->SetTransform(D2D1::Matrix3x2F::Translation(previewRect.left, previewRect.top));
-            rt->FillRoundedRectangle(rrPreview, bmpBrush.Get());
-        }
+        D2D1_RECT_F alignedRect = IconRenderer::AlignToPixels(rt, previewRect.left, previewRect.top, previewSize, previewSize);
+        rt->DrawBitmap(m_previewBitmap, alignedRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
 }
 

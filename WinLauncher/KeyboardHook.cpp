@@ -7,6 +7,8 @@
 
 #include "KeyboardHook.h"
 #include "App/Logger.h"
+#include "InputFocusGuard.h"
+#include "Services/MacroService.h"
 
 // ============================================================
 // Static member definitions
@@ -345,7 +347,7 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
     // We track Alt-only taps: Alt down then up without any other key pressed.
     // If two such taps occur within s_doubleAltMs, fire DoubleAltPressed.
     // -----------------------------------------------------------------------
-    if (nCode == HC_ACTION && !s_recording.load())
+    if (nCode == HC_ACTION && !s_recording.load() && !MacroRecorder::IsRecording() && !MacroPlayer::IsPlaying())
     {
         HWND hDoubleAltWnd = s_hDoubleAltWnd.load();
         if (hDoubleAltWnd)
@@ -356,6 +358,13 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 
             bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
             bool isUp   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
+
+            if (isAlt && (isDown || isUp) && InputFocusGuard::IsTextInputContextActive())
+            {
+                s_altDown = false;
+                s_lastAltUpTime = 0;
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
 
             if (isAlt && isDown && !s_altDown)
             {

@@ -18,7 +18,7 @@ public:
 
     void SetSettings(const ShadowSettings& settings);
     void SyncPosition(bool mainVisible);
-    void UpdateShadow(int mainWidth, int mainHeight, float cornerRadius, float scale);
+    void UpdateShadow(int mainWidth, int mainHeight, float physicalCornerRadius, float scale);
     void SetOpacity(float factor);
     void Destroy();
 

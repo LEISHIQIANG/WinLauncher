@@ -108,6 +108,7 @@ void ConfigWindow::LoadConfig()
             for (const auto& vs : vp.shortcuts)
             {
                 RendShortcutInfo si;
+                si.id = vs.id;
                 si.name = vs.name;
                 si.targetPath = vs.targetPath;
                 si.arguments = vs.arguments;
@@ -174,6 +175,7 @@ void ConfigWindow::SaveConfig()
             for (const auto& si : pp.shortcuts)
             {
                 Model::ShortcutInfo vs;
+                vs.id = si.id;
                 vs.name = si.name;
                 vs.targetPath = si.targetPath;
                 vs.arguments = si.arguments;
@@ -263,6 +265,50 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
         ShowWindow(s_instance->GetHWND(), SW_SHOW);
         SetForegroundWindow(s_instance->GetHWND());
     }
+}
+
+void ConfigWindow::ResizeToCurrentScale()
+{
+    HWND hwnd = GetHWND();
+    if (!hwnd) return;
+
+    const int logicalW = 520;
+    const int logicalH = 480;
+
+    HMONITOR hm = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    GetMonitorInfoW(hm, &mi);
+    RECT wa = mi.rcWork;
+
+    float scale = DpiHelper::GetDpiScaleForMonitor(hm);
+    int wPx = (int)std::round(logicalW * scale);
+    int hPx = (int)std::round(logicalH * scale);
+
+    RECT wr{};
+    GetWindowRect(hwnd, &wr);
+    int centerX = (wr.left + wr.right) / 2;
+    int centerY = (wr.top + wr.bottom) / 2;
+    int x = centerX - wPx / 2;
+    int y = centerY - hPx / 2;
+
+    if (x + wPx > wa.right) x = wa.right - wPx;
+    if (y + hPx > wa.bottom) y = wa.bottom - hPx;
+    if (x < wa.left) x = wa.left;
+    if (y < wa.top) y = wa.top;
+
+    SetWindowPos(hwnd, HWND_TOPMOST, x, y, wPx, hPx, SWP_NOACTIVATE);
+    if (m_rt)
+    {
+        float dpi = scale * 96.0f;
+        m_rt->SetDpi(dpi, dpi);
+        UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
+        m_bgCap.Reset();
+        m_bgFinal.Reset();
+        m_compositeRt.Reset();
+        m_effectWinSize = {};
+        m_bgDirty = true;
+    }
+    InvalidateRect(hwnd, nullptr, FALSE);
 }
 
 void ConfigWindow::SetSettingsMode(bool settingsMode)
@@ -554,12 +600,13 @@ double ConfigWindow::GetTimeInSeconds()
 
 ID2D1Bitmap* ConfigWindow::CreateD2DBitmapFromHicon(HICON hIcon, const std::wstring& name, bool invert)
 {
+    const int iconBitmapSize = IconRenderer::GetRecommendedBitmapSize(m_rt.Get(), static_cast<float>(ICON_SIZE));
     if (hIcon == nullptr)
     {
-        auto bmp = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), name, ICON_SIZE * 2);
+        auto bmp = IconRenderer::CreateDefaultIcon(m_rt.Get(), GetDWFactory(), name, iconBitmapSize);
         return bmp.Detach();
     }
-    auto bmp = IconRenderer::HicontoD2D(m_rt.Get(), hIcon, ICON_SIZE * 2, invert);
+    auto bmp = IconRenderer::HicontoD2D(m_rt.Get(), hIcon, iconBitmapSize, invert);
     return bmp.Detach();
 }
 
@@ -652,6 +699,24 @@ void ConfigWindow::SetAutoStart(bool enable)
         WaitWindow::Show(parent, L"请稍候", prompt, [this, enable]() {
             m_appCtx->configService->SetAutoStart(enable);
         }, m_appCtx);
+    }
+}
+
+bool ConfigWindow::GetHideTrayIcon()
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        return m_appCtx->configService->GetHideTrayIcon();
+    }
+    return false;
+}
+
+void ConfigWindow::SetHideTrayIcon(bool hide)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetHideTrayIcon(hide);
+        NotifyConfigChanged();
     }
 }
 
@@ -816,6 +881,47 @@ void ConfigWindow::SetWindowMode(int mode, POINT clickPt)
         m_appCtx->configService->SetWindowMode(mode);
         UIStyle::SetWindowMode(mode);
         NotifyConfigChanged();
+    }
+}
+
+int ConfigWindow::GetGlobalScalePercent()
+{
+    if (m_appCtx && m_appCtx->configService && m_appCtx->configService->HasCustomGlobalScalePercent())
+        return m_appCtx->configService->GetGlobalScalePercent();
+    return UIStyle::Scaling::GetGlobalScalePercent();
+}
+
+void ConfigWindow::SetGlobalScalePercent(int percent)
+{
+    int normalized = UIStyle::Scaling::NormalizePercent(percent);
+    if (normalized == GetGlobalScalePercent())
+        return;
+
+    auto applyScale = [this, normalized]() {
+        if (m_appCtx && m_appCtx->configService)
+            m_appCtx->configService->SetGlobalScalePercent(normalized);
+
+        UIStyle::Scaling::SetGlobalScalePercent(normalized);
+        ResizeToCurrentScale();
+
+        if (m_appCtx && m_appCtx->eventBus)
+            m_appCtx->eventBus->Publish(EventType::UiScaleChanged);
+
+        NotifyConfigChanged();
+    };
+
+    HWND hwnd = GetHWND();
+    if (hwnd && IsWindowVisible(hwnd) && UIStyle::Animation::IsEnabled())
+    {
+        StartCloseTransition([this, hwnd, applyScale]() {
+            applyScale();
+            ShowWindow(hwnd, SW_SHOW);
+            StartOpenTransition(true);
+        }, true);
+    }
+    else
+    {
+        applyScale();
     }
 }
 
@@ -1265,17 +1371,16 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
             }
             else
             {
-                POINT screenPt = { 430, 62 };
-                ClientToScreen(hWnd, &screenPt);
+                POINT screenPt = DpiHelper::LogicalClientToScreen(hWnd, POINT{ 430, 62 });
 
                 std::vector<DropDownMenu::Item> items = {
                     { L"\u5feb\u6377\u65b9\u5f0f",   [this]() { m_shortcutPage.ShowAddShortcutDialog(); } },
                     { L"\u5feb\u6377\u952e",         [this]() { m_shortcutPage.ShowAddHotkeyDialog(); } },
                     { L"\u6253\u5f00\u7f51\u7ad9",   [this]() { m_shortcutPage.ShowAddUrlDialog(); } },
                     { L"\u8fd0\u884c\u547d\u4ee4",   [this]() { m_shortcutPage.ShowAddCommandDialog(); } },
-                    { L"\u6dfb\u52a0\u5b8f",         nullptr },
-                    { L"\u6279\u91cf\u542f\u52a8",   nullptr },
-                    { L"\u5185\u7f6e\u56fe\u6807",   nullptr },
+                    { L"\u6dfb\u52a0\u5b8f",         [this]() { m_shortcutPage.ShowAddMacroDialog(); } },
+                    { L"\u6279\u91cf\u542f\u52a8",   [this]() { m_shortcutPage.ShowAddBatchDialog(); } },
+                    { L"\u5185\u7f6e\u56fe\u6807",   [this]() { m_shortcutPage.ShowBuiltinIconDialog(); } },
                 };
                 DropDownMenu::Show(hWnd, screenPt, items, m_appCtx);
             }

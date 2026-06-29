@@ -136,13 +136,13 @@ void ShadowWindow::SyncPosition(bool mainVisible)
     SetWindowPos(m_hShadowWnd, m_hMainWnd, shadowX, shadowY, shadowW, shadowH, flags);
 }
 
-void ShadowWindow::UpdateShadow(int mainWidth, int mainHeight, float cornerRadius, float scale)
+void ShadowWindow::UpdateShadow(int mainWidth, int mainHeight, float physicalCornerRadius, float scale)
 {
     if (!m_hShadowWnd || !m_hMainWnd) return;
 
     if (m_cachedWidth == mainWidth &&
         m_cachedHeight == mainHeight &&
-        m_cachedCornerRadius == cornerRadius &&
+        m_cachedCornerRadius == physicalCornerRadius &&
         m_cachedScale == scale &&
         m_hBitmap != nullptr)
     {
@@ -152,14 +152,14 @@ void ShadowWindow::UpdateShadow(int mainWidth, int mainHeight, float cornerRadiu
 
     m_cachedWidth = mainWidth;
     m_cachedHeight = mainHeight;
-    m_cachedCornerRadius = cornerRadius;
+    m_cachedCornerRadius = physicalCornerRadius;
     m_cachedScale = scale;
 
     int margin = (int)(m_settings.margin * scale);
     int radius = (int)(m_settings.blurRadius * scale);
     int offsetX = (int)(m_settings.offsetX * scale);
     int offsetY = (int)(m_settings.offsetY * scale);
-    float scaledCornerRadius = cornerRadius * scale;
+    float scaledCornerRadius = physicalCornerRadius;
 
     GenerateShadowBitmap(mainWidth, mainHeight, radius, margin, offsetX, offsetY, scaledCornerRadius, m_settings.opacity, m_settings.color);
     SyncPosition(true);

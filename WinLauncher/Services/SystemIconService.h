@@ -4,8 +4,11 @@
 #include "../App/Logger.h"
 #include <commoncontrols.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <unordered_map>
 #include "../UI/Controls/IconRenderer.h"
+
+#pragma comment(lib, "shlwapi.lib")
 
 class SystemIconService : public IIconService
 {
@@ -41,7 +44,7 @@ public:
 
         if (isDir)
         {
-            hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(102), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+            hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(102), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
             if (hIcon)
             {
                 LOG_G_DEBUG(L"GetIcon: loaded builtin folder icon for dir=%s", targetPath.c_str());
@@ -52,8 +55,27 @@ public:
                 targetPath.c_str(), GetLastError());
         }
 
+        const wchar_t* ext = PathFindExtensionW(targetPath.c_str());
+        bool isExeOrDllOrIco = false;
+        if (ext && *ext)
+        {
+            isExeOrDllOrIco = (_wcsicmp(ext, L".exe") == 0 ||
+                               _wcsicmp(ext, L".dll") == 0 ||
+                               _wcsicmp(ext, L".ico") == 0);
+        }
+
+        if (isExeOrDllOrIco)
+        {
+            UINT extracted = PrivateExtractIconsW(targetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
+            if (extracted > 0 && hIcon)
+            {
+                m_hiconCache[targetPath] = hIcon;
+                return hIcon;
+            }
+        }
+
         IImageList* sysImgList = nullptr;
-        const int sizes[] = { SHIL_EXTRALARGE, SHIL_JUMBO, SHIL_LARGE };
+        const int sizes[] = { SHIL_JUMBO, SHIL_EXTRALARGE, SHIL_LARGE };
         for (int size : sizes)
         {
             if (SUCCEEDED(SHGetImageList(size, IID_PPV_ARGS(&sysImgList))))

@@ -23,6 +23,7 @@ private:
 
     void AddTrayIcon();
     void RemoveTrayIcon();
+    void UpdateTrayIconState();
     void ShowPopupAtCursor();
     void ShowConfigWindow();
     void ShowSettingsWindow();

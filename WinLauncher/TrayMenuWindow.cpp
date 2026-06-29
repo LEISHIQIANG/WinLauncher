@@ -17,7 +17,7 @@ bool            TrayMenuWindow::s_popupPaused = false;
 static constexpr int   ITEM_COUNT  = 7;   // total menu items
 static constexpr float ITEM_H      = 26.0f;
 static constexpr float PAD         = 6.0f;
-static constexpr int   MENU_W_LG  = 110;  // logical width
+static constexpr int   MENU_W_LG  = 90;   // logical width
 // logical height: top-pad + items * itemH + (items-1) * gap(2px) + bottom-pad
 // = PAD + ITEM_COUNT * ITEM_H + PAD = 6 + 7*26 + 6 = 194
 static constexpr int   MENU_H_LG  = (int)(PAD + ITEM_COUNT * ITEM_H + PAD); // ~194

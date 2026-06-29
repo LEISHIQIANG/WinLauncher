@@ -14,9 +14,10 @@ public:
     {
         std::wstring text;
         std::function<void()> callback;
+        bool disabled = false;
     };
 
-    static void Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx = nullptr);
+    static void Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx = nullptr, float minWidth = 0.0f);
     static void Hide();
     static bool IsVisible();
 

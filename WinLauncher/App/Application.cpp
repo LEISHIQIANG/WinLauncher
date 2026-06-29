@@ -5,14 +5,17 @@
 #include "../Config/ConfigWindow.h"
 #include "../Config/ConfirmWindow.h"
 #include "../Config/UIStyle.h"
+#include "../DpiHelper.h"
 #include "../KeyboardHook.h"
 #include "../MouseHook.h"
 #include "../PopupWindow.h"
 #include "../ToastWindow.h"
 #include "../resource.h"
+#include "../Services/EnvironmentDetector.h"
 #include "../Services/IniConfigRepository.h"
 #include "../Services/SystemIconService.h"
 #include "../TrayMenuWindow.h"
+#include "../Services/BatchLaunchService.h"
 #include <CommCtrl.h>
 #include <ole2.h>
 #include <shellapi.h>
@@ -20,6 +23,8 @@
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
+
+static UINT g_uShellRestart = 0;
 
 Application::Application(HINSTANCE hInstance)
     : m_hInstance(hInstance)
@@ -64,13 +69,16 @@ int Application::Run()
         return 1;
     }
 
-    AddTrayIcon();
+    // Start background environment detection (executors like python, git bash)
+    EnvironmentDetector::StartDetection();
 
     if (!LoadRuntimeSettings())
     {
         LOG_ERROR(m_appCtx->logger, L"Application::Run: LoadRuntimeSettings failed!");
         return 1;
     }
+
+    UpdateTrayIconState();
 
     if (!InstallHooks())
     {
@@ -92,6 +100,7 @@ int Application::Run()
 
 bool Application::InitializeProcess()
 {
+    g_uShellRestart = RegisterWindowMessageW(L"TaskbarCreated");
     timeBeginPeriod(1);
     m_timerResolutionRaised = true;
 
@@ -192,6 +201,14 @@ bool Application::LoadRuntimeSettings()
     UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
     UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
     UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
+    if (m_appCtx->configService->HasCustomGlobalScalePercent())
+    {
+        UIStyle::Scaling::SetGlobalScalePercent(m_appCtx->configService->GetGlobalScalePercent());
+    }
+    else
+    {
+        UIStyle::Scaling::SetDefaultGlobalScalePercent(DpiHelper::GetPrimaryDisplayScalePercent());
+    }
     UIStyle::Animation::SetEnabled(m_appCtx->configService->GetAnimationEnabled());
     UIStyle::Animation::SetDurationMs((float)m_appCtx->configService->GetAnimationDuration());
     UIStyle::Performance::SetHardwareAccelerationEnabled(m_appCtx->configService->GetHardwareAccelerationEnabled());
@@ -282,10 +299,15 @@ void Application::Shutdown()
 
 void Application::AddTrayIcon()
 {
+    if (m_appCtx && m_appCtx->configService && m_appCtx->configService->GetHideTrayIcon())
+        return;
+
     NOTIFYICONDATAW nid{};
     nid.cbSize           = sizeof(nid);
     nid.hWnd             = m_hMainWnd;
     nid.uID              = 1;
+    Shell_NotifyIconW(NIM_DELETE, &nid);
+
     nid.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = AppMessages::TrayIcon;
     nid.hIcon            = LoadIconW(m_hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
@@ -305,6 +327,24 @@ void Application::RemoveTrayIcon()
     nid.uID    = 1;
     Shell_NotifyIconW(NIM_DELETE, &nid);
     m_trayIconAdded = false;
+}
+
+void Application::UpdateTrayIconState()
+{
+    bool hide = false;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        hide = m_appCtx->configService->GetHideTrayIcon();
+    }
+
+    if (hide)
+    {
+        RemoveTrayIcon();
+    }
+    else
+    {
+        AddTrayIcon();
+    }
 }
 
 void Application::ShowPopupAtCursor()
@@ -410,11 +450,83 @@ void Application::RestartApp()
 
 LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    if (g_uShellRestart && msg == g_uShellRestart)
+    {
+        m_trayIconAdded = false;
+        UpdateTrayIconState();
+        return 0;
+    }
+
     switch (msg)
     {
     case AppMessages::ShowPopup:
         ShowPopupAtCursor();
         return 0;
+
+    case AppMessages::LaunchShortcutById:
+    {
+        Logger* logSink = (m_appCtx ? m_appCtx->logger.get() : nullptr);
+        std::wstring* pId = reinterpret_cast<std::wstring*>(lParam);
+        if (pId)
+        {
+            if (logSink)
+                logSink->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, L"Application::LaunchShortcutById: requested id=%s", pId->c_str());
+            auto pages = m_appCtx->configService->LoadConfig();
+            Model::ShortcutInfo foundSc;
+            bool found = false;
+            for (const auto& page : pages)
+            {
+                for (const auto& sc : page.shortcuts)
+                {
+                    if (sc.id == *pId)
+                    {
+                        foundSc = sc;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            if (found)
+            {
+                RendShortcutInfo renderInfo;
+                renderInfo.id = foundSc.id;
+                renderInfo.name = foundSc.name;
+                renderInfo.targetPath = foundSc.targetPath;
+                renderInfo.arguments = foundSc.arguments;
+                renderInfo.iconPath = foundSc.iconPath;
+                renderInfo.runAsAdmin = foundSc.runAsAdmin;
+                renderInfo.type = foundSc.type;
+                renderInfo.targetKind = foundSc.targetKind;
+                renderInfo.iconSource = foundSc.iconSource;
+                renderInfo.builtinIconId = foundSc.builtinIconId;
+                renderInfo.iconInvertLight = foundSc.iconInvertLight;
+                renderInfo.iconInvertDark = foundSc.iconInvertDark;
+
+                bool ok = PopupWindow::ExecuteShortcut(renderInfo, hWnd, m_appCtx.get());
+                if (logSink)
+                    logSink->Log(
+                        Logger::INFO,
+                        __FILE__,
+                        __LINE__,
+                        __FUNCTION__,
+                        L"Application::LaunchShortcutById: executed id=%s name=%s type=%d result=%d",
+                        foundSc.id.c_str(),
+                        foundSc.name.c_str(),
+                        static_cast<int>(foundSc.type),
+                        ok ? 1 : 0);
+                return ok ? 1 : 0;
+            }
+            if (logSink)
+                logSink->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, L"Application::LaunchShortcutById: id not found: %s", pId->c_str());
+        }
+        else
+        {
+            if (logSink)
+                logSink->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, L"Application::LaunchShortcutById: null id pointer.");
+        }
+        return 0;
+    }
 
     case AppMessages::ShowConfigWindow:
         ShowConfigWindow();
@@ -427,6 +539,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     case AppMessages::ConfigChanged:
         if (m_appCtx && m_appCtx->eventBus)
             m_appCtx->eventBus->Publish(EventType::ConfigChanged);
+        UpdateTrayIconState();
         return 0;
 
     case AppMessages::TogglePopupPause:

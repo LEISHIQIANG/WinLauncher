@@ -161,15 +161,27 @@
     <ClCompile Include="Config\UrlEditForm.cpp" />
     <ClCompile Include="Config\CommandDialog.cpp" />
     <ClCompile Include="Config\CommandEditForm.cpp" />
+    <ClCompile Include="Config\BuiltinIconDialog.cpp" />
+    <ClCompile Include="Config\SystemIconDialog.cpp" />
+    <ClCompile Include="Config\SystemIconEditForm.cpp" />
     <ClCompile Include="Config\TextBox.cpp" />
     <ClCompile Include="Services\FolderWatcher.cpp" />
     <ClCompile Include="Services\FaviconFetcher.cpp" />
     <ClCompile Include="Services\SyncFolderService.cpp" />
     <ClCompile Include="Services\PrivilegeLaunchService.cpp" />
+    <ClCompile Include="Services\EnvironmentDetector.cpp" />
+    <ClCompile Include="Services\FileSelectionService.cpp" />
+    <ClCompile Include="Services\MacroService.cpp" />
+    <ClCompile Include="Services\BatchLaunchService.cpp" />
+    <ClCompile Include="Config\MacroDialog.cpp" />
+    <ClCompile Include="Config\MacroEditForm.cpp" />
+    <ClCompile Include="Config\BatchLaunchDialog.cpp" />
+    <ClCompile Include="Config\BatchLaunchEditForm.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MouseHook.h" />
     <ClInclude Include="KeyboardHook.h" />
+    <ClInclude Include="InputFocusGuard.h" />
     <ClInclude Include="AutoStartHelper.h" />
     <ClInclude Include="ShortcutManager.h" />
     <ClInclude Include="BaseWindow.h" />
@@ -201,6 +213,8 @@
     <ClInclude Include="Services\SyncFolderService.h" />
     <ClInclude Include="Services\SystemIconService.h" />
     <ClInclude Include="Services\PrivilegeLaunchService.h" />
+    <ClInclude Include="Services\EnvironmentDetector.h" />
+    <ClInclude Include="Services\FileSelectionService.h" />
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />
     <ClInclude Include="ViewModel\ConfigViewModel.h" />
@@ -235,6 +249,15 @@
     <ClInclude Include="Config\CommandEditForm.h" />
     <ClInclude Include="Config\TextBox.h" />
     <ClInclude Include="Config\UIStyle.h" />
+    <ClInclude Include="Config\BuiltinIconDialog.h" />
+    <ClInclude Include="Config\SystemIconDialog.h" />
+    <ClInclude Include="Config\SystemIconEditForm.h" />
+    <ClInclude Include="Services\MacroService.h" />
+    <ClInclude Include="Services\BatchLaunchService.h" />
+    <ClInclude Include="Config\MacroDialog.h" />
+    <ClInclude Include="Config\MacroEditForm.h" />
+    <ClInclude Include="Config\BatchLaunchDialog.h" />
+    <ClInclude Include="Config\BatchLaunchEditForm.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />

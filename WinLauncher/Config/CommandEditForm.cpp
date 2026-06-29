@@ -74,8 +74,9 @@ CommandEditForm::~CommandEditForm()
     Destroy();
 }
 
-bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const CommandEditFormInitParams& init)
+bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const CommandEditFormInitParams& init, AppContext* ctx)
 {
+    m_ctx = ctx;
     m_parentHWND = parentHWND;
     m_bounds = logicalBounds;
     m_init = init;
@@ -425,6 +426,11 @@ void CommandEditForm::OnKeyDown(HWND hWnd, WPARAM wParam, LPARAM lParam, bool& r
     }
 }
 
+void CommandEditForm::OnMouseWheel(HWND hWnd, short zDelta, POINT pt, float scale, bool& repaint)
+{
+    m_commandBox.OnMouseWheel(hWnd, zDelta, pt, scale, repaint);
+}
+
 void CommandEditForm::BlinkCaret()
 {
     m_nameBox.BlinkCaret();
@@ -480,19 +486,19 @@ bool CommandEditForm::Validate(HWND hWnd)
 
     if (name.empty())
     {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", nullptr, false);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入名称！", m_ctx, false);
         return false;
     }
 
     if (m_commandType != L"builtin" && cmd.empty())
     {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入命令行内容！", nullptr, false);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请输入命令行内容！", m_ctx, false);
         return false;
     }
 
     if (m_commandType == L"builtin" && m_builtinCmd.empty())
     {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请选择内置命令！", nullptr, false);
+        ConfirmWindow::Show(hWnd, L"验证失败", L"请选择内置命令！", m_ctx, false);
         return false;
     }
 

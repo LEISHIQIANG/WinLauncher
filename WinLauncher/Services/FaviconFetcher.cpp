@@ -48,7 +48,6 @@ namespace
 
     // Common icon paths probed in order (mirrors _COMMON_ICON_PATHS)
     static const wchar_t* k_CommonIconPaths[] = {
-        L"/favicon.svg",
         L"/favicon.png",
         L"/apple-touch-icon.png",
         L"/apple-touch-icon-precomposed.png",
@@ -150,13 +149,16 @@ namespace
         std::string body;         // raw bytes
         std::string contentType;
         int         statusCode = 0;
+        std::wstring finalUrl;
     };
 
     static HttpResponse HttpGet(const std::wstring& url,
                                 const std::wstring& acceptHeader = L"*/*",
-                                size_t              maxBytes     = k_MaxHtmlBytes)
+                                size_t              maxBytes     = k_MaxHtmlBytes,
+                                int                 redirectDepth = 0)
     {
         HttpResponse resp;
+        if (redirectDepth > 5) return resp;
 
         HINTERNET hSession = InternetOpenW(
             k_UserAgent,
@@ -191,6 +193,20 @@ namespace
                        &statusCode, &bufLen, nullptr);
         resp.statusCode = (int)statusCode;
 
+        // Manual redirect tracking (especially for protocol crossings like http -> https)
+        if (statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308)
+        {
+            wchar_t locBuf[2048] = {};
+            DWORD locLen = sizeof(locBuf);
+            if (HttpQueryInfoW(hUrl, HTTP_QUERY_LOCATION, locBuf, &locLen, nullptr))
+            {
+                std::wstring redirectUrl = ResolveUrl(url, locBuf);
+                InternetCloseHandle(hUrl);
+                closeSession();
+                return HttpGet(redirectUrl, acceptHeader, maxBytes, redirectDepth + 1);
+            }
+        }
+
         // Read Content-Type
         wchar_t ctBuf[256] = {};
         DWORD ctLen = sizeof(ctBuf);
@@ -210,8 +226,9 @@ namespace
             body.append(buf, bytesRead);
         }
 
-        resp.ok   = (statusCode == 200 || statusCode == 0);
+        resp.ok   = ((statusCode >= 200 && statusCode < 300) || statusCode == 0);
         resp.body = std::move(body);
+        resp.finalUrl = url;
 
         InternetCloseHandle(hUrl);
         closeSession();
@@ -245,9 +262,18 @@ namespace
                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hFile == INVALID_HANDLE_VALUE) return L"";
         DWORD written = 0;
-        WriteFile(hFile, resp.body.data(), (DWORD)resp.body.size(), &written, nullptr);
+        BOOL writeResult = WriteFile(hFile, resp.body.data(), (DWORD)resp.body.size(), &written, nullptr);
         CloseHandle(hFile);
-        return (written > 0) ? icoPath : L"";
+
+        if (writeResult && written > 0)
+        {
+            return icoPath;
+        }
+        else
+        {
+            DeleteFileW(icoPath.c_str());
+            return L"";
+        }
     }
 
     // Check if a downloaded file has content and is likely a valid image
@@ -261,27 +287,43 @@ namespace
         GetFileSizeEx(hFile, &size);
         if (size.QuadPart < 16) { CloseHandle(hFile); return false; }
 
-        // Read first 8 bytes for magic
-        char magic[8] = {};
+        // Read up to 1024 bytes to inspect magic and header content
+        char buf[1024] = {};
         DWORD nRead = 0;
-        ReadFile(hFile, magic, sizeof(magic), &nRead, nullptr);
+        ReadFile(hFile, buf, sizeof(buf) - 1, &nRead, nullptr);
         CloseHandle(hFile);
 
+        if (nRead < 8) return false;
+
         // PNG: 89 50 4E 47
-        if ((BYTE)magic[0] == 0x89 && (BYTE)magic[1] == 0x50) return true;
+        if ((BYTE)buf[0] == 0x89 && (BYTE)buf[1] == 0x50) return true;
         // ICO: 00 00 01 00
-        if ((BYTE)magic[0] == 0x00 && (BYTE)magic[1] == 0x00 &&
-            (BYTE)magic[2] == 0x01 && (BYTE)magic[3] == 0x00) return true;
+        if ((BYTE)buf[0] == 0x00 && (BYTE)buf[1] == 0x00 &&
+            (BYTE)buf[2] == 0x01 && (BYTE)buf[3] == 0x00) return true;
         // GIF
-        if (magic[0] == 'G' && magic[1] == 'I' && magic[2] == 'F') return true;
+        if (buf[0] == 'G' && buf[1] == 'I' && buf[2] == 'F') return true;
         // JPEG: FF D8
-        if ((BYTE)magic[0] == 0xFF && (BYTE)magic[1] == 0xD8) return true;
-        // SVG: starts with <svg or <?xml
-        if (magic[0] == '<') return true;
+        if ((BYTE)buf[0] == 0xFF && (BYTE)buf[1] == 0xD8) return true;
         // WebP: RIFF????WEBP
-        if (magic[0] == 'R' && magic[1] == 'I' && magic[2] == 'F' && magic[3] == 'F') return true;
+        if (buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F')
+        {
+            if (nRead >= 12 && buf[8] == 'W' && buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P')
+                return true;
+        }
         // BMP: BM
-        if (magic[0] == 'B' && magic[1] == 'M') return true;
+        if (buf[0] == 'B' && buf[1] == 'M') return true;
+
+        // SVG check: must contain <svg and not be an HTML document
+        std::string content(buf, nRead);
+        if (content.find("<svg") != std::string::npos || content.find("<SVG") != std::string::npos)
+        {
+            // Reject HTML documents wrapping SVG or standard error pages
+            if (content.find("<html") == std::string::npos && content.find("<HTML") == std::string::npos &&
+                content.find("<body") == std::string::npos && content.find("<BODY") == std::string::npos)
+            {
+                return true;
+            }
+        }
 
         return false;
     }
@@ -350,10 +392,12 @@ namespace
             std::string sizes   = extractAttr(tag, "sizes");
             std::string type    = extractAttr(tag, "type");
 
+            // Skip SVG files since the application cannot render them natively
+            if (type.find("svg") != std::string::npos || loHref.find(".svg") != std::string::npos) continue;
+
             int score = 10;
             if (rel.find("apple-touch-icon") != std::string::npos) score += 20;
             if (rel.find("mask-icon")        != std::string::npos) score -= 12;
-            if (type.find("svg")  != std::string::npos || loHref.find(".svg") != std::string::npos)  score += 18;
             if (type.find("png")  != std::string::npos || loHref.find(".png") != std::string::npos)  score += 12;
             if (type.find("webp") != std::string::npos || loHref.find(".webp") != std::string::npos) score += 10;
             if (type.find("ico")  != std::string::npos || loHref.find(".ico")  != std::string::npos) score += 3;
@@ -425,8 +469,12 @@ namespace
             std::string src = arr.substr(srcPos, end - srcPos);
             if (!src.empty())
             {
-                std::wstring srcW = Utf8ToWstr(src);
-                urls.push_back(ResolveUrl(manifestBase, srcW));
+                std::string loSrc = ToLowerA(src);
+                if (loSrc.find(".svg") == std::string::npos)
+                {
+                    std::wstring srcW = Utf8ToWstr(src);
+                    urls.push_back(ResolveUrl(manifestBase, srcW));
+                }
             }
             pos = end + 1;
         }
@@ -578,7 +626,7 @@ namespace FaviconFetcher
                 {
                     html = std::move(resp.body);
                 }
-                // finalUrl stays as url (we don't do redirect tracking here)
+                finalUrl = resp.finalUrl;
             }
         }
 

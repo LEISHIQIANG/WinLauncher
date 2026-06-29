@@ -104,6 +104,300 @@ bool PrivilegeLaunchService::Launch(const std::wstring& targetPath, const std::w
     }
 }
 
+std::string PrivilegeLaunchService::ToUtf8(const std::wstring& wstr)
+{
+    if (wstr.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string result(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &result[0], len, nullptr, nullptr);
+    return result;
+}
+
+bool PrivilegeLaunchService::LaunchWithStdin(
+    const std::wstring& targetPath,
+    const std::wstring& stdinContent,
+    const std::wstring& arguments,
+    bool runAsAdmin,
+    const std::wstring& workingDir)
+{
+    LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: target=%s args=%s stdinLen=%zu runAsAdmin=%d",
+               targetPath.c_str(), arguments.c_str(), stdinContent.size(), runAsAdmin);
+
+    // Rule: stdin piping does not support elevation. ShellExecute "runas" cannot inherit pipe handles.
+    // If the user set runAsAdmin=true, refuse with a clear log entry.
+    if (runAsAdmin)
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: stdin pipe is incompatible with runAsAdmin (requires UAC prompt, which cannot inherit pipe handles). "
+                    L"Remove the 'run as admin' option for this shortcut, or switch to CMD type.");
+        return false;
+    }
+
+    if (stdinContent.empty())
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: empty stdin content");
+        return false;
+    }
+
+    // Convert script content to UTF-8 for the pipe
+    std::string utf8Content = ToUtf8(stdinContent);
+    if (utf8Content.empty() && !stdinContent.empty())
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: UTF-8 conversion failed");
+        return false;
+    }
+
+    // Create anonymous pipe — read handle inheritable, write handle NOT
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+    HANDLE hStdinRead = nullptr;
+    HANDLE hStdinWrite = nullptr;
+    if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0))
+    {
+        DWORD err = GetLastError();
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: CreatePipe failed, error=%lu", err);
+        return false;
+    }
+
+    // Prevent the child from inheriting the write handle (only needs read)
+    if (!SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0))
+    {
+        DWORD err = GetLastError();
+        LOG_G_WORNING(L"PrivilegeLaunchService::LaunchWithStdin: SetHandleInformation(write) failed, error=%lu", err);
+        // Non-fatal — parent still holds the handle, child just won't inherit it
+    }
+
+    // Build command line
+    std::wstring cmdLine = L"\"" + targetPath + L"\"";
+    if (!arguments.empty())
+        cmdLine += L" " + arguments;
+
+    LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: cmdLine=%s", cmdLine.c_str());
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = hStdinRead;
+    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = FALSE;
+    LPCWSTR dir = workingDir.empty() ? nullptr : workingDir.c_str();
+
+    bool isElevated = IsCurrentProcessElevated();
+
+    if (isElevated)
+    {
+        // Current process is elevated, target wants normal privileges.
+        // Only token-based de-elevation supports handle inheritance.
+        // COM-based (ShellExecute) cannot inherit pipe handles — we skip the COM fallback entirely.
+        LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: attempting token de-elevation with stdin");
+        if (LaunchDeElevatedViaTokenWithStdin(targetPath, arguments, workingDir, hStdinRead))
+        {
+            LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: token de-elevation with stdin succeeded");
+            ok = TRUE;
+            pi.hProcess = nullptr; // Already cleaned up inside the helper
+            pi.hThread = nullptr;
+        }
+        else
+        {
+            LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: token de-elevation failed (no stdin-capable fallback available)");
+            CloseHandle(hStdinRead);
+            CloseHandle(hStdinWrite);
+            return false;
+        }
+    }
+    else
+    {
+        // Both launcher and target are normal privilege — straightforward CreateProcessW
+        LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: CreateProcessW (normal→normal)");
+        ok = CreateProcessW(
+            nullptr,
+            const_cast<LPWSTR>(cmdLine.c_str()),
+            nullptr, nullptr,
+            TRUE,                   // bInheritHandles=TRUE — required for stdin pipe
+            CREATE_UNICODE_ENVIRONMENT,
+            nullptr,
+            dir,
+            &si,
+            &pi
+        );
+
+        if (!ok)
+        {
+            DWORD err = GetLastError();
+            LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: CreateProcessW failed, error=%lu", err);
+        }
+    }
+
+    // Close our copy of the read handle — child has its own inherited copy
+    CloseHandle(hStdinRead);
+    hStdinRead = nullptr;
+
+    if (!ok)
+    {
+        CloseHandle(hStdinWrite);
+        return false;
+    }
+
+    // Close thread handle immediately (we don't need it)
+    if (pi.hThread)
+    {
+        CloseHandle(pi.hThread);
+        pi.hThread = nullptr;
+    }
+
+    // Write script content into the pipe (synchronous, blocks until written)
+    DWORD written = 0;
+    DWORD totalToWrite = (DWORD)utf8Content.size();
+    if (!WriteFile(hStdinWrite, utf8Content.data(), totalToWrite, &written, nullptr))
+    {
+        DWORD err = GetLastError();
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchWithStdin: WriteFile failed, error=%lu (wrote %lu/%lu bytes)", err, written, totalToWrite);
+        // Still close the write handle to unblock the child
+    }
+    else if (written != totalToWrite)
+    {
+        LOG_G_WORNING(L"PrivilegeLaunchService::LaunchWithStdin: partial write %lu/%lu bytes", written, totalToWrite);
+    }
+    else
+    {
+        LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: wrote %lu UTF-8 bytes to stdin pipe", written);
+    }
+
+    // Close write handle → sends EOF to child's stdin
+    CloseHandle(hStdinWrite);
+
+    // Close process handle (fire-and-forget — we don't wait for exit)
+    if (pi.hProcess)
+    {
+        CloseHandle(pi.hProcess);
+        pi.hProcess = nullptr;
+    }
+
+    LOG_G_INFO(L"PrivilegeLaunchService::LaunchWithStdin: launched successfully");
+    return true;
+}
+
+bool PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin(
+    const std::wstring& targetPath,
+    const std::wstring& arguments,
+    const std::wstring& workingDir,
+    HANDLE hStdinRead)
+{
+    // Duplicate the explorer token — same logic as LaunchDeElevatedViaToken
+    HWND hShell = GetShellWindow();
+    if (!hShell)
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: GetShellWindow failed");
+        return false;
+    }
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hShell, &pid);
+    if (!pid)
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: GetWindowThreadProcessId failed");
+        return false;
+    }
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess)
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: OpenProcess(explorer) failed");
+        return false;
+    }
+
+    // Verify explorer is not elevated
+    HANDLE hQueryToken = nullptr;
+    bool explorerOk = true;
+    if (OpenProcessToken(hProcess, TOKEN_QUERY, &hQueryToken))
+    {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(elevation);
+        if (GetTokenInformation(hQueryToken, TokenElevation, &elevation, size, &size))
+        {
+            if (elevation.TokenIsElevated)
+            {
+                LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: explorer is also elevated, cannot de-elevate");
+                explorerOk = false;
+            }
+        }
+        CloseHandle(hQueryToken);
+    }
+
+    if (!explorerOk)
+    {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    HANDLE hToken = nullptr;
+    DWORD access = TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY;
+    if (!OpenProcessToken(hProcess, access, &hToken))
+    {
+        access = TOKEN_QUERY | TOKEN_DUPLICATE;
+        if (!OpenProcessToken(hProcess, access, &hToken))
+        {
+            LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: OpenProcessToken failed");
+            CloseHandle(hProcess);
+            return false;
+        }
+    }
+
+    HANDLE hDupToken = nullptr;
+    if (!DuplicateTokenEx(hToken, MAXIMUM_ALLOWED, nullptr, SecurityImpersonation, TokenPrimary, &hDupToken))
+    {
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: DuplicateTokenEx failed");
+        CloseHandle(hToken);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    CloseHandle(hToken);
+    CloseHandle(hProcess);
+
+    // Build command line
+    std::wstring cmdLine = L"\"" + targetPath + L"\"";
+    if (!arguments.empty())
+        cmdLine += L" " + arguments;
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = hStdinRead;
+    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+    PROCESS_INFORMATION pi = {};
+    LPCWSTR dir = workingDir.empty() ? nullptr : workingDir.c_str();
+
+    BOOL ok = CreateProcessWithTokenW(
+        hDupToken,
+        0,
+        nullptr,
+        const_cast<LPWSTR>(cmdLine.c_str()),
+        CREATE_UNICODE_ENVIRONMENT,
+        nullptr,
+        dir,
+        &si,
+        &pi
+    );
+
+    if (ok)
+    {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        LOG_G_INFO(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: CreateProcessWithTokenW succeeded");
+    }
+    else
+    {
+        DWORD err = GetLastError();
+        LOG_G_ERRA(L"PrivilegeLaunchService::LaunchDeElevatedViaTokenWithStdin: CreateProcessWithTokenW failed, error=%lu", err);
+    }
+
+    CloseHandle(hDupToken);
+    return ok != 0;
+}
+
 bool PrivilegeLaunchService::LaunchDeElevatedViaToken(const std::wstring& targetPath, const std::wstring& arguments, const std::wstring& workingDir)
 {
     HWND hShell = GetShellWindow();

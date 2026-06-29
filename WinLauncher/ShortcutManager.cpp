@@ -3,6 +3,7 @@
 #include "Services/SyncFolderService.h"
 #include "resource.h"
 #include <shlobj.h>
+#include <objbase.h>
 
 #include <shlwapi.h>
 #include <commoncontrols.h>
@@ -17,13 +18,27 @@
 static IImageList* GetSystemImageList()
 {
     IImageList* list = nullptr;
-    const int sizes[] = { SHIL_EXTRALARGE, SHIL_JUMBO, SHIL_LARGE };
+    const int sizes[] = { SHIL_JUMBO, SHIL_EXTRALARGE, SHIL_LARGE };
     for (int size : sizes)
     {
         if (SUCCEEDED(SHGetImageList(size, IID_PPV_ARGS(&list))))
             return list;
     }
     return nullptr;
+}
+
+static std::wstring GenerateShortcutId()
+{
+    GUID guid;
+    if (SUCCEEDED(CoCreateGuid(&guid)))
+    {
+        wchar_t buf[40]{};
+        if (StringFromGUID2(guid, buf, 40) > 0)
+        {
+            return buf;
+        }
+    }
+    return L"{" + std::to_wstring(GetTickCount64()) + L"-" + std::to_wstring(rand()) + L"}";
 }
 
 std::vector<RendShortcutInfo> ShortcutManager::LoadShortcuts(const std::wstring& configDir)
@@ -45,6 +60,7 @@ std::vector<RendShortcutInfo> ShortcutManager::LoadShortcuts(const std::wstring&
         std::wstring fullPath = configDir + L"\\" + ffd.cFileName;
 
         RendShortcutInfo info;
+        info.id = GenerateShortcutId();
         info.name = ffd.cFileName;
         size_t dot = info.name.rfind(L'.');
         if (dot != std::wstring::npos)
@@ -155,7 +171,7 @@ static std::wstring GetSystemFilePath(const wchar_t* fileName)
 static HICON GetBuiltinIconById(const std::wstring& iconId)
 {
     if (iconId == L"folder")
-        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
     if (iconId == L"link")
         return GetAssociatedIcon(L"WinLauncher.lnk", FILE_ATTRIBUTE_NORMAL);
     if (iconId == L"exe")
@@ -171,7 +187,7 @@ static HICON GetBuiltinIconById(const std::wstring& iconId)
     if (iconId == L"batch")
         return GetAssociatedIcon(L"WinLauncher.bat", FILE_ATTRIBUTE_NORMAL);
 
-    return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+    return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
 }
 
 static HICON GetDefaultIconForType(Model::ShortcutType type, Model::ShortcutTargetKind targetKind)
@@ -206,6 +222,8 @@ static HICON GetDefaultIconForType(Model::ShortcutType type, Model::ShortcutTarg
     case Model::ShortcutType::Batch:
         return GetBuiltinIconById(L"batch");
     case Model::ShortcutType::BuiltinIcon:
+        return GetBuiltinIconById(L"app");
+    case Model::ShortcutType::System:
         return GetBuiltinIconById(L"app");
     default:
         return GetBuiltinIconById(L"app");
@@ -403,6 +421,7 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
                 TrimConfigLine(key); TrimConfigLine(val);
 
                 if (key == L"Name") currentItem->name = val;
+                else if (key == L"Id") currentItem->id = val;
                 else if (key == L"Type") currentItem->type = Model::ShortcutTypeFromKey(val);
                 else if (key == L"TargetKind") currentItem->targetKind = Model::ShortcutTargetKindFromKey(val);
                 else if (key == L"TargetPath") currentItem->targetPath = val;
@@ -438,6 +457,8 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
     {
         for (auto& sc : page.shortcuts)
         {
+            if (sc.id.empty())
+                sc.id = GenerateShortcutId();
             if (sc.targetKind == Model::ShortcutTargetKind::Unknown)
                 sc.targetKind = ShortcutManager::InferTargetKind(sc.targetPath);
             if (sc.iconSource == Model::IconSource::Auto && !sc.iconPath.empty())
@@ -461,7 +482,9 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
                 });
                 if (it != diskShortcuts.end())
                 {
-                    reconciled.push_back(*it);
+                    RendShortcutInfo disk = *it;
+                    disk.id = saved.id;
+                    reconciled.push_back(std::move(disk));
                     matched[std::distance(diskShortcuts.begin(), it)] = true;
                 }
             }
@@ -504,6 +527,7 @@ void ShortcutManager::SaveConfig(const std::wstring& configDir, const std::vecto
         for (const auto& sc : page.shortcuts)
         {
             content += L"[Item:" + std::to_wstring(pageIndex) + L":" + std::to_wstring(shortcutIndex) + L"]\r\n";
+            content += L"Id=" + EscapeConfigValue(sc.id.empty() ? GenerateShortcutId() : sc.id) + L"\r\n";
             content += L"Name=" + EscapeConfigValue(sc.name) + L"\r\n";
             content += L"Type=" + std::wstring(Model::ShortcutTypeKey(sc.type)) + L"\r\n";
             content += L"TargetKind=" + std::wstring(Model::ShortcutTargetKindKey(sc.targetKind)) + L"\r\n";
@@ -595,7 +619,7 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
 
     if (isDir)
     {
-        HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+        HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
         if (hIcon)
             return hIcon;
     }
@@ -608,6 +632,25 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
     }
 
     HICON hIcon = nullptr;
+
+    const wchar_t* ext = PathFindExtensionW(targetPath.c_str());
+    bool isExeOrDllOrIco = false;
+    if (ext && *ext)
+    {
+        isExeOrDllOrIco = (_wcsicmp(ext, L".exe") == 0 ||
+                           _wcsicmp(ext, L".dll") == 0 ||
+                           _wcsicmp(ext, L".ico") == 0);
+    }
+
+    if (isExeOrDllOrIco)
+    {
+        UINT extracted = PrivateExtractIconsW(targetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
+        if (extracted > 0 && hIcon)
+        {
+            return hIcon;
+        }
+    }
+
     IImageList* sysImgList = GetSystemImageList();
     if (sysImgList)
     {
@@ -662,13 +705,27 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
         if (hIcon) return hIcon;
     }
 
-    if (shortcut.type == Model::ShortcutType::File && !shortcut.targetPath.empty())
+    if (shortcut.type == Model::ShortcutType::System && source == Model::IconSource::Auto)
+    {
+        if (shortcut.targetPath == L":config_window")
+        {
+            HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_SETTING_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+            if (hIcon) return hIcon;
+        }
+        else if (shortcut.targetPath == L":topmost_toggle")
+        {
+            HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_UP_ARROW_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+            if (hIcon) return hIcon;
+        }
+    }
+
+    if ((shortcut.type == Model::ShortcutType::File || shortcut.type == Model::ShortcutType::System) && !shortcut.targetPath.empty())
     {
         HICON hIcon = GetShortcutIcon(shortcut.targetPath);
         if (hIcon) return hIcon;
     }
 
-    if (shortcut.type != Model::ShortcutType::File)
+    if (shortcut.type != Model::ShortcutType::File && shortcut.type != Model::ShortcutType::System)
     {
         return nullptr;
     }
@@ -677,6 +734,24 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
     if (kind == Model::ShortcutTargetKind::Unknown)
         kind = InferTargetKind(shortcut.targetPath);
     return GetDefaultIconForType(shortcut.type, kind);
+}
+
+bool ShortcutManager::UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut)
+{
+    Model::IconSource source = NormalizeIconSource(shortcut.iconSource, shortcut.iconPath, shortcut.builtinIconId);
+    if (source != Model::IconSource::Auto)
+        return false;
+
+    if (shortcut.type != Model::ShortcutType::File)
+        return false;
+
+    Model::ShortcutTargetKind kind = shortcut.targetKind;
+    if (kind == Model::ShortcutTargetKind::Unknown)
+        kind = InferTargetKind(shortcut.targetPath);
+
+    return kind == Model::ShortcutTargetKind::File ||
+           kind == Model::ShortcutTargetKind::Link ||
+           kind == Model::ShortcutTargetKind::Unknown;
 }
 
 void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut)
@@ -703,6 +778,7 @@ void ShortcutManager::RefreshShortcutIcons(std::vector<RendPopupPage>& pages)
 HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)
 {
     RendShortcutInfo renderInfo;
+    renderInfo.id = shortcut.id;
     renderInfo.name = shortcut.name;
     renderInfo.targetPath = shortcut.targetPath;
     renderInfo.arguments = shortcut.arguments;

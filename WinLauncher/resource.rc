@@ -4,6 +4,8 @@
 
 IDI_APP_ICON             ICON                    "..\\assets\\app.ico"
 IDI_FOLDER_ICON          ICON                    "..\\assets\\Folder.ico"
+IDI_SETTING_ICON         ICON                    "..\\assets\\setting.ico"
+IDI_UP_ARROW_ICON        ICON                    "..\\assets\\up-arrow.ico"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION    WINLAUNCHER_VERSION_RC
