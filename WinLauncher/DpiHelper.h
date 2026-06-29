@@ -20,7 +20,8 @@ static void SetWindowDisplayAffinitySafe(HWND hwnd)
             wcscmp(className, L"WinLauncherShortcutDialog") == 0 ||
             wcscmp(className, L"WinLauncherSystemIconDialog") == 0 ||
             wcscmp(className, L"WinLauncherUrlDialog") == 0 ||
-            wcscmp(className, L"WinLauncherWait") == 0)
+            wcscmp(className, L"WinLauncherWait") == 0 ||
+            wcscmp(className, L"WinLauncherPopup") == 0)
         {
             return;
         }
