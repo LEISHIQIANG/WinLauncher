@@ -154,16 +154,12 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
         }
     }
 
-    // Copy current executable to WinLauncher_new.exe so cmd replacement will succeed
+    // Copy current executable to system temp directory as WinLauncher.exe so cmd replacement will succeed
     wchar_t currentExePath[MAX_PATH];
     GetModuleFileNameW(nullptr, currentExePath, MAX_PATH);
-    std::wstring exeDir = currentExePath;
-    size_t lastSlash = exeDir.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos)
-    {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
-    std::wstring targetPath = exeDir + L"\\WinLauncher_new.exe";
+    wchar_t tempDir[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempDir);
+    std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
     if (CopyFileW(currentExePath, targetPath.c_str(), FALSE))
     {
         {
@@ -400,6 +396,9 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
         exeDir = exeDir.substr(0, lastSlash);
     }
 
+    wchar_t tempDir[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempDir);
+
     std::wstring targetPath;
     if (downloadUrl.size() >= 4 && downloadUrl.compare(downloadUrl.size() - 4, 4, L".zip") == 0)
     {
@@ -407,7 +406,7 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
     }
     else
     {
-        targetPath = exeDir + L"\\WinLauncher_new.exe";
+        targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
     }
 
     HINTERNET hSession = InternetOpenW(
@@ -541,14 +540,11 @@ void UpdateService::ApplyUpdate(AppContext* ctx)
 {
     wchar_t currentExePath[MAX_PATH];
     GetModuleFileNameW(nullptr, currentExePath, MAX_PATH);
-    std::wstring exeDir = currentExePath;
-    size_t lastSlash = exeDir.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos)
-    {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
 
-    std::wstring targetPath = exeDir + L"\\WinLauncher_new.exe";
+    wchar_t tempDir[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempDir);
+    std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
+
     std::wstring params = L"/c :loop & taskkill /F /PID " + std::to_wstring(GetCurrentProcessId()) + 
                           L" >nul 2>&1 & ping 127.0.0.1 -n 2 >nul & del /F /Q \"" + currentExePath + 
                           L"\" & if exist \"" + currentExePath + L"\" goto loop & move /Y \"" + targetPath + 
