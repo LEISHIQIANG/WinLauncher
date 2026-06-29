@@ -154,10 +154,10 @@ namespace UIStyle
         float saturation;
     };
 
-    inline ThemeConfig g_DarkConfig = { 32.0f, 20.0f, 0.50f, 0.90f, 0.11f, 1.8f };
-    inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.91f, 1.6f };
-    inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 1.7f };
-    inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 1.5f };
+    inline ThemeConfig g_DarkConfig = { 32.0f, 20.0f, 0.50f, 0.90f, 0.11f, 2.5f };
+    inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
+    inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 2.5f };
+    inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 2.5f };
 
     inline ThemeConfig ToThemeConfig(const Model::ThemeEffectConfig& config)
     {
@@ -392,6 +392,9 @@ namespace UIStyle
 
     inline D2D1_COLOR_F HslToRgb(float h, float s, float l, float a)
     {
+        if (h < 0.0f) h = 0.0f;
+        if (h >= 360.0f) h = fmodf(h, 360.0f);
+
         float actualL = l * 1.5f;
         float overflow = 0.0f;
         if (actualL > 1.0f)
@@ -402,15 +405,13 @@ namespace UIStyle
         float c = (1.0f - fabsf(2.0f * actualL - 1.0f)) * s;
         float x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f));
         float m = actualL - c / 2.0f;
-        float r = 0, g = 0, b = 0;
-        if (h < 0) h = 0;
-        if (h >= 360) h = fmodf(h, 360.0f);
-        if (0 <= h && h < 60) { r = c; g = x; b = 0; }
-        else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
-        else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
-        else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
-        else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
-        else if (300 <= h && h <= 360) { r = c; g = 0; b = x; }
+        float r = 0.0f, g = 0.0f, b = 0.0f;
+        if (0.0f <= h && h < 60.0f) { r = c; g = x; b = 0.0f; }
+        else if (60.0f <= h && h < 120.0f) { r = x; g = c; b = 0.0f; }
+        else if (120.0f <= h && h < 180.0f) { r = 0.0f; g = c; b = x; }
+        else if (180.0f <= h && h < 240.0f) { r = 0.0f; g = x; b = c; }
+        else if (240.0f <= h && h < 300.0f) { r = x; g = 0.0f; b = c; }
+        else if (300.0f <= h && h <= 360.0f) { r = c; g = 0.0f; b = x; }
         return D2D1::ColorF(r + m + overflow, g + m + overflow, b + m + overflow, a);
     }
 
@@ -557,14 +558,14 @@ namespace UIStyle
             {
                 const auto& cfg = ConfigFor(mode, windowMode);
                 float sat = (windowMode == 1) ? 0.02f : 0.05f;
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, cfg.opacity);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, 1.0f - cfg.highlight);
                 return Color(rgb);
             }
             else
             {
                 const auto& cfg = ConfigFor(mode, windowMode);
                 float sat = (windowMode == 1) ? 0.03f : 0.10f;
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, cfg.opacity);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, sat, cfg.brightness, 1.0f - cfg.highlight);
                 return Color(rgb);
             }
         }
@@ -581,13 +582,13 @@ namespace UIStyle
             if (mode == ThemeMode::Light)
             {
                 const auto& cfg = ConfigFor(mode, windowMode);
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (windowMode == 1) ? 0.02f : 0.05f, cfg.brightness, cfg.opacity * 0.6f);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, 0.0f, cfg.brightness, cfg.opacity * 0.6f);
                 return Color(rgb);
             }
             else
             {
                 const auto& cfg = ConfigFor(mode, windowMode);
-                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, (windowMode == 1) ? 0.03f : 0.10f, cfg.brightness, cfg.opacity * 0.36f);
+                D2D1_COLOR_F rgb = HslToRgb(cfg.hue, 0.0f, cfg.brightness, cfg.opacity * 0.36f);
                 return Color(rgb);
             }
         }

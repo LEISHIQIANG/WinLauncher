@@ -137,6 +137,7 @@ private:
     // EventBus subscription token (for cleanup)
     EventBus::Token m_configChangedToken = 0;
     EventBus::Token m_themeChangedToken = 0;
+    EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
     bool m_refreshingIcons = false;
 

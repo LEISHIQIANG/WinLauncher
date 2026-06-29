@@ -53,6 +53,9 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
             m_shortcutPage.UpdateTheme();
             UpdateTheme();
         });
+        m_bgStyleChangedToken = ctx->eventBus->Subscribe(EventType::BackgroundStyleChanged, [this]() {
+            UpdateTheme();
+        });
         m_configChangedToken = ctx->eventBus->Subscribe(EventType::ConfigChanged, [this]() {
             if (m_ignoreConfigChangedCount > 0)
             {
@@ -75,6 +78,8 @@ ConfigWindow::~ConfigWindow()
     {
         if (m_themeChangedToken)
             m_appCtx->eventBus->Unsubscribe(EventType::ThemeChanged, m_themeChangedToken);
+        if (m_bgStyleChangedToken)
+            m_appCtx->eventBus->Unsubscribe(EventType::BackgroundStyleChanged, m_bgStyleChangedToken);
         if (m_configChangedToken)
             m_appCtx->eventBus->Unsubscribe(EventType::ConfigChanged, m_configChangedToken);
     }
@@ -309,7 +314,8 @@ void ConfigWindow::ResizeToCurrentScale()
         m_bgFinal.Reset();
         m_compositeRt.Reset();
         m_effectWinSize = {};
-        m_bgDirty = true;
+        m_bgCaptureDirty = true;
+        m_bgCompositeDirty = true;
     }
     InvalidateRect(hwnd, nullptr, FALSE);
 }
@@ -382,7 +388,7 @@ bool ConfigWindow::IsVisible()
     return s_instance && s_instance->GetHWND() && IsWindowVisible(s_instance->GetHWND());
 }
 
-void ConfigWindow::NotifyConfigChanged()
+void ConfigWindow::NotifyConfigChanged(bool onlyBackgroundStyle)
 {
     if (m_appCtx && m_appCtx->configService)
     {
@@ -401,7 +407,21 @@ void ConfigWindow::NotifyConfigChanged()
 
     if (m_appCtx && m_appCtx->eventBus)
     {
-        m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        if (onlyBackgroundStyle)
+        {
+            if (HWND hwnd = GetHWND())
+            {
+                SetTimer(hwnd, 102, 50, nullptr);
+            }
+            else
+            {
+                m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);
+            }
+        }
+        else
+        {
+            m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        }
     }
 }
 
@@ -1568,6 +1588,15 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         {
             KillTimer(hWnd, 101);
             SaveConfig();
+            return 0;
+        }
+        if (wParam == 102)
+        {
+            KillTimer(hWnd, 102);
+            if (m_appCtx && m_appCtx->eventBus)
+            {
+                m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);
+            }
             return 0;
         }
         if (wParam == CONFIG_ANIMATION_TIMER_ID)

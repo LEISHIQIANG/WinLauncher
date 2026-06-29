@@ -84,7 +84,8 @@ protected:
     ComPtr<ID2D1Bitmap>       m_bgFinal;  // pre-composited (blur + sheen + tint + border)
     ComPtr<ID2D1BitmapRenderTarget> m_compositeRt;  // cached composite RT
     std::vector<DWORD>        m_pixbuf;
-    bool                      m_bgDirty = true;
+    bool                      m_bgCaptureDirty = true;
+    bool                      m_bgCompositeDirty = true;
 
     // Cached effects and resources for CompositeBackgroundToCache
     ComPtr<ID2D1Effect>       m_blurEffect;

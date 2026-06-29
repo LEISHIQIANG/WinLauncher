@@ -494,9 +494,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             };
 
             std::vector<DetailItem> activeItems;
-            activeItems.push_back({ 0, L"色调", cfg.hue });
             activeItems.push_back({ 1, L"模糊度", cfg.blur });
-            activeItems.push_back({ 2, L"透明度", cfg.opacity * 100.0f });
+            activeItems.push_back({ 2, L"透明度", (1.0f - cfg.opacity) * 100.0f });
             activeItems.push_back({ 3, L"高光", cfg.highlight * 100.0f });
             activeItems.push_back({ 4, L"亮度", cfg.brightness * 100.0f });
             activeItems.push_back({ 5, L"饱和度", cfg.saturation });
@@ -577,10 +576,16 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                     if (textBrush)
                     {
                         wchar_t valBuf[32];
-                        swprintf_s(valBuf, L"%d", (int)activeItems[i].val);
-                        if (activeItems[i].originalIdx == 0) wcscat_s(valBuf, L"°");
-                        else if (activeItems[i].originalIdx == 1) wcscat_s(valBuf, L"px");
-                        else if (activeItems[i].originalIdx == 2 || activeItems[i].originalIdx == 3 || activeItems[i].originalIdx == 4) wcscat_s(valBuf, L"%");
+                        if (activeItems[i].originalIdx == 5)
+                        {
+                            swprintf_s(valBuf, L"%.1fx", activeItems[i].val);
+                        }
+                        else
+                        {
+                            swprintf_s(valBuf, L"%d", (int)activeItems[i].val);
+                            if (activeItems[i].originalIdx == 1) wcscat_s(valBuf, L"px");
+                            else if (activeItems[i].originalIdx == 2 || activeItems[i].originalIdx == 3 || activeItems[i].originalIdx == 4) wcscat_s(valBuf, L"%");
+                        }
                         
                         std::wstring valStr = valBuf;
                         tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1416,8 +1421,10 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 }
                                 else if (settingIdx == 2) // Opacity
                                 {
-                                    float val = cfg.opacity + step * 0.05f;
-                                    if (val >= 0.0f && val <= 1.0f) cfg.opacity = val;
+                                     float val = cfg.opacity - step * 0.05f;
+                                     if (val < 0.0f) val = 0.0f;
+                                     if (val > 1.0f) val = 1.0f;
+                                     cfg.opacity = val;
                                 }
                                 else if (settingIdx == 3) // Highlight
                                 {
@@ -1428,7 +1435,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 {
                                     float val = cfg.brightness + step * 0.05f;
                                     if (val < 0.0f) val = 0.0f;
-                                    if (val > 0.99f) val = 0.99f;
+                                    if (val > 1.0f) val = 1.0f;
                                     cfg.brightness = val;
                                 }
                                 else if (settingIdx == 5) // Saturation
@@ -1437,7 +1444,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                     if (val >= 0.5f && val <= 3.0f) cfg.saturation = val;
                                 }
 
-                                m_owner->NotifyConfigChanged();
+                                m_owner->NotifyConfigChanged(true);
                                 repaint = true;
                             }
                         }
@@ -1563,6 +1570,11 @@ void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
         ReleaseCapture();
         repaint = true;
     }
+}
+
+void SettingsPage::OnLButtonDblClk(POINT pt, bool& repaint)
+{
+    OnLButtonDown(pt, repaint);
 }
 
 bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
@@ -1703,7 +1715,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
     int currentWindowMode = m_owner->GetWindowMode();
     if (currentWindowMode != 0 && currentWindowMode != 1) return false;
 
-    std::vector<int> activeIndices = { 0, 1, 2, 3, 4, 5 };
+    std::vector<int> activeIndices = { 1, 2, 3, 4, 5 };
     for (int i = 0; i < (int)activeIndices.size(); i++)
     {
         int col = i % 2;

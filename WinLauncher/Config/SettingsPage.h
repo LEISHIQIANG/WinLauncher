@@ -18,6 +18,7 @@ public:
     virtual void OnMouseLeave(bool& repaint) override;
     virtual void OnLButtonDown(POINT pt, bool& repaint) override;
     virtual void OnLButtonUp(POINT pt, bool& repaint) override;
+    virtual void OnLButtonDblClk(POINT pt, bool& repaint) override;
 
     std::function<void()> OnImportJsonClicked;
 

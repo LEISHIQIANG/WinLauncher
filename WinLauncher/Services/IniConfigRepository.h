@@ -280,7 +280,7 @@ public:
                     {
                         try {
                             m_appearance.dark.brightness = std::stof(val);
-                            if (m_appearance.dark.brightness > 0.99f) m_appearance.dark.brightness = 0.99f;
+                            if (m_appearance.dark.brightness > 1.0f) m_appearance.dark.brightness = 1.0f;
                         } catch (...) {}
                     }
                     else if (key == L"DarkSaturation")
@@ -307,7 +307,7 @@ public:
                     {
                         try {
                             m_appearance.light.brightness = std::stof(val);
-                            if (m_appearance.light.brightness > 0.99f) m_appearance.light.brightness = 0.99f;
+                            if (m_appearance.light.brightness > 1.0f) m_appearance.light.brightness = 1.0f;
                         } catch (...) {}
                     }
                     else if (key == L"LightSaturation")
@@ -317,6 +317,10 @@ public:
                     else if (key == L"AcrylicDarkHue")
                     {
                         try { m_appearance.acrylicDark.hue = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"AcrylicDarkBlur")
+                    {
+                        try { m_appearance.acrylicDark.blur = std::stof(val); } catch (...) {}
                     }
                     else if (key == L"AcrylicDarkOpacity")
                     {
@@ -330,12 +334,20 @@ public:
                     {
                         try {
                             m_appearance.acrylicDark.brightness = std::stof(val);
-                            if (m_appearance.acrylicDark.brightness > 0.99f) m_appearance.acrylicDark.brightness = 0.99f;
+                            if (m_appearance.acrylicDark.brightness > 1.0f) m_appearance.acrylicDark.brightness = 1.0f;
                         } catch (...) {}
+                    }
+                    else if (key == L"AcrylicDarkSaturation")
+                    {
+                        try { m_appearance.acrylicDark.saturation = std::stof(val); } catch (...) {}
                     }
                     else if (key == L"AcrylicLightHue")
                     {
                         try { m_appearance.acrylicLight.hue = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"AcrylicLightBlur")
+                    {
+                        try { m_appearance.acrylicLight.blur = std::stof(val); } catch (...) {}
                     }
                     else if (key == L"AcrylicLightOpacity")
                     {
@@ -349,8 +361,12 @@ public:
                     {
                         try {
                             m_appearance.acrylicLight.brightness = std::stof(val);
-                            if (m_appearance.acrylicLight.brightness > 0.99f) m_appearance.acrylicLight.brightness = 0.99f;
+                            if (m_appearance.acrylicLight.brightness > 1.0f) m_appearance.acrylicLight.brightness = 1.0f;
                         } catch (...) {}
+                    }
+                    else if (key == L"AcrylicLightSaturation")
+                    {
+                        try { m_appearance.acrylicLight.saturation = std::stof(val); } catch (...) {}
                     }
                 }
             }
@@ -525,13 +541,17 @@ public:
         content += L"LightBrightness=" + std::to_wstring(m_appearance.light.brightness) + L"\r\n";
         content += L"LightSaturation=" + std::to_wstring(m_appearance.light.saturation) + L"\r\n";
         content += L"AcrylicDarkHue=" + std::to_wstring(m_appearance.acrylicDark.hue) + L"\r\n";
+        content += L"AcrylicDarkBlur=" + std::to_wstring(m_appearance.acrylicDark.blur) + L"\r\n";
         content += L"AcrylicDarkOpacity=" + std::to_wstring(m_appearance.acrylicDark.opacity) + L"\r\n";
         content += L"AcrylicDarkHighlight=" + std::to_wstring(m_appearance.acrylicDark.highlight) + L"\r\n";
         content += L"AcrylicDarkBrightness=" + std::to_wstring(m_appearance.acrylicDark.brightness) + L"\r\n";
+        content += L"AcrylicDarkSaturation=" + std::to_wstring(m_appearance.acrylicDark.saturation) + L"\r\n";
         content += L"AcrylicLightHue=" + std::to_wstring(m_appearance.acrylicLight.hue) + L"\r\n";
+        content += L"AcrylicLightBlur=" + std::to_wstring(m_appearance.acrylicLight.blur) + L"\r\n";
         content += L"AcrylicLightOpacity=" + std::to_wstring(m_appearance.acrylicLight.opacity) + L"\r\n";
         content += L"AcrylicLightHighlight=" + std::to_wstring(m_appearance.acrylicLight.highlight) + L"\r\n";
-        content += L"AcrylicLightBrightness=" + std::to_wstring(m_appearance.acrylicLight.brightness) + L"\r\n\r\n";
+        content += L"AcrylicLightBrightness=" + std::to_wstring(m_appearance.acrylicLight.brightness) + L"\r\n";
+        content += L"AcrylicLightSaturation=" + std::to_wstring(m_appearance.acrylicLight.saturation) + L"\r\n\r\n";
 
         int pageIndex = 0;
         for (const auto& page : pages)

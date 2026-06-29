@@ -27,8 +27,7 @@ public:
         int backdropType = 1;
         for (int attr : {38, 1029})
         {
-            if (SUCCEEDED(DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType))))
-                break;
+            DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
         }
 
         auto u = GetModuleHandleW(L"user32.dll");
@@ -51,15 +50,25 @@ public:
                         const D2D1_SIZE_F& size, float scale) override
     {
         SetRenderTarget(rt);
+
+        int windowMode = UIStyle::GetWindowMode();
+        if (windowMode == 1) // Acrylic mode is rendered by system DWM backdrop
+        {
+            rt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+            return;
+        }
+
         if (m_dirty)
         {
             CaptureBackground();
             m_dirty = false;
         }
 
-        rt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
+        rt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
 
         if (!m_bgCap) return;
+
+        auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
 
         if (dc)
         {
@@ -69,7 +78,7 @@ public:
                 SUCCEEDED(dc->CreateEffect(CLSID_D2D1Saturation, &sat)))
             {
                 blur->SetInput(0, m_bgCap.Get());
-                blur->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 20.0f);
+                blur->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, cfg.blur);
                 blur->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_HARD);
 
                 ComPtr<ID2D1Image> blurOut;
@@ -77,7 +86,7 @@ public:
                 if (blurOut)
                 {
                     sat->SetInput(0, blurOut.Get());
-                    sat->SetValue(D2D1_SATURATION_PROP_SATURATION, 2.5f);
+                    sat->SetValue(D2D1_SATURATION_PROP_SATURATION, cfg.saturation);
                     dc->DrawImage(sat.Get());
                 }
                 return;

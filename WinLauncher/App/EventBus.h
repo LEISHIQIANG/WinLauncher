@@ -12,7 +12,8 @@ enum class EventType
     PopupHidden,
     AppQuit,
     ThemeChanged,
-    UiScaleChanged
+    UiScaleChanged,
+    BackgroundStyleChanged
 };
 
 

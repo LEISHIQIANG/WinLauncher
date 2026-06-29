@@ -229,8 +229,7 @@ void GlassWindow::ApplySystemBackdrop()
         bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
         auto& cfg = isLight ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig;
         
-        float s = isLight ? 0.02f : 0.03f;
-        D2D1_COLOR_F rgb = UIStyle::HslToRgb(cfg.hue, s, cfg.brightness, cfg.opacity);
+        D2D1_COLOR_F rgb = UIStyle::HslToRgb(cfg.hue, 0.0f, cfg.brightness, cfg.opacity);
         
         BYTE r = (BYTE)(fminf(fmaxf(rgb.r, 0.0f), 1.0f) * 255.0f);
         BYTE g = (BYTE)(fminf(fmaxf(rgb.g, 0.0f), 1.0f) * 255.0f);
@@ -245,8 +244,7 @@ void GlassWindow::ApplySystemBackdrop()
         int backdropType = 1; // DWMSBT_DISABLE
         for (int attr : {38, 1029})
         {
-            if (SUCCEEDED(DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType))))
-                break;
+            DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
         }
         SetAccent(m_hWnd, 2, 0x00000000);
     }
@@ -361,8 +359,18 @@ void GlassWindow::UpdateTheme()
     if (m_themeTransitionActive)
         m_pendingBackdropUpdate = true;
     else
-        ApplySystemBackdrop();
-    m_bgDirty = true;
+    {
+        int windowMode = 0;
+        if (m_appCtx && m_appCtx->configService)
+        {
+            windowMode = m_appCtx->configService->GetWindowMode();
+        }
+        if (windowMode == 1)
+        {
+            ApplySystemBackdrop();
+        }
+    }
+    m_bgCompositeDirty = true;
     if (m_compositor)
     {
         m_compositor->MarkAllDirty();
@@ -499,10 +507,12 @@ void GlassWindow::CompositeBackgroundToCache()
 
     ComPtr<ID2D1BitmapRenderTarget> bmpRt = m_compositeRt;
     bmpRt->BeginDraw();
-    bmpRt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
+    bmpRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
 
-    // Blur + Saturation — cache and reuse the effect graph
+    // A. Draw Blurred Desktop Screenshot (Layer 0)
     ID2D1DeviceContext* dc = nullptr;
+    auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
+
     if (SUCCEEDED(bmpRt->QueryInterface(&dc)))
     {
         if (!m_blurEffect)
@@ -510,11 +520,8 @@ void GlassWindow::CompositeBackgroundToCache()
         if (!m_satEffect)
             dc->CreateEffect(CLSID_D2D1Saturation, &m_satEffect);
 
-        auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
-
         if (m_blurEffect && m_satEffect)
         {
-            // Only update input and parameters; effects already exist
             m_blurEffect->SetInput(0, m_bgCap.Get());
             m_blurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, cfg.blur);
             m_blurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_HARD);
@@ -539,122 +546,105 @@ void GlassWindow::CompositeBackgroundToCache()
         bmpRt->DrawBitmap(m_bgCap.Get(), D2D1::RectF(0, 0, w, h));
     }
 
-    // Tint
+    // B. Diagonal Specular Radial Glow (Part A of Layer 3)
+    if (cfg.highlight > 0.0f)
     {
-        auto ti = GetOrCreateBrush(UIStyle::ThemeColor::WindowTint().d2d);
-        if (ti)
-            bmpRt->FillRectangle(D2D1::RectF(0, 0, w, h), ti.Get());
-    }
+        ID2D1RadialGradientBrush* sheenBrush = nullptr;
+        ID2D1GradientStopCollection* stopsSheen = nullptr;
+        D2D1_GRADIENT_STOP stopDataSheen[2];
+        stopDataSheen[0].position = 0.0f;
+        stopDataSheen[0].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, cfg.highlight * 0.25f);
+        stopDataSheen[1].position = 1.0f;
+        stopDataSheen[1].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.0f);
 
-    // Sheen - render into a transparent layer first, then blur that layer before
-    // compositing it. Draw it after tint so light mode keeps the white lift.
-    {
-        if (!m_sheenLayerRt)
+        bmpRt->CreateGradientStopCollection(stopDataSheen, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsSheen);
+        if (stopsSheen)
         {
-            D2D1_SIZE_F sheenLayerSize = D2D1::SizeF(w, h);
-            D2D1_PIXEL_FORMAT sheenLayerFormat =
-                D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED);
-            HRESULT hr = bmpRt->CreateCompatibleRenderTarget(
-                &sheenLayerSize,
-                nullptr,
-                &sheenLayerFormat,
-                D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-                &m_sheenLayerRt);
-            if (SUCCEEDED(hr) && m_sheenLayerRt)
+            bmpRt->CreateRadialGradientBrush(
+                D2D1::RadialGradientBrushProperties(
+                    D2D1::Point2F(w * 0.10f, h * 0.10f),
+                    D2D1::Point2F(0.0f, 0.0f),
+                    w * 0.85f,
+                    w * 0.85f
+                ),
+                D2D1::BrushProperties(),
+                stopsSheen,
+                &sheenBrush
+            );
+            if (sheenBrush)
             {
-                FLOAT dpiX, dpiY;
-                m_rt->GetDpi(&dpiX, &dpiY);
-                m_sheenLayerRt->SetDpi(dpiX, dpiY);
+                D2D1_ROUNDED_RECT sheenRR = D2D1::RoundedRect(
+                    D2D1::RectF(1.0f, 1.0f, w - 1.0f, h - 1.0f),
+                    drawCornerRadius, drawCornerRadius
+                );
+                bmpRt->FillRoundedRectangle(sheenRR, sheenBrush);
+                sheenBrush->Release();
             }
-        }
-
-        if (m_sheenLayerRt)
-        {
-            m_sheenLayerBitmap.Reset();
-            m_sheenLayerRt->BeginDraw();
-            m_sheenLayerRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
-
-            if (!m_sheenGsc)
-            {
-                D2D1_COLOR_F sheen = UIStyle::ThemeColor::Sheen().d2d;
-                D2D1_GRADIENT_STOP gs[5];
-                gs[0].position = 0.00f;
-                gs[0].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, (std::min)(1.0f, sheen.a * 1.35f));
-                gs[1].position = 0.22f;
-                gs[1].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, (std::min)(1.0f, sheen.a * 1.05f));
-                gs[2].position = 0.56f;
-                gs[2].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, sheen.a * 0.60f);
-                gs[3].position = 0.86f;
-                gs[3].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, sheen.a * 0.22f);
-                gs[4].position = 1.00f;
-                gs[4].color = D2D1::ColorF(sheen.r, sheen.g, sheen.b, 0.0f);
-                m_sheenLayerRt->CreateGradientStopCollection(gs, 5, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &m_sheenGsc);
-            }
-            if (m_sheenGsc && !m_sheenBrush)
-            {
-                m_sheenLayerRt->CreateRadialGradientBrush(
-                    D2D1::RadialGradientBrushProperties(
-                        D2D1::Point2F(w * 0.10f, h * 0.10f),
-                        D2D1::Point2F(0, 0),
-                        w * 1.18f, h * 1.12f),
-                    m_sheenGsc.Get(), &m_sheenBrush);
-            }
-            if (m_sheenBrush)
-            {
-                m_sheenLayerRt->FillRoundedRectangle(
-                    D2D1::RoundedRect(
-                        D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset),
-                        (std::max)(0.0f, drawCornerRadius - borderOffset),
-                        (std::max)(0.0f, drawCornerRadius - borderOffset)),
-                    m_sheenBrush.Get());
-            }
-
-            HRESULT sheenHr = m_sheenLayerRt->EndDraw();
-            if (SUCCEEDED(sheenHr))
-                m_sheenLayerRt->GetBitmap(&m_sheenLayerBitmap);
-        }
-
-        if (m_sheenLayerBitmap)
-        {
-            ID2D1DeviceContext* sheenDc = nullptr;
-            if (SUCCEEDED(bmpRt->QueryInterface(&sheenDc)) && sheenDc)
-            {
-                if (!m_sheenBlurEffect)
-                    sheenDc->CreateEffect(CLSID_D2D1GaussianBlur, &m_sheenBlurEffect);
-                if (m_sheenBlurEffect)
-                {
-                    m_sheenBlurEffect->SetInput(0, m_sheenLayerBitmap.Get());
-                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 4.0f);
-                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_QUALITY);
-                    m_sheenBlurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_SOFT);
-                    sheenDc->DrawImage(
-                        m_sheenBlurEffect.Get(),
-                        nullptr,
-                        nullptr,
-                        D2D1_INTERPOLATION_MODE_LINEAR,
-                        D2D1_COMPOSITE_MODE_PLUS);
-                }
-                else
-                {
-                    bmpRt->DrawBitmap(m_sheenLayerBitmap.Get(), D2D1::RectF(0, 0, w, h));
-                }
-                sheenDc->Release();
-            }
-            else
-            {
-                bmpRt->DrawBitmap(m_sheenLayerBitmap.Get(), D2D1::RectF(0, 0, w, h));
-            }
+            stopsSheen->Release();
         }
     }
 
-    // Border
+    // C. Base Tint Layer (combining Opacity & Brightness)
+    BYTE base_r = static_cast<BYTE>(20.0f + cfg.brightness * 235.0f);
+    BYTE base_g = static_cast<BYTE>(20.0f + cfg.brightness * 235.0f);
+    BYTE base_b = static_cast<BYTE>(25.0f + cfg.brightness * 230.0f);
+
+    ID2D1SolidColorBrush* bgBrush = nullptr;
+    bmpRt->CreateSolidColorBrush(
+        D2D1::ColorF(base_r / 255.0f, base_g / 255.0f, base_b / 255.0f, cfg.opacity),
+        &bgBrush
+    );
+    if (bgBrush)
     {
-        auto bo = GetOrCreateBrush(UIStyle::ThemeColor::WindowBorder().d2d);
-        if (bo)
+        bmpRt->FillRectangle(D2D1::RectF(0.0f, 0.0f, w, h), bgBrush);
+        bgBrush->Release();
+    }
+
+    // D. Crisp Bevel Edge Borders (Part B & C of Layer 3)
+    if (cfg.highlight > 0.0f)
+    {
+        // B. Outer thin dark border for desktop contrast
+        ID2D1SolidColorBrush* outerDarkBrush = nullptr;
+        float darkOpacity = 0.14f * (1.0f - cfg.brightness * 0.4f);
+        bmpRt->CreateSolidColorBrush(D2D1::ColorF(15 / 255.0f, 23 / 255.0f, 42 / 255.0f, darkOpacity), &outerDarkBrush);
+        if (outerDarkBrush)
         {
-            bmpRt->DrawRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(borderOffset, borderOffset, w - borderOffset, h - borderOffset), drawCornerRadius, drawCornerRadius),
-                bo.Get(), borderWidth);
+            D2D1_ROUNDED_RECT outerRR = D2D1::RoundedRect(
+                D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
+                drawCornerRadius, drawCornerRadius
+            );
+            bmpRt->DrawRoundedRectangle(outerRR, outerDarkBrush, 1.0f);
+            outerDarkBrush->Release();
+        }
+
+        // C. Inner diagonal gradient bright border for realistic light refraction
+        ID2D1LinearGradientBrush* innerBrightBrush = nullptr;
+        ID2D1GradientStopCollection* stopsInner = nullptr;
+        D2D1_GRADIENT_STOP stopDataInner[2];
+        stopDataInner[0].position = 0.0f;
+        stopDataInner[0].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, cfg.highlight * 0.75f);
+        stopDataInner[1].position = 1.0f;
+        stopDataInner[1].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.02f);
+
+        bmpRt->CreateGradientStopCollection(stopDataInner, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsInner);
+        if (stopsInner)
+        {
+            bmpRt->CreateLinearGradientBrush(
+                D2D1::LinearGradientBrushProperties(D2D1::Point2F(1.5f, 1.5f), D2D1::Point2F(w - 1.5f, h - 1.5f)),
+                stopsInner,
+                &innerBrightBrush
+            );
+            if (innerBrightBrush)
+            {
+                D2D1_ROUNDED_RECT innerRR = D2D1::RoundedRect(
+                    D2D1::RectF(1.5f, 1.5f, w - 1.5f, h - 1.5f),
+                    (std::max)(0.0f, drawCornerRadius - (1.0f * systemScale) / scale),
+                    (std::max)(0.0f, drawCornerRadius - (1.0f * systemScale) / scale)
+                );
+                bmpRt->DrawRoundedRectangle(innerRR, innerBrightBrush, 1.0f);
+                innerBrightBrush->Release();
+            }
+            stopsInner->Release();
         }
     }
 
@@ -733,7 +723,8 @@ void GlassWindow::DoPaint()
             m_brushCache.clear();
             m_themeTransitionStopCollection.Reset();
             if (m_compositor) m_compositor->MarkAllDirty();
-            m_bgDirty = true;
+            m_bgCaptureDirty = true;
+            m_bgCompositeDirty = true;
             EnsureD2D();
             InvalidateRect(m_hWnd, nullptr, FALSE);
         }
@@ -769,11 +760,17 @@ void GlassWindow::DoPaint()
     }
     else // Glass (custom blur)
     {
-        if (m_bgDirty)
+        if (m_bgCaptureDirty)
         {
             CaptureBackground();
+            m_bgCaptureDirty = false;
+            m_bgCompositeDirty = true;
+        }
+
+        if (m_bgCompositeDirty)
+        {
             CompositeBackgroundToCache();
-            m_bgDirty = false;
+            m_bgCompositeDirty = false;
         }
 
         if (m_bgFinal)
@@ -803,7 +800,7 @@ void GlassWindow::DoPaint()
     static ULONGLONG s_lastPaintLogTick = 0;
     if (ShouldLogPerf(s_lastPaintLogTick, elapsedMs, 16.0))
     {
-        LOG_G_WORNING(L"GlassWindow perf: DoPaint legacy path took %.2fms size=%.0fx%.0f bgDirty=%d hwnd=%p", elapsedMs, w, h, (int)m_bgDirty, m_hWnd);
+        LOG_G_WORNING(L"GlassWindow perf: DoPaint legacy path took %.2fms size=%.0fx%.0f bgDirty=%d hwnd=%p", elapsedMs, w, h, (int)m_bgCaptureDirty, m_hWnd);
     }
     if (hr == D2DERR_RECREATE_TARGET)
     {
@@ -815,7 +812,8 @@ void GlassWindow::DoPaint()
         m_rt.Reset();
         m_brushCache.clear();
         m_themeTransitionStopCollection.Reset();
-        m_bgDirty = true;
+        m_bgCaptureDirty = true;
+        m_bgCompositeDirty = true;
         EnsureD2D();
         InvalidateRect(m_hWnd, nullptr, FALSE);
     }
@@ -905,7 +903,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                         if (m_compositor)
                             m_compositor->MarkAllDirty();
                     }
-                    m_bgDirty = true;
+                    m_bgCaptureDirty = true;
+                    m_bgCompositeDirty = true;
                 }
             }
 
@@ -950,7 +949,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_EXITSIZEMOVE:
-        m_bgDirty = true;
+        m_bgCaptureDirty = true;
+        m_bgCompositeDirty = true;
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
 
@@ -959,14 +959,16 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             LOG_INFO(m_appCtx->logger, L"GlassWindow: DWM composition changed");
         ApplySystemBackdrop();
         m_bgCap.Reset();
-        m_bgDirty = true;
+        m_bgCaptureDirty = true;
+        m_bgCompositeDirty = true;
         InvalidateRect(hWnd, nullptr, TRUE);
         return 0;
 
     case WM_SHOWWINDOW:
         if (wParam)
         {
-            m_bgDirty = true;
+            m_bgCaptureDirty = true;
+            m_bgCompositeDirty = true;
             if (m_bgRefreshMs > 0)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
 
@@ -1015,7 +1017,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_TIMER:
         if (wParam == 0x888)
         {
-            m_bgDirty = true;
+            m_bgCaptureDirty = true;
+            m_bgCompositeDirty = true;
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
@@ -1095,7 +1098,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 }
                 m_brushCache.clear();
                 if (m_compositor) m_compositor->MarkAllDirty();
-                m_bgDirty = true;
+                m_bgCompositeDirty = true;
             }
 
             if (!animating)
@@ -1147,7 +1150,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             m_effectWinSize = {};
             if (m_compositor)
                 m_compositor->MarkAllDirty();
-            m_bgDirty = true;
+            m_bgCaptureDirty = true;
+            m_bgCompositeDirty = true;
         }
 
         RECT* const prcNewWindow = (RECT*)lParam;
@@ -1374,7 +1378,7 @@ void GlassWindow::StartThemeTransition(POINT clickPt)
         m_themeTransitionCenter = D2D1::Point2F((float)clickPt.x, (float)clickPt.y);
     }
 
-    m_bgDirty = true;
+    m_bgCompositeDirty = true;
     if (m_compositor) m_compositor->MarkAllDirty();
     m_brushCache.clear();
 

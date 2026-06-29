@@ -31,7 +31,7 @@ public:
     static HWND GetHWNDStatic();
 
     // IConfigWindow implementation
-    virtual void NotifyConfigChanged() override;
+    virtual void NotifyConfigChanged(bool onlyBackgroundStyle = false) override;
     virtual HWND GetWindowHWND() override;
     virtual std::wstring GetConfigDir() override;
     virtual std::wstring GetConfigFilePath() override;
@@ -150,6 +150,7 @@ private:
 
     ID2D1HwndRenderTarget* m_lastRt;
     EventBus::Token m_themeChangedToken = 0;
+    EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_configChangedToken = 0;
 
     // Animation tracking state

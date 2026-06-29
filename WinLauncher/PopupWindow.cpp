@@ -183,6 +183,9 @@ PopupWindow::PopupWindow(AppContext* ctx)
 
             UpdateTheme();
         });
+        m_bgStyleChangedToken = m_appCtx->eventBus->Subscribe(EventType::BackgroundStyleChanged, [this]() {
+            UpdateTheme();
+        });
         m_uiScaleChangedToken = m_appCtx->eventBus->Subscribe(EventType::UiScaleChanged, [this]() {
             UpdateWindowSize();
             if (GetHWND()) InvalidateRect(GetHWND(), nullptr, FALSE);
@@ -203,6 +206,8 @@ PopupWindow::~PopupWindow()
             m_appCtx->eventBus->Unsubscribe(EventType::ConfigChanged, m_configChangedToken);
         if (m_themeChangedToken)
             m_appCtx->eventBus->Unsubscribe(EventType::ThemeChanged, m_themeChangedToken);
+        if (m_bgStyleChangedToken)
+            m_appCtx->eventBus->Unsubscribe(EventType::BackgroundStyleChanged, m_bgStyleChangedToken);
         if (m_uiScaleChangedToken)
             m_appCtx->eventBus->Unsubscribe(EventType::UiScaleChanged, m_uiScaleChangedToken);
     }
@@ -307,7 +312,8 @@ void PopupWindow::OnConfigChanged()
     if (GetHWND() && IsWindowVisible(GetHWND()))
     {
         UpdateWindowSize();
-        m_bgDirty = true;
+        m_bgCaptureDirty = true;
+        m_bgCompositeDirty = true;
         CaptureBackground();
         CompositeBackgroundToCache();
     }
@@ -574,7 +580,8 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
         s_instance->StartAutoHideTimer();
 
-        s_instance->m_bgDirty = true;
+        s_instance->m_bgCaptureDirty = true;
+        s_instance->m_bgCompositeDirty = true;
         double bgStart = GetTimeInSeconds();
         s_instance->CaptureBackground();
         s_instance->CompositeBackgroundToCache();
