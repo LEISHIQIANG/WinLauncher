@@ -42,6 +42,7 @@ public:
         , m_animationDuration(200)
         , m_hardwareAccelerationEnabled(true)
         , m_hideTrayIcon(false)
+        , m_autoUpdate(true)
     {
         m_configDir = ConfigPath::PrepareUserConfigDirectory();
         m_configFilePath = m_configDir + L"\\launcher_config.ini";
@@ -254,6 +255,10 @@ public:
                     else if (key == L"HideTrayIcon")
                     {
                         try { m_hideTrayIcon = (std::stoi(val) != 0); } catch (...) { m_hideTrayIcon = false; }
+                    }
+                    else if (key == L"AutoUpdate")
+                    {
+                        try { m_autoUpdate = (std::stoi(val) != 0); } catch (...) { m_autoUpdate = true; }
                     }
                     else if (key == L"DarkHue")
                     {
@@ -506,6 +511,7 @@ public:
         content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
         content += L"HardwareAccelerationEnabled=" + std::to_wstring(m_hardwareAccelerationEnabled ? 1 : 0) + L"\r\n";
         content += L"HideTrayIcon=" + std::to_wstring(m_hideTrayIcon ? 1 : 0) + L"\r\n";
+        content += L"AutoUpdate=" + std::to_wstring(m_autoUpdate ? 1 : 0) + L"\r\n";
         content += L"DarkHue=" + std::to_wstring(m_appearance.dark.hue) + L"\r\n";
         content += L"DarkBlur=" + std::to_wstring(m_appearance.dark.blur) + L"\r\n";
         content += L"DarkOpacity=" + std::to_wstring(m_appearance.dark.opacity) + L"\r\n";
@@ -640,6 +646,8 @@ public:
 
     virtual bool GetHideTrayIcon() override { return m_hideTrayIcon; }
     virtual void SetHideTrayIcon(bool hide) override { m_hideTrayIcon = hide; }
+    virtual bool GetAutoUpdate() override { return m_autoUpdate; }
+    virtual void SetAutoUpdate(bool enable) override { m_autoUpdate = enable; }
 
     virtual ~IniConfigRepository() override
     {
@@ -814,5 +822,6 @@ private:
     int m_animationDuration = 200;
     bool m_hardwareAccelerationEnabled = true;
     bool m_hideTrayIcon;
+    bool m_autoUpdate;
     FolderWatcher m_folderWatcher;
 };

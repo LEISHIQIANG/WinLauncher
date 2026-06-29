@@ -11,6 +11,7 @@
 #include "../UI/Controls/IconRenderer.h"
 #include "../Services/SyncFolderService.h"
 #include "../Services/QuickLauncherConfigImport.h"
+#include "../Services/UpdateService.h"
 #include "UIStyle.h"
 #include <windowsx.h>
 #include <shlobj.h>
@@ -38,6 +39,8 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
     , m_hoveredClose(false)
     , m_hoveredSettingsBtn(false)
     , m_hoveredAddBtn(false)
+    , m_hoveredUpdateText(false)
+    , m_hoveredUpdateClose(false)
     , m_trackMouse(false)
     , m_lastRt(nullptr)
 {
@@ -407,6 +410,11 @@ HWND ConfigWindow::GetWindowHWND()
     return GetHWND();
 }
 
+HWND ConfigWindow::GetHWNDStatic()
+{
+    return s_instance ? s_instance->GetHWND() : nullptr;
+}
+
 std::wstring ConfigWindow::GetConfigDir()
 {
     if (m_appCtx && m_appCtx->configService)
@@ -717,6 +725,23 @@ void ConfigWindow::SetHideTrayIcon(bool hide)
     {
         m_appCtx->configService->SetHideTrayIcon(hide);
         NotifyConfigChanged();
+    }
+}
+
+bool ConfigWindow::GetAutoUpdate()
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        return m_appCtx->configService->GetAutoUpdate();
+    }
+    return true;
+}
+
+void ConfigWindow::SetAutoUpdate(bool enable)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetAutoUpdate(enable);
     }
 }
 
@@ -1162,6 +1187,57 @@ void ConfigWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         }
     }
 
+    // Update Tag Pill next to Header Title
+    {
+        auto& updater = UpdateService::GetInstance();
+        bool showUpdate = (updater.GetState() == UpdateService::UpdateState::NewVersionAvailable && !updater.IsUpdatePromptClosed());
+        if (showUpdate)
+        {
+            bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
+            float pillLeft = 72.0f;
+            float pillRight = isDownloading ? 138.0f : 110.0f;
+            float textRight = isDownloading ? 126.0f : 98.0f;
+
+            D2D1_RECT_F pillRect = D2D1::RectF(pillLeft, 10.0f, pillRight, 30.0f);
+            D2D1_ROUNDED_RECT roundedPill = D2D1::RoundedRect(pillRect, 4.0f, 4.0f);
+
+            // Background
+            float bgAlpha = m_hoveredUpdateText ? 0.22f : 0.10f;
+            auto bgBrush = GetOrCreateBrush(D2D1::ColorF(UIStyle::ThemeColor::Accent().d2d.r, UIStyle::ThemeColor::Accent().d2d.g, UIStyle::ThemeColor::Accent().d2d.b, bgAlpha));
+            if (bgBrush) rt->FillRoundedRectangle(roundedPill, bgBrush.Get());
+
+            // Border
+            float borderAlpha = (m_hoveredUpdateText || m_hoveredUpdateClose) ? 0.35f : 0.15f;
+            auto borderBrush = GetOrCreateBrush(D2D1::ColorF(UIStyle::ThemeColor::Accent().d2d.r, UIStyle::ThemeColor::Accent().d2d.g, UIStyle::ThemeColor::Accent().d2d.b, borderAlpha));
+            if (borderBrush) rt->DrawRoundedRectangle(roundedPill, borderBrush.Get(), 1.0f);
+
+            // Text: "更新" or progress
+            auto accentBrush = GetOrCreateBrush(UIStyle::ThemeColor::Accent().d2d);
+            if (accentBrush && m_tfLeft)
+            {
+                std::wstring btnText = L"更新";
+                if (isDownloading)
+                {
+                    btnText = L"更新 " + std::to_wstring(updater.GetDownloadProgress()) + L"%";
+                }
+
+                D2D1_RECT_F textRect = D2D1::RectF(pillLeft, 10.0f, textRight, 30.0f);
+                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), m_tfLeft.Get(), textRect, accentBrush.Get());
+                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            }
+
+            // Close button "x"
+            auto xBrush = GetOrCreateBrush(m_hoveredUpdateClose ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::TextMuted().d2d);
+            if (xBrush)
+            {
+                float xCenter = pillRight - 6.0f;
+                rt->DrawLine(D2D1::Point2F(xCenter - 2.5f, 17.5f), D2D1::Point2F(xCenter + 2.5f, 22.5f), xBrush.Get(), 1.0f);
+                rt->DrawLine(D2D1::Point2F(xCenter + 2.5f, 17.5f), D2D1::Point2F(xCenter - 2.5f, 22.5f), xBrush.Get(), 1.0f);
+            }
+        }
+    }
+
     // Close Button "X"
     {
         D2D1_RECT_F closeRect = D2D1::RectF(490, 10, 510, 30);
@@ -1236,6 +1312,23 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 {
     switch (uMsg)
     {
+    case AppMessages::UpdateCheckCompleted:
+    case AppMessages::UpdateDownloadProgress:
+        InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+
+    case AppMessages::UpdateDownloadCompleted:
+    {
+        auto& updater = UpdateService::GetInstance();
+        std::wstring prompt = L"更新下载已完成。是否立即重启并应用更新？";
+        if (ConfirmWindow::Show(hWnd, L"更新已准备就绪", prompt.c_str(), m_appCtx, true))
+        {
+            updater.ApplyUpdate(m_appCtx);
+        }
+        InvalidateRect(hWnd, nullptr, FALSE);
+        return 0;
+    }
+
     case WM_CREATE:
         DragAcceptFiles(hWnd, TRUE);
         return 0;
@@ -1296,6 +1389,29 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         bool hab = !m_showSettings && (HitTestAddButton(pt) || DropDownMenu::IsVisible());
         if (hab != m_hoveredAddBtn) { m_hoveredAddBtn = hab; repaint = true; }
 
+        bool hUpdateText = false;
+        bool hUpdateClose = false;
+        auto& updater = UpdateService::GetInstance();
+        bool showUpdate = (updater.GetState() == UpdateService::UpdateState::NewVersionAvailable && !updater.IsUpdatePromptClosed());
+        if (showUpdate)
+        {
+            bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
+            float pillLeft = 72.0f;
+            float pillRight = isDownloading ? 138.0f : 110.0f;
+            float textRight = isDownloading ? 126.0f : 98.0f;
+
+            if (pt.x >= (int)pillLeft && pt.x <= (int)textRight && pt.y >= 10 && pt.y <= 30)
+            {
+                hUpdateText = true;
+            }
+            else if (pt.x > (int)textRight && pt.x <= (int)pillRight && pt.y >= 10 && pt.y <= 30)
+            {
+                hUpdateClose = true;
+            }
+        }
+        if (hUpdateText != m_hoveredUpdateText) { m_hoveredUpdateText = hUpdateText; repaint = true; }
+        if (hUpdateClose != m_hoveredUpdateClose) { m_hoveredUpdateClose = hUpdateClose; repaint = true; }
+
         m_categoryList.OnMouseMove(pt, repaint);
         if (m_currentPage) m_currentPage->OnMouseMove(pt, repaint);
 
@@ -1309,6 +1425,8 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         m_hoveredClose = false;
         m_hoveredSettingsBtn = false;
         m_hoveredAddBtn = false;
+        m_hoveredUpdateText = false;
+        m_hoveredUpdateClose = false;
         m_trackMouse = false;
         repaint = true;
         m_categoryList.OnMouseLeave(repaint);
@@ -1354,6 +1472,34 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         bool repaint = false;
+
+        auto& updater = UpdateService::GetInstance();
+        bool showUpdate = (updater.GetState() == UpdateService::UpdateState::NewVersionAvailable && !updater.IsUpdatePromptClosed());
+        if (showUpdate)
+        {
+            bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
+            float pillLeft = 72.0f;
+            float pillRight = isDownloading ? 138.0f : 110.0f;
+            float textRight = isDownloading ? 126.0f : 98.0f;
+
+            if (pt.x >= (int)pillLeft && pt.x <= (int)textRight && pt.y >= 10 && pt.y <= 30)
+            {
+                if (!isDownloading)
+                {
+                    updater.StartDownloadAndInstall(hWnd, m_appCtx);
+                    repaint = true;
+                }
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+            else if (pt.x > (int)textRight && pt.x <= (int)pillRight && pt.y >= 10 && pt.y <= 30)
+            {
+                updater.SetUpdatePromptClosed(true);
+                repaint = true;
+                InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+        }
 
         if (HitTestCloseButton(pt)) { Release(); return 0; }
         if (HitTestSettingsButton(pt))

@@ -1,6 +1,8 @@
 #include "SettingsPage.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
+#include "ConfirmWindow.h"
+#include "../Services/UpdateService.h"
 #include "..\version.h"
 #include <cwchar>
 #include <cmath>
@@ -73,6 +75,8 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredGlobalScaleSlider = false;
     m_hoveredGlobalScaleApply = false;
     m_draggingGlobalScaleSlider = false;
+    m_hoveredApplyUpdate = false;
+    m_hoveredCheckUpdate = false;
     m_pendingGlobalScalePercent = m_owner ? m_owner->GetGlobalScalePercent() : 100;
 }
 
@@ -1107,10 +1111,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
                 // Description
                 std::wstring desc = L"一个极简、快速、带毛玻璃特效的快捷方式启动工具。\n可以通过鼠标中键或侧键快速唤醒，方便管理并运行常用程序。";
-                rt->DrawTextW(desc.c_str(), (UINT32)desc.size(), tfDefault, D2D1::RectF(160, 160, 500, 240), tbNormal);
-
-                // Team/Credits
-                rt->DrawTextW(L"由 Antigravity Pair Programming 开发", 25, tfDefault, D2D1::RectF(160, 260, 510, 280), tbMuted);
+                rt->DrawTextW(desc.c_str(), (UINT32)desc.size(), tfDefault, D2D1::RectF(160, 160, 500, 235), tbNormal);
             }
 
             if (tbNormal) tbNormal->Release();

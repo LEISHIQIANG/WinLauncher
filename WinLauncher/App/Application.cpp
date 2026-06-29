@@ -4,6 +4,7 @@
 #include "../AutoStartHelper.h"
 #include "../Config/ConfigWindow.h"
 #include "../Config/ConfirmWindow.h"
+#include "../Services/UpdateService.h"
 #include "../Config/UIStyle.h"
 #include "../DpiHelper.h"
 #include "../KeyboardHook.h"
@@ -40,6 +41,22 @@ int Application::Run()
 {
     if (!InitializeProcess())
         return 1;
+
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    bool justUpdated = false;
+    if (argv)
+    {
+        for (int i = 0; i < argc; ++i)
+        {
+            if (wcscmp(argv[i], L"--updated") == 0)
+            {
+                justUpdated = true;
+                break;
+            }
+        }
+        LocalFree(argv);
+    }
 
     if (HandleHelperCommandLine())
         return 0;
@@ -92,6 +109,13 @@ int Application::Run()
     // Install keyboard hook and register double-Alt shortcut for TogglePopupPause
     KeyboardHook::Install();
     KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+
+    if (justUpdated)
+    {
+        ToastWindow::Show(L"更新成功！已升级至最新版本", 3000);
+    }
+
+    UpdateService::GetInstance().CheckForUpdates(m_hMainWnd, true, m_appCtx.get());
 
     int exitCode = MessageLoop();
     Shutdown();
@@ -557,6 +581,33 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     case AppMessages::DoubleAltPressed:
         TogglePopupPause();
         return 0;
+
+    case AppMessages::UpdateCheckCompleted:
+    case AppMessages::UpdateDownloadProgress:
+    {
+        HWND hConfig = ConfigWindow::GetHWNDStatic();
+        if (hConfig)
+        {
+            InvalidateRect(hConfig, nullptr, FALSE);
+        }
+        return 0;
+    }
+
+    case AppMessages::UpdateDownloadCompleted:
+    {
+        HWND hConfig = ConfigWindow::GetHWNDStatic();
+        auto& updater = UpdateService::GetInstance();
+        std::wstring prompt = L"更新下载已完成。是否立即重启并应用更新？";
+        if (ConfirmWindow::Show(hConfig, L"更新已准备就绪", prompt.c_str(), m_appCtx.get(), true))
+        {
+            updater.ApplyUpdate(m_appCtx.get());
+        }
+        if (hConfig)
+        {
+            InvalidateRect(hConfig, nullptr, FALSE);
+        }
+        return 0;
+    }
 
     case AppMessages::TrayIcon:
         if (lParam == WM_RBUTTONUP)

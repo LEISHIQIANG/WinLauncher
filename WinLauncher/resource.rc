@@ -20,7 +20,7 @@ BEGIN
     BEGIN
         BLOCK "080404b0"
         BEGIN
-            VALUE "CompanyName",      "Antigravity Pair Programming"
+            VALUE "CompanyName",      ""
             VALUE "FileDescription",  "WinLauncher"
             VALUE "FileVersion",      WINLAUNCHER_VERSION_ASTR
             VALUE "InternalName",     "WinLauncher"

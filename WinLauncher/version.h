@@ -6,9 +6,9 @@
 // ============================================================
 
 #define WINLAUNCHER_VERSION_MAJOR    0
-#define WINLAUNCHER_VERSION_MINOR    0
-#define WINLAUNCHER_VERSION_PATCH    0
-#define WINLAUNCHER_VERSION_BUILD    1
+#define WINLAUNCHER_VERSION_MINOR    5
+#define WINLAUNCHER_VERSION_PATCH    1
+#define WINLAUNCHER_VERSION_BUILD    2
 
 // -- 下面的内容通常无需手动修改 --
 

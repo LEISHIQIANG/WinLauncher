@@ -17,5 +17,7 @@ namespace AppMessages
     constexpr UINT MacroRecordingStopped  = WM_APP + 0x90; // 宏录制停止通知
     constexpr UINT LaunchShortcutById     = WM_APP + 0x91;
     constexpr UINT MacroRecordingUpdated  = WM_APP + 0x92; // 宏录制新增事件通知
-
+    constexpr UINT UpdateCheckCompleted     = WM_APP + 0x95; // 检查更新完成
+    constexpr UINT UpdateDownloadProgress   = WM_APP + 0x96; // 更新下载进度
+    constexpr UINT UpdateDownloadCompleted  = WM_APP + 0x97; // 更新下载完成
 }

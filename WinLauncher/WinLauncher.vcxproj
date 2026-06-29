@@ -173,6 +173,7 @@
     <ClCompile Include="Services\FileSelectionService.cpp" />
     <ClCompile Include="Services\MacroService.cpp" />
     <ClCompile Include="Services\BatchLaunchService.cpp" />
+    <ClCompile Include="Services\UpdateService.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
     <ClCompile Include="Config\MacroEditForm.cpp" />
     <ClCompile Include="Config\BatchLaunchDialog.cpp" />
@@ -215,6 +216,7 @@
     <ClInclude Include="Services\PrivilegeLaunchService.h" />
     <ClInclude Include="Services\EnvironmentDetector.h" />
     <ClInclude Include="Services\FileSelectionService.h" />
+    <ClInclude Include="Services\UpdateService.h" />
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />
     <ClInclude Include="ViewModel\ConfigViewModel.h" />

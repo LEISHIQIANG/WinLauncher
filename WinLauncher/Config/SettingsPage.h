@@ -41,6 +41,8 @@ private:
     int GlobalScaleFromPoint(POINT pt) const;
     int PendingGlobalScalePercent();
     bool HitTestHideTrayIcon(POINT pt);
+    bool HitTestCheckUpdate(POINT pt);
+    bool HitTestApplyUpdate(POINT pt);
 
     IConfigWindow* m_owner;
     int m_categoryIndex = 0; // 0 = 常规设置, 1 = 关于
@@ -71,4 +73,6 @@ private:
     bool m_hoveredGlobalScaleApply = false;
     bool m_draggingGlobalScaleSlider = false;
     int m_pendingGlobalScalePercent = 0;
+    bool m_hoveredApplyUpdate = false;
+    bool m_hoveredCheckUpdate = false;
 };

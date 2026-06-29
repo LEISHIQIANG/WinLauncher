@@ -22,6 +22,8 @@ public:
     virtual void SetAutoStart(bool enable) = 0;
     virtual bool GetHideTrayIcon() = 0;
     virtual void SetHideTrayIcon(bool hide) = 0;
+    virtual bool GetAutoUpdate() = 0;
+    virtual void SetAutoUpdate(bool enable) = 0;
 
     virtual int GetPopupColumns() = 0;
     virtual void SetPopupColumns(int columns) = 0;

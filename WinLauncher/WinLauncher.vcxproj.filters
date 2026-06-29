@@ -117,6 +117,9 @@
     <ClCompile Include="Services\BatchLaunchService.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Services\UpdateService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\MacroDialog.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -219,6 +222,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\FileSelectionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\UpdateService.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\HotkeyDialog.h">

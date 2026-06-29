@@ -28,6 +28,7 @@ public:
     static void Hide();
     static void Release();
     static bool IsVisible();
+    static HWND GetHWNDStatic();
 
     // IConfigWindow implementation
     virtual void NotifyConfigChanged() override;
@@ -63,6 +64,8 @@ public:
     virtual void SetAutoStart(bool enable) override;
     virtual bool GetHideTrayIcon() override;
     virtual void SetHideTrayIcon(bool hide) override;
+    virtual bool GetAutoUpdate() override;
+    virtual void SetAutoUpdate(bool enable) override;
 
     virtual int GetPopupColumns() override;
     virtual void SetPopupColumns(int columns) override;
@@ -141,6 +144,8 @@ private:
     bool m_hoveredClose;
     bool m_hoveredSettingsBtn;
     bool m_hoveredAddBtn;
+    bool m_hoveredUpdateText;
+    bool m_hoveredUpdateClose;
     bool m_trackMouse;
 
     ID2D1HwndRenderTarget* m_lastRt;
