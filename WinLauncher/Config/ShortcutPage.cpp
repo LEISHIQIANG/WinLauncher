@@ -173,7 +173,7 @@ void ShortcutPage::ShowAddCommandDialog()
         sc.name        = result.name;
         sc.targetPath  = result.command;
         sc.arguments   = result.commandType + L"||||||" +
-                         std::to_wstring(result.showWindow ? 1 : 0) + L"|||" + 
+                         std::to_wstring((result.showWindow && !result.captureOutput) ? 1 : 0) + L"|||" +
                          std::to_wstring(result.captureOutput ? 1 : 0) + L"|||" + 
                          std::to_wstring(result.timeoutSeconds) + L"|||" + 
                          std::to_wstring(result.maxChars);
@@ -1552,6 +1552,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
         // segments[1] was builtinCmd — now unused, kept for backward compat
         if (segments.size() > 2) showWindow = (segments[2] == L"1");
         if (segments.size() > 3) captureOutput = (segments[3] == L"1");
+        if (captureOutput) showWindow = false;
         if (segments.size() > 4) { try { timeout = std::stoi(segments[4]); } catch(...) {} }
         if (segments.size() > 5) { try { maxChars = std::stoi(segments[5]); } catch(...) {} }
 
@@ -1574,7 +1575,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
             
             std::wstring newArgs = result.commandType + L"||||||" +
-                                   std::to_wstring(result.showWindow ? 1 : 0) + L"|||" + 
+                                   std::to_wstring((result.showWindow && !result.captureOutput) ? 1 : 0) + L"|||" +
                                    std::to_wstring(result.captureOutput ? 1 : 0) + L"|||" + 
                                    std::to_wstring(result.timeoutSeconds) + L"|||" + 
                                    std::to_wstring(result.maxChars);

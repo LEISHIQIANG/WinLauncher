@@ -4,6 +4,9 @@
 # Workbuddy
 .workbuddy/
 
+# Opencode
+.opencode/
+
 # Build output
 x64/
 Release/

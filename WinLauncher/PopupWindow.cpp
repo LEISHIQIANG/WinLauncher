@@ -23,6 +23,7 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <functional>
 #include <imm.h>
 #include <string>
 #include <tuple>
@@ -2850,6 +2851,58 @@ static std::wstring FindBashExe()
     return L""; // not found
 }
 
+static bool IsUsableExecutablePath(const std::wstring& path)
+{
+    if (path.empty())
+        return false;
+
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+        return false;
+
+    std::wstring lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
+
+    // Windows Store app execution aliases are placeholders, not reliable script runtimes.
+    return lower.find(L"\\microsoft\\windowsapps\\") == std::wstring::npos;
+}
+
+struct CommandInterpreter
+{
+    std::wstring path;
+    std::wstring argsBeforeScript;
+};
+
+static CommandInterpreter FindPythonInterpreter()
+{
+    wchar_t foundPath[MAX_PATH]{};
+
+    DWORD len = SearchPathW(nullptr, L"python.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
+        return { foundPath, L"" };
+
+    len = SearchPathW(nullptr, L"py.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
+        return { foundPath, L"-3" };
+
+    static const wchar_t* commonPaths[] = {
+        L"E:\\Python313\\python.exe",
+        L"E:\\Python312\\python.exe",
+        L"E:\\Python311\\python.exe",
+        L"C:\\Python313\\python.exe",
+        L"C:\\Python312\\python.exe",
+        L"C:\\Python311\\python.exe",
+    };
+
+    for (auto p : commonPaths)
+    {
+        if (IsUsableExecutablePath(p))
+            return { p, L"" };
+    }
+
+    return {};
+}
+
 static std::wstring QuoteArg(const std::wstring& value)
 {
     std::wstring quoted = L"\"";
@@ -2871,6 +2924,60 @@ static std::string ToUtf8Bytes(const std::wstring& value)
     if (len <= 0) return {};
     std::string result((size_t)len, '\0');
     WideCharToMultiByte(CP_UTF8, 0, value.c_str(), (int)value.size(), result.data(), len, nullptr, nullptr);
+    return result;
+}
+
+static std::wstring DecodeCommandOutputBytes(const std::string& bytes)
+{
+    if (bytes.empty()) return L"";
+
+    for (size_t trim = 0; trim < 4 && trim <= bytes.size(); ++trim)
+    {
+        int size = (int)(bytes.size() - trim);
+        if (size <= 0) break;
+
+        int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), size, nullptr, 0);
+        if (wlen > 0)
+        {
+            std::wstring result(wlen, L'\0');
+            MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), size, &result[0], wlen);
+            return result;
+        }
+    }
+
+    int wlen = MultiByteToWideChar(CP_ACP, 0, bytes.data(), (int)bytes.size(), nullptr, 0);
+    if (wlen <= 0) return L"";
+
+    std::wstring result(wlen, L'\0');
+    MultiByteToWideChar(CP_ACP, 0, bytes.data(), (int)bytes.size(), &result[0], wlen);
+    return result;
+}
+
+static std::wstring FormatCapturedCommandOutput(
+    const std::wstring& decodedOutput,
+    DWORD exitCode,
+    bool hasExitCode,
+    bool timedOut,
+    bool truncated)
+{
+    std::wstring status = timedOut ? L"超时终止" : ((hasExitCode && exitCode == 0) ? L"成功" : L"失败");
+    std::wstring result = L"状态: " + status;
+
+    if (hasExitCode)
+    {
+        result += L"\r\n退出码: " + std::to_wstring(exitCode);
+    }
+    if (timedOut)
+    {
+        result += L"\r\n提示: 命令超过超时时间，进程已终止。";
+    }
+    if (truncated)
+    {
+        result += L"\r\n提示: 输出超过最大字符数，已截断。";
+    }
+
+    result += L"\r\n\r\n输出:\r\n";
+    result += decodedOutput.empty() ? L"(命令没有输出)" : decodedOutput;
     return result;
 }
 
@@ -2919,7 +3026,8 @@ static bool ExecuteProcessHelper(
     bool captureOutput,
     int timeoutSeconds,
     int maxChars,
-    std::wstring& outOutput
+    std::wstring& outOutput,
+    bool waitForExit = false
 )
 {
     HANDLE hStdinRead = nullptr;
@@ -2992,7 +3100,15 @@ static bool ExecuteProcessHelper(
 
     if (!ok)
     {
-        LOG_G_ERRA(L"ExecuteProcessHelper: CreateProcessW failed, error=%lu", GetLastError());
+        DWORD err = GetLastError();
+        LOG_G_ERRA(L"ExecuteProcessHelper: CreateProcessW failed, target=%s args=%s error=%lu",
+                   targetPath.c_str(), arguments.c_str(), err);
+        if (captureOutput)
+        {
+            outOutput = L"命令启动失败。\r\n目标: " + targetPath +
+                        L"\r\n参数: " + arguments +
+                        L"\r\nWindows 错误码: " + std::to_wstring(err);
+        }
         if (hStdinWrite) CloseHandle(hStdinWrite);
         if (hStdoutRead) CloseHandle(hStdoutRead);
         return false;
@@ -3021,13 +3137,22 @@ static bool ExecuteProcessHelper(
     {
         std::string capturedBytes;
         DWORD startTime = GetTickCount();
+        DWORD exitCode = 0;
+        bool hasExitCode = false;
+        bool timedOut = false;
+        bool truncated = false;
         
         while (true)
         {
             if (timeoutSeconds > 0 && (GetTickCount() - startTime) > (DWORD)(timeoutSeconds * 1000))
             {
+                timedOut = true;
                 TerminateProcess(pi.hProcess, 1);
-                capturedBytes += "\r\n[Command timed out]";
+                WaitForSingleObject(pi.hProcess, 5000);
+                if (GetExitCodeProcess(pi.hProcess, &exitCode))
+                {
+                    hasExitCode = true;
+                }
                 break;
             }
 
@@ -3042,16 +3167,21 @@ static bool ExecuteProcessHelper(
                     if (maxChars > 0 && capturedBytes.size() >= (size_t)maxChars * 3)
                     {
                         capturedBytes.resize(maxChars * 3);
-                        capturedBytes += "\r\n[Output truncated]";
+                        truncated = true;
                         TerminateProcess(pi.hProcess, 1);
+                        WaitForSingleObject(pi.hProcess, 5000);
+                        if (GetExitCodeProcess(pi.hProcess, &exitCode))
+                        {
+                            hasExitCode = true;
+                        }
                         break;
                     }
                 }
             }
 
-            DWORD exitCode = 0;
             if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
             {
+                hasExitCode = true;
                 while (PeekNamedPipe(hStdoutRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
                 {
                     std::vector<char> buffer(avail);
@@ -3070,53 +3200,319 @@ static bool ExecuteProcessHelper(
         CloseHandle(hStdoutRead);
         CloseHandle(pi.hProcess);
 
-        if (!capturedBytes.empty())
-        {
-            int wlen = MultiByteToWideChar(CP_UTF8, 0, capturedBytes.data(), (int)capturedBytes.size(), nullptr, 0);
-            if (wlen > 0)
-            {
-                outOutput.resize(wlen);
-                MultiByteToWideChar(CP_UTF8, 0, capturedBytes.data(), (int)capturedBytes.size(), &outOutput[0], wlen);
-            }
-            else
-            {
-                wlen = MultiByteToWideChar(CP_ACP, 0, capturedBytes.data(), (int)capturedBytes.size(), nullptr, 0);
-                if (wlen > 0)
-                {
-                    outOutput.resize(wlen);
-                    MultiByteToWideChar(CP_ACP, 0, capturedBytes.data(), (int)capturedBytes.size(), &outOutput[0], wlen);
-                }
-            }
-        }
+        std::wstring decodedOutput = DecodeCommandOutputBytes(capturedBytes);
+        outOutput = FormatCapturedCommandOutput(decodedOutput, exitCode, hasExitCode, timedOut, truncated);
+        return !timedOut && hasExitCode && exitCode == 0;
     }
     else
     {
+        if (waitForExit)
+        {
+            DWORD waitResult = WAIT_OBJECT_0;
+            if (timeoutSeconds > 0)
+            {
+                waitResult = WaitForSingleObject(pi.hProcess, (DWORD)timeoutSeconds * 1000);
+            }
+            else
+            {
+                waitResult = WaitForSingleObject(pi.hProcess, INFINITE);
+            }
+
+            if (waitResult == WAIT_TIMEOUT)
+            {
+                TerminateProcess(pi.hProcess, 1);
+                WaitForSingleObject(pi.hProcess, 5000);
+                LOG_G_WORNING(L"ExecuteProcessHelper: process timed out, target=%s args=%s",
+                              targetPath.c_str(), arguments.c_str());
+            }
+        }
         CloseHandle(pi.hProcess);
+        return true;
+    }
+}
+
+using CommandOutputCallback = std::function<void(const std::wstring&)>;
+
+static bool ExecuteProcessStreaming(
+    const std::wstring& targetPath,
+    const std::wstring& arguments,
+    bool showWindow,
+    int timeoutSeconds,
+    int maxChars,
+    const CommandOutputCallback& onOutput)
+{
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+    HANDLE hStdoutRead = nullptr;
+    HANDLE hStdoutWrite = nullptr;
+    if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0))
+    {
+        DWORD err = GetLastError();
+        LOG_G_ERRA(L"ExecuteProcessStreaming: CreatePipe for stdout failed, error=%lu", err);
+        if (onOutput) onOutput(L"\r\n命令启动失败: 无法创建输出管道，Windows 错误码 " + std::to_wstring(err) + L"\r\n");
+        return false;
+    }
+    SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = hStdoutWrite;
+    si.hStdError = hStdoutWrite;
+
+    std::wstring cmdLine = L"\"" + targetPath + L"\"";
+    if (!arguments.empty())
+        cmdLine += L" " + arguments;
+
+    DWORD flags = CREATE_UNICODE_ENVIRONMENT;
+    if (!showWindow)
+    {
+        flags |= CREATE_NO_WINDOW;
     }
 
-    return true;
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = CreateProcessW(
+        nullptr,
+        const_cast<LPWSTR>(cmdLine.c_str()),
+        nullptr, nullptr,
+        TRUE,
+        flags,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
+    );
+
+    CloseHandle(hStdoutWrite);
+
+    if (!ok)
+    {
+        DWORD err = GetLastError();
+        CloseHandle(hStdoutRead);
+        LOG_G_ERRA(L"ExecuteProcessStreaming: CreateProcessW failed, target=%s args=%s error=%lu",
+                   targetPath.c_str(), arguments.c_str(), err);
+        if (onOutput)
+        {
+            onOutput(L"\r\n命令启动失败。\r\n目标: " + targetPath +
+                     L"\r\n参数: " + arguments +
+                     L"\r\nWindows 错误码: " + std::to_wstring(err) + L"\r\n");
+        }
+        return false;
+    }
+
+    if (pi.hThread) CloseHandle(pi.hThread);
+
+    HANDLE hJob = CreateJobObjectW(nullptr, nullptr);
+    if (hJob)
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobInfo{};
+        jobInfo.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &jobInfo, sizeof(jobInfo));
+        if (!AssignProcessToJobObject(hJob, pi.hProcess))
+        {
+            LOG_G_WORNING(L"ExecuteProcessStreaming: AssignProcessToJobObject failed, error=%lu", GetLastError());
+        }
+    }
+
+    std::string capturedBytes;
+    DWORD startTime = GetTickCount();
+    DWORD exitCode = 0;
+    bool hasExitCode = false;
+    bool timedOut = false;
+    bool truncated = false;
+    bool truncationNoticeSent = false;
+
+    while (true)
+    {
+        if (timeoutSeconds > 0 && (GetTickCount() - startTime) > (DWORD)(timeoutSeconds * 1000))
+        {
+            timedOut = true;
+            if (hJob) TerminateJobObject(hJob, 1);
+            else TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+            if (GetExitCodeProcess(pi.hProcess, &exitCode))
+            {
+                hasExitCode = true;
+            }
+            break;
+        }
+
+        DWORD avail = 0;
+        bool readAny = false;
+        while (PeekNamedPipe(hStdoutRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+        {
+            DWORD toRead = avail;
+            bool appendThisChunk = !truncated;
+            if (maxChars > 0 && !truncated)
+            {
+                size_t limitBytes = (size_t)maxChars * 3;
+                size_t remaining = capturedBytes.size() < limitBytes ? (limitBytes - capturedBytes.size()) : 0;
+                if (remaining == 0)
+                {
+                    truncated = true;
+                    appendThisChunk = false;
+                }
+                else if ((size_t)toRead > remaining)
+                {
+                    toRead = (DWORD)remaining;
+                    truncated = true;
+                }
+            }
+
+            std::vector<char> buffer(toRead);
+            DWORD read = 0;
+            if (ReadFile(hStdoutRead, buffer.data(), toRead, &read, nullptr) && read > 0)
+            {
+                readAny = true;
+                std::string chunk(buffer.data(), read);
+                if (appendThisChunk)
+                {
+                    capturedBytes.append(chunk);
+                    if (onOutput)
+                    {
+                        onOutput(DecodeCommandOutputBytes(chunk));
+                    }
+                }
+                if (truncated && !truncationNoticeSent && onOutput)
+                {
+                    onOutput(L"\r\n\r\n[输出超过最大字符数，后续输出不再显示，命令仍在继续运行...]\r\n");
+                    truncationNoticeSent = true;
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
+        {
+            hasExitCode = true;
+            while (PeekNamedPipe(hStdoutRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+            {
+                std::vector<char> buffer(avail);
+                DWORD read = 0;
+                if (ReadFile(hStdoutRead, buffer.data(), avail, &read, nullptr) && read > 0)
+                {
+                    if (!truncated)
+                    {
+                        std::string chunk(buffer.data(), read);
+                        capturedBytes.append(chunk);
+                        if (onOutput)
+                        {
+                            onOutput(DecodeCommandOutputBytes(chunk));
+                        }
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+            break;
+        }
+
+        Sleep(readAny ? 1 : 30);
+    }
+
+    CloseHandle(hStdoutRead);
+    CloseHandle(pi.hProcess);
+    if (hJob) CloseHandle(hJob);
+
+    if (onOutput)
+    {
+        std::wstring summary = L"\r\n\r\n状态: ";
+        summary += timedOut ? L"超时终止" : ((hasExitCode && exitCode == 0) ? L"成功" : L"失败");
+        if (hasExitCode)
+        {
+            summary += L"\r\n退出码: " + std::to_wstring(exitCode);
+        }
+        if (timedOut)
+        {
+            summary += L"\r\n提示: 命令超过超时时间，进程已终止。";
+        }
+        if (truncated)
+        {
+            summary += L"\r\n提示: 输出超过最大字符数，已截断。";
+        }
+        if (capturedBytes.empty())
+        {
+            summary += L"\r\n输出: (命令没有输出)";
+        }
+        summary += L"\r\n";
+        onOutput(summary);
+    }
+
+    return !timedOut && hasExitCode && exitCode == 0;
 }
+
+struct RiskPattern
+{
+    std::wregex regex;
+    const wchar_t* description;
+};
 
 static bool ConfirmHighRiskCommand(HWND parent, const std::wstring& commandText, const std::wstring& commandName, AppContext* ctx)
 {
-    static const std::wregex riskPatterns[] = {
-        std::wregex(L"\\b(rmdir|rd)\\b.*\\s/s", std::regex_constants::icase),
-        std::wregex(L"\\b(del|erase)\\b.*\\s/s", std::regex_constants::icase),
-        std::wregex(L"\\brm\\b.*-[a-zA-Z]*r", std::regex_constants::icase),
-        std::wregex(L"\\b(remove-item|rm)\\b.*-recurse", std::regex_constants::icase),
-        std::wregex(L"\\bformat\\s+[a-zA-Z]:", std::regex_constants::icase),
-        std::wregex(L"\\b(diskpart|bcdedit|bootrec)\\b", std::regex_constants::icase),
-        std::wregex(L"\\breg\\s+delete\\b", std::regex_constants::icase),
-        std::wregex(L"\\bshutdown\\s+/[sr]", std::regex_constants::icase)
+    static const RiskPattern riskPatterns[] = {
+        // --- CMD 递归删除 ---
+        { std::wregex(L"\\b(rmdir|rd)\\b.*\\s/s", std::regex_constants::icase), L"递归删除目录 (rmdir /s)" },
+        { std::wregex(L"\\b(del|erase)\\b.*\\s/s", std::regex_constants::icase), L"递归删除文件 (del /s)" },
+        { std::wregex(L"\\brm\\b.*-[a-zA-Z]*r", std::regex_constants::icase), L"递归删除 (rm -r)" },
+        { std::wregex(L"\\b(remove-item|rm|ri)\\b.*-recurse", std::regex_constants::icase), L"PowerShell 递归删除" },
+        { std::wregex(L"\\bRemove-Item\\b", std::regex_constants::icase), L"PowerShell 删除操作" },
+
+        // --- 磁盘/系统操作 ---
+        { std::wregex(L"\\bformat\\s+[a-zA-Z]:", std::regex_constants::icase), L"格式化磁盘 (format)" },
+        { std::wregex(L"\\b(diskpart|bcdedit|bootrec)\\b", std::regex_constants::icase), L"磁盘/启动管理器操作" },
+        { std::wregex(L"\\bvssadmin\\s+delete\\s+shadows\\b", std::regex_constants::icase), L"删除卷影副本 (vssadmin)" },
+        { std::wregex(L"\\bcipher\\s+/w\\b", std::regex_constants::icase), L"覆写删除数据 (cipher /w)" },
+        { std::wregex(L"\\bshutdown\\s+/[srplh]", std::regex_constants::icase), L"关机/重启/注销 (shutdown)" },
+
+        // --- 注册表操作 ---
+        { std::wregex(L"\\breg\\s+delete\\b", std::regex_constants::icase), L"注册表项删除 (reg delete)" },
+        { std::wregex(L"\\breg\\s+add\\b", std::regex_constants::icase), L"注册表项添加 (reg add)" },
+        { std::wregex(L"\\breg\\s+import\\b", std::regex_constants::icase), L"注册表文件导入 (reg import)" },
+
+        // --- 持久化/后门 ---
+        { std::wregex(L"\\bschtasks\\s+/create\\b", std::regex_constants::icase), L"创建计划任务 (schtasks)" },
+        { std::wregex(L"\\bnet\\s+(user|localgroup)\\s+/add\\b", std::regex_constants::icase), L"创建用户/组 (net user)" },
+
+        // --- 远程下载（常被滥用） ---
+        { std::wregex(L"\\bcertutil\\s+-urlcache\\b", std::regex_constants::icase), L"certutil 下载文件" },
+        { std::wregex(L"\\bbitsadmin\\s+/transfer\\b", std::regex_constants::icase), L"BITSAdmin 传输文件" },
+
+        // --- 权限修改 ---
+        { std::wregex(L"\\btakeown\\s+/[a-z]\\b", std::regex_constants::icase), L"获取文件所有权 (takeown)" },
+        { std::wregex(L"\\bicacls\\s+\"?[a-zA-Z]:\\\\", std::regex_constants::icase), L"修改文件权限 (icacls)" },
+
+        // --- PowerShell 高危操作 ---
+        { std::wregex(L"\\bInvoke-Expression\\b", std::regex_constants::icase), L"PowerShell 代码执行 (IEX)" },
+        { std::wregex(L"\\bInvoke-Command\\b", std::regex_constants::icase), L"PowerShell 远程执行" },
+        { std::wregex(L"\\b(Stop|Restart)-Computer\\b", std::regex_constants::icase), L"PowerShell 关机/重启" },
+        { std::wregex(L"\\bFormat-Volume\\b", std::regex_constants::icase), L"PowerShell 格式化卷" },
+        { std::wregex(L"\\bClear-Content\\b", std::regex_constants::icase), L"PowerShell 清空文件内容" },
+        { std::wregex(L"\\bAdd-MpPreference\\b", std::regex_constants::icase), L"修改 Windows Defender 排除项" },
+        { std::wregex(L"\\bSet-MpPreference\\s+-DisableRealtimeMonitoring\\b", std::regex_constants::icase), L"禁用 Windows Defender 监控" },
+        { std::wregex(L"\\bSet-ExecutionPolicy\\b", std::regex_constants::icase), L"修改 PowerShell 执行策略" },
+        { std::wregex(L"\\bDownloadString\\b", std::regex_constants::icase), L"PowerShell 远程下载执行" },
+        { std::wregex(L"\\bDownloadFile\\b", std::regex_constants::icase), L"PowerShell 远程下载文件" },
     };
 
+    std::wstring matchedDesc;
     for (const auto& pattern : riskPatterns)
     {
-        if (std::regex_search(commandText, pattern))
+        if (std::regex_search(commandText, pattern.regex))
         {
-            std::wstring prompt = L"检测到命令 [" + commandName + L"] 包含可能危及系统安全或删除数据的危险操作，例如目录删除、磁盘格式化或注册表修改等。\n\n确定要运行该高风险命令吗？";
-            return ConfirmWindow::Show(parent, L"高风险命令提示", prompt.c_str(), ctx, true);
+            matchedDesc = pattern.description;
+            break;
         }
+    }
+
+    if (!matchedDesc.empty())
+    {
+        std::wstring prompt = L"检测到命令 [" + commandName + L"] 包含高风险操作：" + matchedDesc + L"\n\n";
+        prompt += L"=== 命令内容 ===\n" + commandText + L"\n\n确定要运行该风险命令吗？";
+        return ConfirmWindow::Show(parent, L"高风险命令提示", prompt.c_str(), ctx, true);
     }
     return true; 
 }
@@ -3168,13 +3564,70 @@ static bool ExecuteScriptViaTempFile(
     {
         std::thread([interpreter, args, scriptFile, showWindow, timeoutSeconds, maxChars]() {
             std::wstring dummyOutput;
-            ExecuteProcessHelper(interpreter, args, L"", showWindow, false, timeoutSeconds, maxChars, dummyOutput);
+            ExecuteProcessHelper(interpreter, args, L"", showWindow, false, timeoutSeconds, maxChars, dummyOutput, true);
             DeleteFileW(scriptFile.c_str());
         }).detach();
         return true;
     }
 
     bool ok = ExecuteProcessHelper(interpreter, args, L"", showWindow, true, timeoutSeconds, maxChars, output);
+    DeleteFileW(scriptFile.c_str());
+    return ok;
+}
+
+static bool ExecuteScriptViaTempFileStreaming(
+    const std::wstring& interpreter,
+    const std::wstring& extension,
+    const std::wstring& extraArgsBefore,
+    const std::wstring& scriptContent,
+    bool showWindow,
+    int timeoutSeconds,
+    int maxChars,
+    const CommandOutputCallback& onOutput
+)
+{
+    wchar_t tempPath[MAX_PATH];
+    wchar_t tempFile[MAX_PATH];
+    if (!GetTempPathW(MAX_PATH, tempPath) || !GetTempFileNameW(tempPath, L"wl_", 0, tempFile))
+    {
+        if (onOutput) onOutput(L"\r\n无法创建临时脚本文件。\r\n");
+        return false;
+    }
+
+    std::wstring scriptFile = tempFile;
+    DeleteFileW(tempFile);
+    scriptFile += extension;
+
+    HANDLE hFile = CreateFileW(scriptFile.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        if (onOutput) onOutput(L"\r\n无法写入临时脚本文件: " + scriptFile + L"\r\n");
+        return false;
+    }
+
+    bool writeOk = true;
+    int len = WideCharToMultiByte(CP_UTF8, 0, scriptContent.c_str(), (int)scriptContent.size(), nullptr, 0, nullptr, nullptr);
+    if (len > 0)
+    {
+        std::string utf8(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, scriptContent.c_str(), (int)scriptContent.size(), &utf8[0], len, nullptr, nullptr);
+        DWORD written = 0;
+        writeOk = WriteFile(hFile, utf8.data(), (DWORD)utf8.size(), &written, nullptr) && written == (DWORD)utf8.size();
+    }
+    CloseHandle(hFile);
+
+    if (!writeOk)
+    {
+        DeleteFileW(scriptFile.c_str());
+        if (onOutput) onOutput(L"\r\n写入临时脚本文件不完整: " + scriptFile + L"\r\n");
+        return false;
+    }
+
+    std::wstring args = extraArgsBefore;
+    if (!args.empty()) args += L" ";
+    args += L"\"" + scriptFile + L"\"";
+
+    bool ok = ExecuteProcessStreaming(interpreter, args, showWindow, timeoutSeconds, maxChars, onOutput);
     DeleteFileW(scriptFile.c_str());
     return ok;
 }
@@ -3200,6 +3653,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     if (segments.size() > 0) type = segments[0];
     if (segments.size() > 2) showWindow = (segments[2] == L"1");
     if (segments.size() > 3) captureOutput = (segments[3] == L"1");
+    if (captureOutput) showWindow = false;
     if (segments.size() > 4) { try { timeoutSeconds = std::stoi(segments[4]); } catch(...) {} }
     if (segments.size() > 5) { try { maxChars = std::stoi(segments[5]); } catch(...) {} }
     
@@ -3216,6 +3670,83 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
         return false;
     }
 
+    if (captureOutput)
+    {
+        std::wstring panelTitle = L"命令输出 - " + sc.name;
+        std::wstring initialText = L"状态: 正在运行...\r\n\r\n输出:\r\n";
+        CommandPanelWindow::ShowLive(parent, panelTitle.c_str(), initialText.c_str(),
+            [type, resolvedCmd, timeoutSeconds, maxChars](HWND panelHwnd) {
+                auto append = [panelHwnd](const std::wstring& text) {
+                    CommandPanelWindow::PostAppend(panelHwnd, text);
+                };
+
+                if (type == L"cmd")
+                {
+                    ExecuteProcessStreaming(L"cmd.exe", L"/c " + resolvedCmd, false, timeoutSeconds, maxChars, append);
+                }
+                else if (type == L"powershell")
+                {
+                    ExecuteScriptViaTempFileStreaming(
+                        L"powershell.exe",
+                        L".ps1",
+                        L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File",
+                        resolvedCmd,
+                        false,
+                        timeoutSeconds,
+                        maxChars,
+                        append);
+                }
+                else if (type == L"python")
+                {
+                    CommandInterpreter python = FindPythonInterpreter();
+                    if (python.path.empty())
+                    {
+                        append(L"\r\n未找到可用的 Python 解释器。\r\n请安装 Python，或确认 python.exe / py.exe 在 PATH 中可用。\r\n");
+                        append(L"\r\n状态: 失败\r\n");
+                    }
+                    else
+                    {
+                        ExecuteScriptViaTempFileStreaming(
+                            python.path,
+                            L".py",
+                            python.argsBeforeScript,
+                            resolvedCmd,
+                            false,
+                            timeoutSeconds,
+                            maxChars,
+                            append);
+                    }
+                }
+                else if (type == L"gitbash")
+                {
+                    std::wstring bashPath = FindBashExe();
+                    if (bashPath.empty())
+                    {
+                        append(L"\r\n未找到可用的 Git Bash。\r\n请安装 Git for Windows，或确认 git.exe / bash.exe 在 PATH 中可用。\r\n");
+                        append(L"\r\n状态: 失败\r\n");
+                    }
+                    else
+                    {
+                        ExecuteScriptViaTempFileStreaming(
+                            bashPath,
+                            L".sh",
+                            L"",
+                            resolvedCmd,
+                            false,
+                            timeoutSeconds,
+                            maxChars,
+                            append);
+                    }
+                }
+                else
+                {
+                    append(L"\r\n不支持的命令类型: " + type + L"\r\n\r\n状态: 失败\r\n");
+                }
+            },
+            ctx);
+        return true;
+    }
+
     std::wstring output;
     bool ok = false;
 
@@ -3230,7 +3761,17 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     }
     else if (type == L"python")
     {
-        ok = ExecuteScriptViaTempFile(L"python.exe", L".py", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+        CommandInterpreter python = FindPythonInterpreter();
+        if (python.path.empty())
+        {
+            LOG_G_ERRA(L"LaunchCommand: python interpreter not found");
+            output = L"未找到可用的 Python 解释器。\r\n请安装 Python，或确认 python.exe / py.exe 在 PATH 中可用。";
+            ok = false;
+        }
+        else
+        {
+            ok = ExecuteScriptViaTempFile(python.path, L".py", python.argsBeforeScript, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+        }
     }
     else if (type == L"gitbash")
     {
@@ -3238,14 +3779,25 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
         if (bashPath.empty())
         {
             LOG_G_ERRA(L"LaunchCommand: gitbash — bash.exe not found (git.exe not in PATH or Git not installed?)");
-            return false;
+            output = L"未找到可用的 Git Bash。\r\n请安装 Git for Windows，或确认 git.exe / bash.exe 在 PATH 中可用。";
+            ok = false;
         }
-        ok = ExecuteScriptViaTempFile(bashPath, L".sh", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+        else
+        {
+            ok = ExecuteScriptViaTempFile(bashPath, L".sh", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+        }
+    }
+    else
+    {
+        LOG_G_ERRA(L"LaunchCommand: unsupported command type=%s", type.c_str());
+        output = L"不支持的命令类型: " + type;
+        ok = false;
     }
 
-    if (ok && captureOutput)
+    if (captureOutput && (ok || !output.empty()))
     {
-        CommandPanelWindow::Show(parent, sc.name.c_str(), output.c_str(), ctx);
+        std::wstring panelTitle = L"命令输出 - " + sc.name;
+        CommandPanelWindow::Show(parent, panelTitle.c_str(), output.c_str(), ctx);
     }
 
     return ok;

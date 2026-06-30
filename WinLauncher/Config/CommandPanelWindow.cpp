@@ -2,18 +2,46 @@
 #include "CommandPanelWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
+#include "../App/Logger.h"
 #include <windowsx.h>
 #include <commctrl.h>
+#include <cstring>
+#include <thread>
 
 #pragma comment(lib, "comctl32.lib")
 
 static CommandPanelWindow* g_cmdPanelInstance = nullptr;
+static const UINT WM_COMMAND_PANEL_APPEND = WM_APP + 0x310;
+
+static void ClampWindowToWorkArea(int& x, int& y, int w, int h, const RECT& workArea)
+{
+    if (w >= workArea.right - workArea.left)
+    {
+        x = workArea.left;
+    }
+    else
+    {
+        if (x < workArea.left) x = workArea.left;
+        if (x + w > workArea.right) x = workArea.right - w;
+    }
+
+    if (h >= workArea.bottom - workArea.top)
+    {
+        y = workArea.top;
+    }
+    else
+    {
+        if (y < workArea.top) y = workArea.top;
+        if (y + h > workArea.bottom) y = workArea.bottom - h;
+    }
+}
 
 CommandPanelWindow::CommandPanelWindow(const wchar_t* title, const wchar_t* outputText, AppContext* ctx)
     : GlassWindow()
     , m_title(title)
     , m_outputText(outputText ? outputText : L"")
     , m_hoveredOk(false)
+    , m_hoveredCopy(false)
     , m_hoveredClose(false)
     , m_trackMouse(false)
 {
@@ -27,14 +55,51 @@ CommandPanelWindow::~CommandPanelWindow()
 
 void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* outputText, AppContext* ctx)
 {
-    if (g_cmdPanelInstance) return;
+    ShowLive(parent, title, outputText, nullptr, ctx);
+}
 
-    CommandPanelWindow* win = new CommandPanelWindow(title, outputText, ctx);
+bool CommandPanelWindow::PostAppend(HWND hwnd, const std::wstring& text)
+{
+    if (!hwnd || text.empty())
+        return false;
 
-    int w = 520;
-    int h = 360;
+    std::wstring* payload = new std::wstring(text);
+    if (!PostMessageW(hwnd, WM_COMMAND_PANEL_APPEND, 0, reinterpret_cast<LPARAM>(payload)))
+    {
+        delete payload;
+        return false;
+    }
+    return true;
+}
 
-    HMONITOR hm = parent ? MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST) : ([]{
+void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar_t* initialText, std::function<void(HWND)> worker, AppContext* ctx)
+{
+    if (g_cmdPanelInstance)
+    {
+        HWND existing = g_cmdPanelInstance->GetHWND();
+        if (existing && IsWindow(existing))
+        {
+            RECT rc{};
+            GetWindowRect(existing, &rc);
+            LOG_G_INFO(L"CommandPanelWindow::ShowLive: existing panel hwnd=%p visible=%d rect=(%ld,%ld,%ld,%ld)",
+                       existing, IsWindowVisible(existing) ? 1 : 0, rc.left, rc.top, rc.right, rc.bottom);
+            ShowWindow(existing, SW_SHOWNORMAL);
+            SetWindowPos(existing, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+            BringWindowToTop(existing);
+            SetForegroundWindow(existing);
+            SetFocus(existing);
+        }
+        return;
+    }
+
+    CommandPanelWindow* win = new CommandPanelWindow(title, initialText, ctx);
+    HWND owner = (parent && IsWindowVisible(parent)) ? parent : nullptr;
+
+    int w = 620;
+    int h = 420;
+
+    HMONITOR hm = owner ? MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST) : ([]{
         POINT pt; GetCursorPos(&pt);
         return MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     }());
@@ -44,27 +109,35 @@ void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* 
     int h_px = (int)(h * scale);
 
     int x = 0, y = 0;
-    if (parent && IsWindowVisible(parent))
+    MONITORINFO mi{ sizeof(mi) };
+    GetMonitorInfoW(hm, &mi);
+
+    if (owner)
     {
-        RECT pr; GetWindowRect(parent, &pr);
+        RECT pr; GetWindowRect(owner, &pr);
         x = pr.left + (pr.right - pr.left - w_px) / 2;
         y = pr.top + (pr.bottom - pr.top - h_px) / 2;
     }
     else
     {
-        MONITORINFO mi{ sizeof(mi) };
-        GetMonitorInfoW(hm, &mi);
         RECT wa = mi.rcWork;
         x = wa.left + (wa.right - wa.left - w_px) / 2;
         y = wa.top + (wa.bottom - wa.top - h_px) / 2;
     }
 
-    win->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, x, y, w_px, h_px, parent);
+    ClampWindowToWorkArea(x, y, w_px, h_px, mi.rcWork);
+    win->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, x, y, w_px, h_px, owner);
     if (!win->GetHWND())
     {
+        LOG_G_ERRA(L"CommandPanelWindow::ShowLive: Create failed owner=%p rect=(%d,%d,%d,%d) error=%lu",
+                   owner, x, y, w_px, h_px, GetLastError());
         delete win;
         return;
     }
+
+    LOG_G_INFO(L"CommandPanelWindow::ShowLive: created panel hwnd=%p owner=%p rect=(%d,%d,%d,%d) workArea=(%ld,%ld,%ld,%ld)",
+               win->GetHWND(), owner, x, y, x + w_px, y + h_px,
+               mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom);
 
     SetWindowDisplayAffinitySafe(win->GetHWND());
     win->ApplySystemBackdrop();
@@ -72,10 +145,21 @@ void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* 
 
     ShowWindow(win->GetHWND(), SW_SHOW);
     UpdateWindow(win->GetHWND());
+    SetWindowPos(win->GetHWND(), HWND_TOPMOST, x, y, w_px, h_px,
+                 SWP_SHOWWINDOW | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    BringWindowToTop(win->GetHWND());
     SetForegroundWindow(win->GetHWND());
     SetFocus(win->GetHWND());
 
     g_cmdPanelInstance = win;
+
+    if (worker)
+    {
+        HWND workerHwnd = win->GetHWND();
+        std::thread([worker, workerHwnd]() {
+            worker(workerHwnd);
+        }).detach();
+    }
 
     MSG msg;
     HWND hWnd = win->GetHWND();
@@ -103,6 +187,16 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
 {
     switch (uMsg)
     {
+    case WM_COMMAND_PANEL_APPEND:
+    {
+        std::wstring* payload = reinterpret_cast<std::wstring*>(lParam);
+        if (payload)
+        {
+            AppendOutput(*payload);
+            delete payload;
+        }
+        return 0;
+    }
     case WM_CREATE:
     {
         EnsureD2D();
@@ -112,7 +206,7 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         style.paddingBottom = 6.0f;
         m_textBox.SetStyle(style);
         m_textBox.SetMultiline(true);
-        m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20.0f, 40.0f, 500.0f, 305.0f), m_outputText);
+        m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20.0f, 44.0f, 600.0f, 365.0f), m_outputText);
         m_textBox.SetFocus(true);
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
         return 0;
@@ -197,6 +291,9 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         bool ho = HitTestOkButton(pt);
         if (ho != m_hoveredOk) { m_hoveredOk = ho; repaint = true; }
 
+        bool hCopy = HitTestCopyButton(pt);
+        if (hCopy != m_hoveredCopy) { m_hoveredCopy = hCopy; repaint = true; }
+
         bool hc = HitTestCloseButton(pt);
         if (hc != m_hoveredClose) { m_hoveredClose = hc; repaint = true; }
 
@@ -209,6 +306,7 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_MOUSELEAVE:
     {
         m_hoveredOk = false;
+        m_hoveredCopy = false;
         m_hoveredClose = false;
         m_trackMouse = false;
         InvalidateRect(hWnd, nullptr, FALSE);
@@ -222,6 +320,12 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         if (HitTestCloseButton(pt) || HitTestOkButton(pt))
         {
             PostMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+
+        if (HitTestCopyButton(pt))
+        {
+            CopyOutputToClipboard();
             return 0;
         }
 
@@ -276,6 +380,19 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
 }
 
+void CommandPanelWindow::AppendOutput(const std::wstring& text)
+{
+    if (text.empty())
+        return;
+
+    m_outputText += text;
+    m_textBox.SetText(m_outputText);
+    if (GetHWND())
+    {
+        InvalidateRect(GetHWND(), nullptr, FALSE);
+    }
+}
+
 void CommandPanelWindow::UpdateChildLayout()
 {
     RECT cr; GetClientRect(GetHWND(), &cr);
@@ -283,7 +400,7 @@ void CommandPanelWindow::UpdateChildLayout()
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
 
-    m_textBox.SetBounds(D2D1::RectF(20.0f, 40.0f, w - 20.0f, h - 55.0f));
+    m_textBox.SetBounds(D2D1::RectF(20.0f, 44.0f, w - 20.0f, h - 58.0f));
     m_textBox.UpdateLayout(scale);
 }
 
@@ -356,7 +473,30 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     // 3. Paint Textbox
     m_textBox.Paint(rt, scale);
 
-    // 4. OK Button
+    // 4. Footer Buttons
+    {
+        D2D1_RECT_F copyRect = D2D1::RectF(w - 180, h - 40, w - 105, h - 16);
+        D2D1_ROUNDED_RECT roundedCopy = D2D1::RoundedRect(copyRect, 5.0f, 5.0f);
+
+        D2D1_COLOR_F copyBg = m_hoveredCopy
+            ? UIStyle::ThemeColor::ButtonBgHover().d2d
+            : UIStyle::ThemeColor::ButtonBgNormal().d2d;
+        auto copyBgBrush = GetOrCreateBrush(copyBg);
+        if (copyBgBrush) rt->FillRoundedRectangle(roundedCopy, copyBgBrush.Get());
+
+        D2D1_COLOR_F copyBorder = m_hoveredCopy
+            ? UIStyle::ThemeColor::ButtonBorderHover().d2d
+            : UIStyle::ThemeColor::ButtonBorderNormal().d2d;
+        auto copyBorderBrush = GetOrCreateBrush(copyBorder);
+        if (copyBorderBrush) rt->DrawRoundedRectangle(roundedCopy, copyBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
+
+        if (m_tfBtn)
+        {
+            auto copyTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
+            if (copyTextBrush) rt->DrawTextW(L"复制", 2, m_tfBtn.Get(), copyRect, copyTextBrush.Get());
+        }
+    }
+
     {
         D2D1_RECT_F okRect = D2D1::RectF(w - 95, h - 40, w - 20, h - 16);
         D2D1_ROUNDED_RECT roundedOk = D2D1::RoundedRect(okRect, 5.0f, 5.0f);
@@ -391,6 +531,15 @@ bool CommandPanelWindow::HitTestCloseButton(POINT pt)
     return HitTestRect(pt, D2D1::RectF(w - 25, 8, w - 9, 24));
 }
 
+bool CommandPanelWindow::HitTestCopyButton(POINT pt)
+{
+    RECT cr; GetClientRect(GetHWND(), &cr);
+    float scale = GetWindowScale(GetHWND());
+    float w = (float)cr.right / scale;
+    float h = (float)cr.bottom / scale;
+    return HitTestRect(pt, D2D1::RectF(w - 180, h - 40, w - 105, h - 16));
+}
+
 bool CommandPanelWindow::HitTestOkButton(POINT pt)
 {
     RECT cr; GetClientRect(GetHWND(), &cr);
@@ -398,4 +547,32 @@ bool CommandPanelWindow::HitTestOkButton(POINT pt)
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
     return HitTestRect(pt, D2D1::RectF(w - 95, h - 40, w - 20, h - 16));
+}
+
+void CommandPanelWindow::CopyOutputToClipboard()
+{
+    HWND hwnd = GetHWND();
+    if (!hwnd || !OpenClipboard(hwnd))
+        return;
+
+    EmptyClipboard();
+    size_t bytes = (m_outputText.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hMem)
+    {
+        void* dest = GlobalLock(hMem);
+        if (dest)
+        {
+            memcpy(dest, m_outputText.c_str(), bytes);
+            GlobalUnlock(hMem);
+            SetClipboardData(CF_UNICODETEXT, hMem);
+            hMem = nullptr;
+        }
+    }
+
+    if (hMem)
+    {
+        GlobalFree(hMem);
+    }
+    CloseClipboard();
 }

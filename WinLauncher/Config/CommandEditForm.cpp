@@ -83,6 +83,10 @@ bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, con
     m_runAsAdmin = init.runAsAdmin;
     m_showWindow = init.showWindow;
     m_captureOutput = init.captureOutput;
+    if (m_captureOutput)
+    {
+        m_showWindow = false;
+    }
     m_iconInvertLight = init.iconInvertLight;
     m_iconInvertDark = init.iconInvertDark;
     m_timeoutSeconds = init.timeoutSeconds;
@@ -262,6 +266,10 @@ void CommandEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repa
     if (HitTestShowWindowCheckbox(pt))
     {
         m_showWindow = !m_showWindow;
+        if (m_showWindow)
+        {
+            m_captureOutput = false;
+        }
         repaint = true;
         return;
     }
@@ -269,6 +277,10 @@ void CommandEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repa
     if (HitTestCaptureOutputCheckbox(pt))
     {
         m_captureOutput = !m_captureOutput;
+        if (m_captureOutput)
+        {
+            m_showWindow = false;
+        }
         repaint = true;
         return;
     }
@@ -427,7 +439,7 @@ CommandEditFormResult CommandEditForm::GetResult() const
     res.iconInvertDark = m_iconInvertDark;
     res.commandType = m_commandType;
     res.builtinCmd = m_builtinCmd;
-    res.showWindow = m_showWindow;
+    res.showWindow = m_showWindow && !m_captureOutput;
     res.captureOutput = m_captureOutput;
     res.timeoutSeconds = m_timeoutSeconds;
     res.maxChars = m_maxChars;
@@ -458,6 +470,49 @@ static bool CheckExecutableAvailable(const wchar_t* name)
 {
     wchar_t dummy[MAX_PATH];
     return SearchPathW(nullptr, name, nullptr, MAX_PATH, dummy, nullptr) > 0;
+}
+
+static bool IsUsableExecutablePath(const std::wstring& path)
+{
+    if (path.empty())
+        return false;
+
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+        return false;
+
+    std::wstring lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
+    return lower.find(L"\\microsoft\\windowsapps\\") == std::wstring::npos;
+}
+
+static bool CheckPythonAvailable()
+{
+    wchar_t foundPath[MAX_PATH]{};
+    DWORD len = SearchPathW(nullptr, L"python.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
+        return true;
+
+    len = SearchPathW(nullptr, L"py.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
+        return true;
+
+    static const wchar_t* commonPaths[] = {
+        L"E:\\Python313\\python.exe",
+        L"E:\\Python312\\python.exe",
+        L"E:\\Python311\\python.exe",
+        L"C:\\Python313\\python.exe",
+        L"C:\\Python312\\python.exe",
+        L"C:\\Python311\\python.exe",
+    };
+
+    for (auto p : commonPaths)
+    {
+        if (IsUsableExecutablePath(p))
+            return true;
+    }
+
+    return false;
 }
 
 static bool CheckGitBashAvailable()
@@ -503,7 +558,7 @@ void CommandEditForm::SelectCommandType(HWND hWnd)
 
     bool cmdOK = CheckExecutableAvailable(L"cmd.exe");
     bool psOK = CheckExecutableAvailable(L"powershell.exe");
-    bool pyOK = CheckExecutableAvailable(L"python.exe");
+    bool pyOK = CheckPythonAvailable();
     bool gitOK = CheckGitBashAvailable();
 
     std::vector<DropDownMenu::Item> items = {
@@ -574,14 +629,14 @@ void CommandEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
     if (m_tfLabel)
     {
         auto txtBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
-        if (txtBrush) rt->DrawTextW(L"显示控制台窗口", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 40, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
+        if (txtBrush) rt->DrawTextW(L"显示控制台", 5, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 40, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
     }
 
     DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 185, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), m_captureOutput, m_hoveredCaptureOutput);
     if (m_tfLabel)
     {
         auto txtBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
-        if (txtBrush) rt->DrawTextW(L"捕获命令行输出", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 205, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
+        if (txtBrush) rt->DrawTextW(L"捕获输出", 4, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 205, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
     }
 
     // Icon Path Label
