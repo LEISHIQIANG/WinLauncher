@@ -32,6 +32,7 @@ private:
     bool HitTestOkButton(POINT pt);
     void AppendOutput(const std::wstring& text);
     void CopyOutputToClipboard();
+    void ClearOutput(const wchar_t* initialText);
 
     std::wstring m_title;
     std::wstring m_outputText;

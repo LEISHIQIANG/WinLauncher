@@ -53,6 +53,16 @@ CommandPanelWindow::~CommandPanelWindow()
     m_textBox.Destroy();
 }
 
+void CommandPanelWindow::ClearOutput(const wchar_t* initialText)
+{
+    m_outputText = initialText ? initialText : L"";
+    m_textBox.SetText(m_outputText);
+    if (GetHWND())
+    {
+        InvalidateRect(GetHWND(), nullptr, FALSE);
+    }
+}
+
 void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* outputText, AppContext* ctx)
 {
     ShowLive(parent, title, outputText, nullptr, ctx);
@@ -83,12 +93,21 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             GetWindowRect(existing, &rc);
             LOG_G_INFO(L"CommandPanelWindow::ShowLive: existing panel hwnd=%p visible=%d rect=(%ld,%ld,%ld,%ld)",
                        existing, IsWindowVisible(existing) ? 1 : 0, rc.left, rc.top, rc.right, rc.bottom);
+            g_cmdPanelInstance->ClearOutput(initialText);
             ShowWindow(existing, SW_SHOWNORMAL);
             SetWindowPos(existing, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
             BringWindowToTop(existing);
             SetForegroundWindow(existing);
             SetFocus(existing);
+
+            if (worker)
+            {
+                HWND workerHwnd = existing;
+                std::thread([worker, workerHwnd]() {
+                    worker(workerHwnd);
+                }).detach();
+            }
         }
         return;
     }
@@ -96,7 +115,7 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
     CommandPanelWindow* win = new CommandPanelWindow(title, initialText, ctx);
     HWND owner = (parent && IsWindowVisible(parent)) ? parent : nullptr;
 
-    int w = 620;
+    int w = 310;
     int h = 420;
 
     HMONITOR hm = owner ? MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST) : ([]{
@@ -179,16 +198,42 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_CREATE:
     {
         EnsureD2D();
+        RECT cr; GetClientRect(hWnd, &cr);
+        float s = GetWindowScale(hWnd);
+        float cw = (float)cr.right / s;
+        float ch = (float)cr.bottom / s;
         UIStyle::TextBoxStyle style;
         style.fontSize = 10;
         style.paddingTop = 6.0f;
         style.paddingBottom = 6.0f;
         m_textBox.SetStyle(style);
         m_textBox.SetMultiline(true);
-        m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20.0f, 44.0f, 600.0f, 365.0f), m_outputText);
+        m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(10.0f, 44.0f, cw - 10.0f, ch - 55.0f), m_outputText);
         m_textBox.SetFocus(true);
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
         return 0;
+    }
+    case WM_NCHITTEST:
+    {
+        LRESULT result = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        if (result == HTCLIENT)
+        {
+            POINT pt{ (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
+            ScreenToClient(hWnd, &pt);
+            float s = GetWindowScale(hWnd);
+            int y = (int)(pt.y / s);
+            if (y >= 0 && y < 32)
+            {
+                int w = 0;
+                {
+                    RECT cr; GetClientRect(hWnd, &cr);
+                    w = (int)((cr.right - cr.left) / s);
+                }
+                if (pt.x / s < w - 30)
+                    result = HTCAPTION;
+            }
+        }
+        return result;
     }
     case WM_SIZE:
     {
@@ -226,8 +271,9 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         {
             m_textBox.BlinkCaret();
             InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
         }
-        return 0;
+        break;
     }
     case WM_KEYDOWN:
     {
@@ -381,7 +427,7 @@ void CommandPanelWindow::UpdateChildLayout()
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
 
-    m_textBox.SetBounds(D2D1::RectF(20.0f, 44.0f, w - 20.0f, h - 58.0f));
+    m_textBox.SetBounds(D2D1::RectF(10.0f, 44.0f, w - 10.0f, h - 55.0f));
     m_textBox.UpdateLayout(scale);
 }
 
@@ -425,7 +471,7 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         if (titleBrush)
         {
             rt->DrawTextW(m_title.c_str(), (UINT32)m_title.size(), m_tfTitle.Get(),
-                D2D1::RectF(20, 8, w - 40, 28), titleBrush.Get());
+                D2D1::RectF(10, 8, w - 30, 28), titleBrush.Get());
         }
     }
 
@@ -456,7 +502,7 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     // 4. Footer Buttons
     {
-        D2D1_RECT_F copyRect = D2D1::RectF(w - 180, h - 40, w - 105, h - 16);
+        D2D1_RECT_F copyRect = D2D1::RectF(w - 160, h - 40, w - 85, h - 16);
         D2D1_ROUNDED_RECT roundedCopy = D2D1::RoundedRect(copyRect, 5.0f, 5.0f);
 
         D2D1_COLOR_F copyBg = m_hoveredCopy
@@ -479,7 +525,7 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     }
 
     {
-        D2D1_RECT_F okRect = D2D1::RectF(w - 95, h - 40, w - 20, h - 16);
+        D2D1_RECT_F okRect = D2D1::RectF(w - 75, h - 40, w - 10, h - 16);
         D2D1_ROUNDED_RECT roundedOk = D2D1::RoundedRect(okRect, 5.0f, 5.0f);
 
         float okAlpha = m_hoveredOk ? 0.80f : 0.64f;
@@ -518,7 +564,7 @@ bool CommandPanelWindow::HitTestCopyButton(POINT pt)
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 180, h - 40, w - 105, h - 16));
+    return HitTestRect(pt, D2D1::RectF(w - 160, h - 40, w - 85, h - 16));
 }
 
 bool CommandPanelWindow::HitTestOkButton(POINT pt)
@@ -527,7 +573,7 @@ bool CommandPanelWindow::HitTestOkButton(POINT pt)
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 95, h - 40, w - 20, h - 16));
+    return HitTestRect(pt, D2D1::RectF(w - 75, h - 40, w - 10, h - 16));
 }
 
 void CommandPanelWindow::CopyOutputToClipboard()

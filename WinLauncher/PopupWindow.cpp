@@ -3648,7 +3648,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     bool showWindow = false;
     bool captureOutput = false;
     int timeoutSeconds = 300;
-    int maxChars = 2000;
+    int maxChars = 50000;
 
     if (segments.size() > 0) type = segments[0];
     if (segments.size() > 2) showWindow = (segments[2] == L"1");
