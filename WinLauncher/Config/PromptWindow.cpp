@@ -62,7 +62,7 @@ static int MeasureConfirmWidth(const wchar_t* text)
 {
     ComPtr<IDWriteFactory> dw;
     HRESULT hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
-        __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&dw));
+        __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dw.GetAddressOf()));
     if (FAILED(hr) || !dw) return 280;
 
     ComPtr<IDWriteTextFormat> tf;
