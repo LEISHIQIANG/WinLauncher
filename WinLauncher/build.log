@@ -1,0 +1,1176 @@
+Build started 2026/6/28 13:48:10.
+Logging verbosity is set to: Detailed.Process = "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\MSBuild.exe"
+MSBuild executable path = "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\MSBuild.exe"
+Command line arguments = ""E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\MSBuild.exe" WinLauncher.vcxproj /p:Configuration=Release /p:Platform=x64 /t:Rebuild /v:d /fl /flp:logfile=build.log"
+Current directory = "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher"
+MSBuild version = "18.7.8+1ac568fee"
+Based on the Windows registry key LongPathsEnabled, the LongPaths feature is enabled.
+Based on the Windows registry key VerifiedAndReputablePolicyState, SAC state = 0: turned off.
+Some command line switches were read from the auto-response file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\MSBuild.rsp". To disable this file, use the "-noAutoResponse" switch.
+
+Property reassignment: $(MSBuildExtensionsPath)="E:\Visual Studio 2026\MSBuild" (previous value: "C:\Program Files (x86)\MSBuild") at 
+Property reassignment: $(MSBuildExtensionsPath32)="E:\Visual Studio 2026\MSBuild" (previous value: "C:\Program Files (x86)\MSBuild") at 
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\$(MSBuildToolsVersion)\Microsoft.Common.props using extensions path E:\Visual Studio 2026\MSBuild
+E:\Visual Studio 2026\MSBuild\Current\Microsoft.Common.props(60,5): message : Property reassignment: $(MSBuildProjectExtensionsPath)="C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\obj\" (previous value: "obj\") at E:\Visual Studio 2026\MSBuild\Current\Microsoft.Common.props (60,5)
+E:\Visual Studio 2026\MSBuild\Current\Microsoft.Common.props(84,119): message : Property 'MSBuildUserExtensionsPath' with value 'C:\Users\Administrator\AppData\Local\Microsoft\MSBuild' expanded from the environment.
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\$(MSBuildToolsVersion)\Imports\Microsoft.Common.props\ImportBefore\* using extensions path E:\Visual Studio 2026\MSBuild
+The "Configuration" property is a global property, and cannot be modified.
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\$(MSBuildToolsVersion)\Microsoft.VisualStudioVersion.v*.Common.props using extensions path E:\Visual Studio 2026\MSBuild
+Trying to import C:\Program Files (x86)\MSBuild\$(MSBuildToolsVersion)\Microsoft.VisualStudioVersion.v*.Common.props using extensions path C:\Program Files (x86)\MSBuild
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+The "Configuration" property is a global property, and cannot be modified.
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props(227,5): message : Property 'LOCALAPPDATA' with value 'C:\Users\Administrator\AppData\Local' expanded from the environment.
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj(52,5): message : Property reassignment: $(WholeProgramOptimization)="true" (previous value: "false") at C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj (52,5)
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj(53,5): message : Property reassignment: $(CharacterSet)="Unicode" (previous value: "NotSet") at C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj (53,5)
+Assembly loaded during Evaluation: Microsoft.Build.Utilities.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a (location: E:\Visual Studio 2026\MSBuild\Current\Bin\Microsoft.Build.Utilities.Core.dll, MVID: c311112a-0ae1-4a8e-8383-8581329959a8, AppDomain: [Default])
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.17.props(17,5): message : Property reassignment: $(_VCTargetsPathForToolset)="E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.17.props (17,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.props(17,5): message : Property reassignment: $(VCTargetsPath)="E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\" (previous value: "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.props (17,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.props(81,32): message : Property 'PROCESSOR_ARCHITECTURE' with value 'AMD64' expanded from the environment.
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props(18,5): message : Property reassignment: $(WindowsSdkDir_10)="C:\Program Files (x86)\Windows Kits\10\" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props (18,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props(41,5): message : Property reassignment: $(NETFXKitsDir)="C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props (41,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props(44,5): message : Property reassignment: $(NETFXSDKDir)="C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props (44,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props(209,5): message : Property reassignment: $(WindowsSDK_ExecutablePath_x86)="C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86;;C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools" (previous value: "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props (209,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props(210,5): message : Property reassignment: $(WindowsSDK_ExecutablePath_x64)="C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;;C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools\x64" (previous value: "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.props (210,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(28,5): message : Property reassignment: $(TargetExt)=".exe" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (28,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(88,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (88,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(89,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (89,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(90,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (90,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(91,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (91,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(92,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (92,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(93,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (93,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(94,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (94,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(95,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (95,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(96,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (96,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(97,5): message : Property reassignment: $(VC_ExecutablePath_Loc)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;;;;" (previous value: "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostArm64\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX86\x86\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\arm\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\1033;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x86\1033;;;;;;;;;;;") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (97,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(124,5): message : Property reassignment: $(MSBuild_ExecutablePath)="E:\Visual Studio 2026\MSBuild\Current\Bin\amd64;C:\Windows\Microsoft.NET\Framework64\v4.0.30319\;C:\Windows\Microsoft.NET\Framework\v4.0.30319\;E:\Visual Studio 2026\MSBuild\Current\Bin;C:\Windows\Microsoft.NET\Framework\v4.0.30319\" (previous value: "E:\Visual Studio 2026\MSBuild\Current\Bin;C:\Windows\Microsoft.NET\Framework\v4.0.30319\") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (124,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(147,5): message : Property 'COMPUTERNAME' with value 'LEI' expanded from the environment.
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(154,5): message : Property reassignment: $(RemoteDebuggerDeployCppRuntime)="true" (previous value: "false") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (154,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props(214,5): message : Property reassignment: $(MultiProcMaxCount)="0" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Common.props (214,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.unicodesupport.props(15,5): message : Property reassignment: $(_PropertySheetDisplayName)="Unicode Support" (previous value: "Core Windows Libraries") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.unicodesupport.props (15,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Application.props(15,5): message : Property reassignment: $(_PropertySheetDisplayName)="Application" (previous value: "Unicode Support") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Application.props (15,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WholeProgramOptimization.props(15,5): message : Property reassignment: $(_PropertySheetDisplayName)="Whole Program Optimization" (previous value: "Application") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WholeProgramOptimization.props (15,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.MSVC.Toolset.Common.props(55,5): message : Property 'Path' with value 'E:\PowerShell\7;E:\VMware\bin\;E:\Python313\Scripts\;E:\Python313\;E:\Python312\Scripts\;E:\Python312\;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Program Files\dotnet\;E:\Sunshine;E:\Sunshine\tools;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Windows\System32\PING.EXE;E:\Bandizip;E:\nodejs\;C:\Program Files\Microsoft SQL Server\120\Tools\Binn\;C:\Program Files\Common Files\Autodesk Shared\;E:\gs\gs10.06.0\bin;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;E:\Topaz Labs LLC\Topaz Gigapixel AI\bin\;E:\Topaz Labs LLC\Topaz Gigapixel\bin\;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;E:\Go\bin;E:\TDM-GCC-64\bin;E:\Git\cmd;E:\GitHub CLI\;E:\PowerShell\7\;C:\Program Files\CMake\bin;C:\Users\Administrator\AppData\Local\Programs\Python\Launcher;E:\Python311\Scripts;E:\Python311;C:\Users\Administrator\AppData\Local\Programs\Python\Python38\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python38;C:\Users\Administrator\.local\bin;E:\Python\Python38\Scripts;E:\Python\Python38;e:\Trae\bin;e:\cursor\resources\app\codeBin;C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python311;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Users\Administrator\AppData\Local\Programs\Ollama;C:\Users\Administrator\AppData\Local\Programs\Microsoft VS Code\bin;E:\Pycharm\chromedriver-win64;C:\Users\Administrator\AppData\Roaming\npm;E:\Python-3.13.4\Scripts;C:\Users\Administrator\.dotnet\tools;E:\Antigravity\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Packages\UPX.UPX_Microsoft.Winget.Source_8wekyb3d8bbwe\upx-5.0.2-win64;E:\Espanso;C:\Users\Administrator\go\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Links;E:\Obsidian;C:\Users\Administrator\AppData\Local\OfficeCli;E:\PyCharm 2026.1.2\bin;C:\Users\Administrator\.qoder\bin\qodercli' expanded from the environment.
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.MSVC.Toolset.Common.props(56,5): message : Property 'SystemRoot' with value 'C:\Windows' expanded from the environment.
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.props(132,5): message : Property reassignment: $(VCTargetsPath)="E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\" (previous value: "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.props (132,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.targets(19,5): message : Property reassignment: $(_Redirect)="false" (previous value: "true") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.targets (19,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.targets(16,5): message : Property reassignment: $(VCTargetsPath)="E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\" (previous value: "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.ToolsetLocation.targets (16,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(40,5): message : Property reassignment: $(ExtensionsToDeleteOnClean)="*.cdf;*.cache;*.obj;*.obj.enc;*.ilk;*.ipdb;*.iobj;*.resources;*.tlb;*.tli;*.tlh;*.tmp;*.rsp;*.pgc;*.pgd;*.meta;*.tlog;*.manifest;*.res;*.pch;*.exp;*.idb;*.rep;*.xdc;*.pdb;*_manifest.rc;*.bsc;*.sbr;*.xml;*.metagen;*.bi;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.exe.manifest;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.tlb;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.pdb;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.exe;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.bsc;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.ilk;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\WinLauncher.exe.intermediate.manifest;WinLauncher\x64\Release\WinLauncher.vcxproj.FileListAbsolute.txt" (previous value: "*.cdf;*.cache;*.obj;*.obj.enc;*.ilk;*.ipdb;*.iobj;*.resources;*.tlb;*.tli;*.tlh;*.tmp;*.rsp;*.pgc;*.pgd;*.meta;*.tlog;*.manifest;*.res;*.pch;*.exp;*.idb;*.rep;*.xdc;*.pdb;*_manifest.rc;*.bsc;*.sbr;*.xml;*.metagen;*.bi") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets (40,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(32,5): message : Property reassignment: $(DebugType)="none" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (32,5)
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\$(MSBuildToolsVersion)\Microsoft.Common.targets\ImportBefore\* using extensions path E:\Visual Studio 2026\MSBuild
+The "Configuration" property is a global property, and cannot be modified.
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(185,5): message : Property reassignment: $(_DocumentationFileProduced)="false" (previous value: "true") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (185,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(369,5): message : Property reassignment: $(AutoUnifyAssemblyReferences)="false" (previous value: "true") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (369,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(392,5): message : Property reassignment: $(MSBuildCopyMarkerName)="WinLaunc.D546D1EC" (previous value: "WinLauncher.vcxproj") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (392,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(393,5): message : Property reassignment: $(MSBuildCopyMarkerName)="WinLaunc.D546D1EC.Up2Date" (previous value: "WinLaunc.D546D1EC") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (393,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(528,5): message : Property reassignment: $(ProcessorArchitecture)="amd64" (previous value: "x64") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (528,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(562,42): message : Property 'MSBuildExtensionsPath64' with value 'C:\Program Files\MSBuild' expanded from the environment.
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(580,5): message : Property reassignment: $(DelaySign)="" (previous value: "false") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (580,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(649,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;" (previous value: "{CandidateAssemblyFiles}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (649,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(650,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (650,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(651,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (651,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(652,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (652,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(653,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (653,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(654,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (654,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(655,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (655,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(656,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC};{RawFileName}" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (656,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(657,5): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC};{RawFileName};C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC};{RawFileName}") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (657,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(3950,5): message : Property reassignment: $(_SGenGenerateSerializationAssembliesConfig)="Auto" (previous value: "") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (3950,5)
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(5162,5): message : Property reassignment: $(_TargetsThatPrepareProjectReferences)="
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(5162,5): message :       AssignProjectConfiguration;
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(5162,5): message :       _SplitProjectReferencesByFileExistence
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(5162,5): message :     " (previous value: "_SplitProjectReferencesByFileExistence") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (5162,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets(125,5): message : Property reassignment: $(_CodeAnalysisTreatWarningsAsErrors)="false" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets (125,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets(235,5): message : Property reassignment: $(CAExcludePath)="C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;" (previous value: "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets (235,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets(236,5): message : Property reassignment: $(CAExcludePath)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;" (previous value: "C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets (236,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets(240,5): message : Property reassignment: $(PrepareForBuildDependsOn)=";GetFrameworkPaths;GetReferenceAssemblyPaths;AssignLinkMetadata;SetCABuildNativeEnvironmentVariables" (previous value: ";GetFrameworkPaths;GetReferenceAssemblyPaths;AssignLinkMetadata") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets (240,5)
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message : Property reassignment: $(PrepareResourcesDependsOn)="
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       XamlMarkupCompilePass1;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       XamlMarkupCompilePass2;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       ;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       PrepareResourceNames;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       ResGen;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       CompileLicxFiles
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :      
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :     " (previous value: "
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       ;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       PrepareResourceNames;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       ResGen;
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :       CompileLicxFiles
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets(35,5): message :     ") at C:\Windows\Microsoft.NET\Framework\v4.0.30319\Microsoft.Xaml.targets (35,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message : Property reassignment: $(ResolveReferencesDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       BeforeResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       AssignProjectConfiguration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveNativeReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveAssemblyReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       GenerateBindingRedirects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       GenerateBindingRedirectsUpdateAppConfig;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveComReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       AfterResolveReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveTestReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       BeforeResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       AssignProjectConfiguration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveNativeReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveAssemblyReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       GenerateBindingRedirects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       GenerateBindingRedirectsUpdateAppConfig;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       ResolveComReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :       AfterResolveReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets(4,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\TeamTest\Microsoft.TeamTest.targets (4,5)
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\$(MSBuildToolsVersion)\Microsoft.Common.targets\ImportAfter\* using extensions path E:\Visual Studio 2026\MSBuild
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\Sdks\Microsoft.Docker.Sdk\build\Microsoft.Docker.targets using extensions path E:\Visual Studio 2026\MSBuild
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(74,5): message : Property reassignment: $(ProjectLockFile)="obj\project.assets.json" (previous value: "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\obj\project.assets.json") at E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets (74,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message : Property reassignment: $(ResolveAssemblyReferencesDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       GetFrameworkPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       GetReferenceAssemblyPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ResolveSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ExpandSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :     ;ResolveNuGetPackageAssets" (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       GetFrameworkPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       GetReferenceAssemblyPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ResolveSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :       ExpandSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(185,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets (185,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message : Property reassignment: $(PrepareResourcesDependsOn)="ResolveNuGetPackageAssets;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       XamlMarkupCompilePass1;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       XamlMarkupCompilePass2;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       PrepareResourceNames;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       ResGen;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       CompileLicxFiles
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :      
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       XamlMarkupCompilePass1;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       XamlMarkupCompilePass2;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       PrepareResourceNames;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       ResGen;
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :       CompileLicxFiles
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :      
+E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets(186,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\NuGet\18.0\Microsoft.NuGet.targets (186,5)
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Search paths being used for $(MSBuildExtensionsPath) are E:\Visual Studio 2026\MSBuild;$(MSBuildProgramFiles32)\MSBuild
+Trying to import E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets using extensions path E:\Visual Studio 2026\MSBuild
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets(25,5): message : Property reassignment: $(JsonSchemaCombinedFilePath)="C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\CombinedComponentSchema.json" (previous value: "WinLauncher\x64\Release\\CombinedComponentSchema.json") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets (25,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets(27,5): message : Property reassignment: $(AppSettingsJsonSchemaCombinedFilePath)="C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\AppSettingsSchema.json" (previous value: "WinLauncher\x64\Release\\AppSettingsSchema.json") at E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets (27,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(39,5): message : Property reassignment: $(DebugType)="" (previous value: "none") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (39,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message : Property reassignment: $(BuildDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       _PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       ResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       InitializeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       BuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       BuildCompile;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       BuildLink;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       AfterBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       IncrementalClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       TlogCleanup;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       FinalizeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       BeforeBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       CoreBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :       AfterBuild
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(122,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (122,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message : Property reassignment: $(RebuildDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       _PrepareForRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       BeforeRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       Clean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       Build;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       AfterRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       BeforeRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       Clean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       Build;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :       AfterRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(131,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (131,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message : Property reassignment: $(CleanDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       _PrepareForClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       BeforeClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       UnmanagedUnregistration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CoreClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CleanReferencedProjects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CleanPublishFolder;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       AfterClean
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       BeforeClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       UnmanagedUnregistration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CoreClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CleanReferencedProjects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       CleanPublishFolder;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :       AfterClean
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(136,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (136,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message : Property reassignment: $(BeforeBuildGenerateSourcesTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :       BeforeBuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :       BeforeBuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(60,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (60,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message : Property reassignment: $(AfterBuildGenerateSourcesTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       AfterBuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       AfterBuildGenerateSourcesEvent;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :       AfterBuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(71,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (71,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(140,5): message : Property reassignment: $(BuildGenerateSourcesAction)="_BuildGenerateSourcesAction" (previous value: "Build") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (140,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(141,5): message : Property reassignment: $(BuildCompileAction)="_BuildCompileAction" (previous value: "Build") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (141,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(142,5): message : Property reassignment: $(BuildLinkAction)="_BuildLinkAction" (previous value: "Build") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (142,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message : Property reassignment: $(DetermineProjectTypeTargets)="_PrepareForReferenceResolution;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :       AddExternalIncludDirectoriesToPaths
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :       AddExternalIncludDirectoriesToPaths
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(249,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (249,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message : Property reassignment: $(ResolveReferencesDependsOn)="_PrepareForReferenceResolution;ComputeCrtSDKReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       BeforeResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       AssignProjectConfiguration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveNativeReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveAssemblyReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       GenerateBindingRedirects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       GenerateBindingRedirectsUpdateAppConfig;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveComReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       AfterResolveReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveTestReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       BeforeResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       AssignProjectConfiguration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveNativeReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveAssemblyReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       GenerateBindingRedirects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       GenerateBindingRedirectsUpdateAppConfig;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveComReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       AfterResolveReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :       ResolveTestReferences
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(314,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (314,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message : Property reassignment: $(ResolveAssemblyReferencesDependsOn)="_PrepareForReferenceResolution;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       GetFrameworkPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       GetReferenceAssemblyPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ResolveSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ExpandSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :     ;ResolveNuGetPackageAssets" (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ResolveProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       FindInvalidProjectReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       GetFrameworkPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       GetReferenceAssemblyPaths;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ResolveSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :       ExpandSDKReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(315,5): message :     ;ResolveNuGetPackageAssets") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (315,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(316,5): message : Property reassignment: $(ResolveSDKReferencesDependsOn)="_PrepareForReferenceResolution;ComputeCrtSDKReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(316,5): message :       GetInstalledSDKLocations
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(316,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(316,5): message :       GetInstalledSDKLocations
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(316,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (316,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message : Property reassignment: $(ComputeCompileInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       ComputeMIDLGeneratedCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(646,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (646,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message : Property reassignment: $(ComputeLinkInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(962,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (962,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message : Property reassignment: $(ComputeCompileInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ComputeMIDLGeneratedCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ComputeCLInputPDBName;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ComputeReferenceCLInput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       WarnCompileDuplicatedFilename
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :       ComputeMIDLGeneratedCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1159,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1159,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message : Property reassignment: $(ComputeLinkInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1211,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1211,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message : Property reassignment: $(ComputeLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1218,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1218,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message : Property reassignment: $(ComputeImpLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1225,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1225,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message : Property reassignment: $(ComputeLinkInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeCLGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1286,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1286,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message : Property reassignment: $(ComputeLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1301,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1301,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message : Property reassignment: $(ComputeImpLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeCLGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1316,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1316,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message : Property reassignment: $(ComputeLinkInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeCLGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeLinkInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :       ComputeCLGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1347,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1347,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message : Property reassignment: $(ComputeLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1365,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1365,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message : Property reassignment: $(ComputeImpLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeCLGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeImpLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeRCGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :       ComputeCLGeneratedImpLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1383,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1383,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message : Property reassignment: $(ComputeLinkInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeCLGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeLinkInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeReferenceLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeRCGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeManifestGeneratedLinkerInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeCLGeneratedLinkInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :       ComputeLinkInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1507,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1507,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message : Property reassignment: $(ComputeLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeReferenceLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :       ComputeLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1545,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1545,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message : Property reassignment: $(ComputeLibInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeLibAdditionalOptions;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeReferenceLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeRCGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeCustomBuildOutput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeCLGeneratedLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeLibInputsFromProject;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :       ComputeReferenceLibInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1602,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1602,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message : Property reassignment: $(GetProjectInfoForReferenceDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       AddPublicIncludeDirectoriesToProjectsInfoForReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       AddPublicBMIsToProjectsInfoForReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       AddDeployRecipeFileToProjectsInfoForReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       AddLibrariesToProjectsInfoForReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :       AddPublicIncludeDirectoriesToProjectsInfoForReference;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1790,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (1790,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(2215,5): message : Property reassignment: $(DocumentationProjectOutputGroupDependsOn)="ResolvedXDCMake;ComputeCLCompileGeneratedXDCFiles" (previous value: "") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (2215,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(2281,5): message : Property reassignment: $(ContentFilesProjectOutputGroupDependsOn)="PrepareForBuild;AssignTargetPaths;PrepareForBuild;AssignTargetPaths;MakeDirsForFxc" (previous value: "PrepareForBuild;AssignTargetPaths") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (2281,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message : Property reassignment: $(ComputeCompileInputsTargets)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeMIDLGeneratedCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeCLInputPDBName;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeReferenceCLInput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       WarnCompileDuplicatedFilename
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeStdModulesCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       FixupCLCompileOptions;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       SetModuleDependencies;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       GenerateTargetFrameworkMonikerAttribute;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeMIDLGeneratedCompileInputs;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeCLInputPDBName;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       ComputeReferenceCLInput;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :       WarnCompileDuplicatedFilename
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(315,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets (315,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(2123,5): message : Property reassignment: $(BuildingProject)="true" (previous value: "false") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets (2123,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(2669,5): message : Property reassignment: $(ContentFilesProjectOutputGroupDependsOn)="PrepareForBuild;AssignTargetPaths;PrepareForBuild;AssignTargetPaths;MakeDirsForFxc;_CreateCopyFileItems;" (previous value: "PrepareForBuild;AssignTargetPaths;PrepareForBuild;AssignTargetPaths;MakeDirsForFxc") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets (2669,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.targets(16,5): message : Property reassignment: $(PrepareForBuildDependsOn)="_CheckWindowsSDKInstalled;;GetFrameworkPaths;GetReferenceAssemblyPaths;AssignLinkMetadata;SetCABuildNativeEnvironmentVariables" (previous value: ";GetFrameworkPaths;GetReferenceAssemblyPaths;AssignLinkMetadata;SetCABuildNativeEnvironmentVariables") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.targets (16,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message : Property reassignment: $(CleanDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       _PrepareForClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       BeforeClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       UnmanagedUnregistration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CoreClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CleanReferencedProjects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CleanPublishFolder;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       AfterClean
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CppClean
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       _PrepareForClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       BeforeClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       UnmanagedUnregistration;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CoreClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CleanReferencedProjects;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       CleanPublishFolder;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :       AfterClean
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(22,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets (22,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message : Property reassignment: $(CppCleanDependsOn)="
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       BeforeCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       CoreCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       AfterCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :     ;PGInstrumentedClean" (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       BeforeCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       CoreCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :       AfterCppClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets(92,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets (92,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.targets(27,5): message : Property reassignment: $(_ImportMicrosoftCppDesignTime)="true" (previous value: "false") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Redirect.targets (27,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message : Property reassignment: $(BuildDependsOn)="SetTelemetryEnvironmentVariables;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       _PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       ResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       InitializeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildCompile;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildLink;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       AfterBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       IncrementalClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       TlogCleanup;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       FinalizeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       _PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       ResolveReferences;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       PrepareForBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       InitializeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildGenerateSources;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildCompile;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       BuildLink;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       AfterBuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       IncrementalClean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       TlogCleanup;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :       FinalizeBuildStatus;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(541,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets (541,5)
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message : Property reassignment: $(RebuildDependsOn)="SetTelemetryEnvironmentVariables;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       _PrepareForRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       BeforeRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       Clean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       Build;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       AfterRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :     " (previous value: "
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       _PrepareForRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       BeforeRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       Clean;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       Build;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :       AfterRebuild;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :     ;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets(542,5): message :     ") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets (542,5)
+Overriding target "GenerateTargetFrameworkMonikerAttribute" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "GenerateTargetFrameworkMonikerAttribute" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets".
+Overriding target "Build" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "Build" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets".
+Overriding target "Rebuild" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "Rebuild" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets".
+Overriding target "AfterBuild" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "AfterBuild" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets".
+Overriding target "PrepareForBuild" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "PrepareForBuild" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "GetTargetPath" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "GetTargetPath" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "ComputeIntermediateSatelliteAssemblies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "ComputeIntermediateSatelliteAssemblies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "ClCompile" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "ClCompile" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "ResourceCompile" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "ResourceCompile" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "Lib" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Lib" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "Link" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Link" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "AllProjectOutputGroups" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "AllProjectOutputGroups" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "BuiltProjectOutputGroup" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "BuiltProjectOutputGroup" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "DebugSymbolsProjectOutputGroup" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "DebugSymbolsProjectOutputGroup" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "DocumentationProjectOutputGroup" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "DocumentationProjectOutputGroup" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "SourceFilesProjectOutputGroup" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "SourceFilesProjectOutputGroup" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "ContentFilesProjectOutputGroup" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "ContentFilesProjectOutputGroup" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "AllProjectOutputGroupsDependencies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "AllProjectOutputGroupsDependencies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "BuiltProjectOutputGroupDependencies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "BuiltProjectOutputGroupDependencies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "DebugSymbolsProjectOutputGroupDependencies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "DebugSymbolsProjectOutputGroupDependencies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "DocumentationProjectOutputGroupDependencies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "DocumentationProjectOutputGroupDependencies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets".
+Overriding target "PreBuildEvent" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "PreBuildEvent" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "PostBuildEvent" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "PostBuildEvent" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "ClCompile" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "ClCompile" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "Link" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Link" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "Lib" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Lib" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "ImpLib" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "ImpLib" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "Midl" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Midl" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "ResourceCompile" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "ResourceCompile" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "BeforeResGen" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "BeforeResGen" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "ResGen" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "ResGen" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "GenerateSatelliteAssemblies" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "GenerateSatelliteAssemblies" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "Manifest" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "Manifest" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "XdcMake" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "XdcMake" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "BscMake" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" with target "BscMake" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "ComputeMetaGenInputs" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.MetaGen.targets" with target "ComputeMetaGenInputs" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "GetNativeManifest" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "GetNativeManifest" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets".
+Overriding target "InstallBuildTools" in project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.cpp.targets" with target "InstallBuildTools" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.targets".
+Overriding target "GetTargetPathWithTargetPlatformMoniker" in project "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" with target "GetTargetPathWithTargetPlatformMoniker" from project "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets".
+The target "CompileDesignTime" listed in a BeforeTargets attribute at "E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets (44,11)" does not exist in the project, and will be ignored.
+The target "CompileDesignTime" listed in a BeforeTargets attribute at "E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\WebTools.Aspire\Microsoft.WebTools.Aspire.targets (57,11)" does not exist in the project, and will be ignored.
+Project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" on node 1 (Rebuild target(s)).
+Target "_CheckForInvalidConfigurationAndPlatform" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "SetTelemetryEnvironmentVariables" depends on it):
+Using "Message" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "Message"
+  Configuration=Release
+Done executing task "Message".
+Task "Message"
+  Platform=x64
+Done executing task "Message".
+Done building target "_CheckForInvalidConfigurationAndPlatform" in project "WinLauncher.vcxproj".
+Target "_CheckForInvalidConfigurationAndPlatform" skipped. Previously built successfully.
+Target "SetTelemetryEnvironmentVariables" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.DesignTime.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Rebuild" depends on it):
+Using "SetEnv" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "SetEnv"
+  VSTEL_SolutionSessionID=
+Done executing task "SetEnv".
+Task "SetEnv"
+  VSTEL_CurrentSolutionBuildID=
+Done executing task "SetEnv".
+Task "SetEnv"
+  VSTEL_ProjectID={F1A2B3C4-D5E6-7890-ABCD-EF1234567890}
+Done executing task "SetEnv".
+Task "SetEnv"
+  VSTEL_SolutionPath=*Undefined*
+Done executing task "SetEnv".
+Task "SetEnv"
+  VSTEL_MSBuildProjectFullPath=C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj
+Done executing task "SetEnv".
+Done building target "SetTelemetryEnvironmentVariables" in project "WinLauncher.vcxproj".
+Target "_PrepareForRebuild" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Rebuild" depends on it):
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(194,7): message : Property reassignment: $(_BuildActionType)="Rebuild" (previous value: "Build") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (194,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Done building target "_PrepareForRebuild" in project "WinLauncher.vcxproj".
+Target "BeforeRebuild" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Rebuild" depends on it):
+Done building target "BeforeRebuild" in project "WinLauncher.vcxproj".
+Target "_PrepareForClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(207,7): message : Property reassignment: $(_BuildActionType)="Clean" (previous value: "Rebuild") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (207,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Using "Delete" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "Delete"
+  Deleting file "WinLauncher\x64\Release\WinLauncher.tlog\WinLauncher.lastbuildstate".
+Done executing task "Delete".
+Done building target "_PrepareForClean" in project "WinLauncher.vcxproj".
+Target "BeforeClean" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Done building target "BeforeClean" in project "WinLauncher.vcxproj".
+Target "CoreClean" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Task "Delete"
+  File "WinLauncher\x64\Release\\TempCA\WinLauncher.pdb" doesn't exist. Skipping.
+  File "WinLauncher\x64\Release\\TempCA\WinLauncher.exe" doesn't exist. Skipping.
+Done executing task "Delete".
+Using "ReadLinesFromFile" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "ReadLinesFromFile"
+Done executing task "ReadLinesFromFile".
+Using "FindUnderPath" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "FindUnderPath"
+  Comparison path is "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\".
+Done executing task "FindUnderPath".
+Task "FindUnderPath"
+  Comparison path is "WinLauncher\x64\Release\".
+Done executing task "FindUnderPath".
+Task "Delete"
+Done executing task "Delete".
+Using "RemoveDuplicates" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "RemoveDuplicates"
+Done executing task "RemoveDuplicates".
+Using "MakeDir" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "MakeDir"
+Done executing task "MakeDir".
+Using "WriteLinesToFile" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "WriteLinesToFile"
+  Skipping write to file "WinLauncher\x64\Release\WinLauncher.vcxproj.FileListAbsolute.txt" because content would not change.
+Done executing task "WriteLinesToFile".
+Done building target "CoreClean" in project "WinLauncher.vcxproj".
+Target "IgnoreJavaScriptOutputAssembly" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "AssignProjectConfiguration" depends on it):
+Done building target "IgnoreJavaScriptOutputAssembly" in project "WinLauncher.vcxproj".
+Target "_SplitProjectReferencesByFileExistence" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareProjectReferences" depends on it):
+Done building target "_SplitProjectReferencesByFileExistence" in project "WinLauncher.vcxproj".
+Target "_AddOutputPathToGlobalPropertiesToRemove" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_GetProjectReferenceTargetFrameworkProperties" depends on it):
+Done building target "_AddOutputPathToGlobalPropertiesToRemove" in project "WinLauncher.vcxproj".
+Target "_GetProjectReferenceTargetFrameworkProperties" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareProjectReferences" depends on it):
+Using "MSBuild" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "MSBuild"
+Done executing task "MSBuild".
+Using "SetRidAgnosticValueForProjects" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "SetRidAgnosticValueForProjects"
+Done executing task "SetRidAgnosticValueForProjects".
+Done building target "_GetProjectReferenceTargetFrameworkProperties" in project "WinLauncher.vcxproj".
+Target "PrepareProjectReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CleanReferencedProjects" depends on it):
+Done building target "PrepareProjectReferences" in project "WinLauncher.vcxproj".
+Target "CleanReferencedProjects" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Done building target "CleanReferencedProjects" in project "WinLauncher.vcxproj".
+Target "CleanPublishFolder" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Done building target "CleanPublishFolder" in project "WinLauncher.vcxproj".
+Target "AfterClean" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Done building target "AfterClean" in project "WinLauncher.vcxproj".
+Target "BeforeCppClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CppClean" depends on it):
+Done building target "BeforeCppClean" in project "WinLauncher.vcxproj".
+Target "CoreCppClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CppClean" depends on it):
+Task "MakeDir"
+Done executing task "MakeDir".
+Using "CppClean" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "CppClean"
+Done executing task "CppClean".
+Task "WriteLinesToFile"
+Done executing task "WriteLinesToFile".
+Done building target "CoreCppClean" in project "WinLauncher.vcxproj".
+Target "AfterCppClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CppClean" depends on it):
+Done building target "AfterCppClean" in project "WinLauncher.vcxproj".
+Target "PGInstrumentedClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CppClean" depends on it):
+Task "Delete"
+Done executing task "Delete".
+Done building target "PGInstrumentedClean" in project "WinLauncher.vcxproj".
+Target "CppClean" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppClean.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Clean" depends on it):
+Done building target "CppClean" in project "WinLauncher.vcxproj".
+Target "Clean" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Rebuild" depends on it):
+Done building target "Clean" in project "WinLauncher.vcxproj".
+Target "SetTelemetryEnvironmentVariables" skipped. Previously built successfully.
+Target "_PrepareForBuild" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Build" depends on it):
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets(165,7): message : Property reassignment: $(_BuildActionType)="Build" (previous value: "Clean") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets (165,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Done building target "_PrepareForBuild" in project "WinLauncher.vcxproj".
+Target "_PrepareForReferenceResolution" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveReferences" depends on it):
+Done building target "_PrepareForReferenceResolution" in project "WinLauncher.vcxproj".
+Target "BeforeResolveReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveReferences" depends on it):
+Done building target "BeforeResolveReferences" in project "WinLauncher.vcxproj".
+Target "PrepareProjectReferences" skipped. Previously built successfully.
+Target "ResolveProjectReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveReferences" depends on it):
+Done building target "ResolveProjectReferences" in project "WinLauncher.vcxproj".
+Target "_PrepareForReferenceResolution" skipped. Previously built successfully.
+Target "ResolveProjectReferences" skipped. Previously built successfully.
+Target "GetFrameworkPaths" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+Done building target "GetFrameworkPaths" in project "WinLauncher.vcxproj".
+Target "_PrepareForReferenceResolution" skipped. Previously built successfully.
+Target "GetFrameworkPaths" skipped. Previously built successfully.
+Target "GetReferenceAssemblyPaths" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(1284,7): message : Property reassignment: $(AssemblySearchPaths)="{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};;{GAC};{RawFileName};C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\" (previous value: "{CandidateAssemblyFiles};E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;{HintPathFromItem};{TargetFrameworkDirectory};{AssemblyFoldersFromConfig:E:\Visual Studio 2026\MSBuild\Current\Bin\AssemblyFolders.config,};;{Registry:Software\Microsoft\,,AssemblyFoldersEx};{AssemblyFolders};{GAC};{RawFileName};C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\") at E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets (1284,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Done building target "GetReferenceAssemblyPaths" in project "WinLauncher.vcxproj".
+Target "AddExternalIncludDirectoriesToPaths" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Current.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "SetBuildDefaultEnvironmentVariables" depends on it):
+Done building target "AddExternalIncludDirectoriesToPaths" in project "WinLauncher.vcxproj".
+Target "SetBuildDefaultEnvironmentVariables" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Current.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareForBuild" depends on it):
+Task "SetEnv"
+  PATH=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64;C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;;C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools\x64;C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86;;C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools;E:\Visual Studio 2026\Common7\tools;E:\Visual Studio 2026\Common7\ide;C:\Program Files (x86)\HTML Help Workshop;;E:\Visual Studio 2026\MSBuild\Current\Bin\amd64;C:\Windows\Microsoft.NET\Framework64\v4.0.30319\;C:\Windows\Microsoft.NET\Framework\v4.0.30319\;E:\Visual Studio 2026\MSBuild\Current\Bin;C:\Windows\Microsoft.NET\Framework\v4.0.30319\;;E:\PowerShell\7;E:\VMware\bin\;E:\Python313\Scripts\;E:\Python313\;E:\Python312\Scripts\;E:\Python312\;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Program Files\dotnet\;E:\Sunshine;E:\Sunshine\tools;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Windows\System32\PING.EXE;E:\Bandizip;E:\nodejs\;C:\Program Files\Microsoft SQL Server\120\Tools\Binn\;C:\Program Files\Common Files\Autodesk Shared\;E:\gs\gs10.06.0\bin;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;E:\Topaz Labs LLC\Topaz Gigapixel AI\bin\;E:\Topaz Labs LLC\Topaz Gigapixel\bin\;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;E:\Go\bin;E:\TDM-GCC-64\bin;E:\Git\cmd;E:\GitHub CLI\;E:\PowerShell\7\;C:\Program Files\CMake\bin;C:\Users\Administrator\AppData\Local\Programs\Python\Launcher;E:\Python311\Scripts;E:\Python311;C:\Users\Administrator\AppData\Local\Programs\Python\Python38\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python38;C:\Users\Administrator\.local\bin;E:\Python\Python38\Scripts;E:\Python\Python38;e:\Trae\bin;e:\cursor\resources\app\codeBin;C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python311;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Users\Administrator\AppData\Local\Programs\Ollama;C:\Users\Administrator\AppData\Local\Programs\Microsoft VS Code\bin;E:\Pycharm\chromedriver-win64;C:\Users\Administrator\AppData\Roaming\npm;E:\Python-3.13.4\Scripts;C:\Users\Administrator\.dotnet\tools;E:\Antigravity\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Packages\UPX.UPX_Microsoft.Winget.Source_8wekyb3d8bbwe\upx-5.0.2-win64;E:\Espanso;C:\Users\Administrator\go\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Links;E:\Obsidian;C:\Users\Administrator\AppData\Local\OfficeCli;E:\PyCharm 2026.1.2\bin;C:\Users\Administrator\.qoder\bin\qodercli;
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Current.targets(101,7): message : Property reassignment: $(Path)="E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64%3bC:\Program Files %28x86%29\Windows Kits\10\bin\10.0.26100.0\x64%3b%3bC:\Program Files %28x86%29\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools\x64%3bC:\Program Files %28x86%29\Windows Kits\10\bin\10.0.26100.0\x86%3b%3bC:\Program Files %28x86%29\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools%3bE:\Visual Studio 2026\Common7\tools%3bE:\Visual Studio 2026\Common7\ide%3bC:\Program Files %28x86%29\HTML Help Workshop%3b%3bE:\Visual Studio 2026\MSBuild\Current\Bin\amd64%3bC:\Windows\Microsoft.NET\Framework64\v4.0.30319\%3bC:\Windows\Microsoft.NET\Framework\v4.0.30319\%3bE:\Visual Studio 2026\MSBuild\Current\Bin%3bC:\Windows\Microsoft.NET\Framework\v4.0.30319\%3b%3bE:\PowerShell\7%3bE:\VMware\bin\%3bE:\Python313\Scripts\%3bE:\Python313\%3bE:\Python312\Scripts\%3bE:\Python312\%3bC:\Windows\system32%3bC:\Windows%3bC:\Windows\System32\Wbem%3bC:\Windows\System32\WindowsPowerShell\v1.0\%3bC:\Windows\System32\OpenSSH\%3bC:\Program Files %28x86%29\Windows Kits\10\Windows Performance Toolkit\%3bC:\Program Files\dotnet\%3bE:\Sunshine%3bE:\Sunshine\tools%3bC:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR%3bC:\Windows\System32\PING.EXE%3bE:\Bandizip%3bE:\nodejs\%3bC:\Program Files\Microsoft SQL Server\120\Tools\Binn\%3bC:\Program Files\Common Files\Autodesk Shared\%3bE:\gs\gs10.06.0\bin%3bC:\Program Files\Microsoft SQL Server\150\Tools\Binn\%3bC:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\%3bE:\Topaz Labs LLC\Topaz Gigapixel AI\bin\%3bE:\Topaz Labs LLC\Topaz Gigapixel\bin\%3bC:\Program Files\Microsoft SQL Server\170\Tools\Binn\%3bE:\Go\bin%3bE:\TDM-GCC-64\bin%3bE:\Git\cmd%3bE:\GitHub CLI\%3bE:\PowerShell\7\%3bC:\Program Files\CMake\bin%3bC:\Users\Administrator\AppData\Local\Programs\Python\Launcher%3bE:\Python311\Scripts%3bE:\Python311%3bC:\Users\Administrator\AppData\Local\Programs\Python\Python38\Scripts%3bC:\Users\Administrator\AppData\Local\Programs\Python\Python38%3bC:\Users\Administrator\.local\bin%3bE:\Python\Python38\Scripts%3bE:\Python\Python38%3be:\Trae\bin%3be:\cursor\resources\app\codeBin%3bC:\Users\Administrator\AppData\Local\Programs\Python\Python311\Scripts%3bC:\Users\Administrator\AppData\Local\Programs\Python\Python311%3bC:\Users\Administrator\AppData\Local\Microsoft\WindowsApps%3bC:\Users\Administrator\AppData\Local\Programs\Ollama%3bC:\Users\Administrator\AppData\Local\Programs\Microsoft VS Code\bin%3bE:\Pycharm\chromedriver-win64%3bC:\Users\Administrator\AppData\Roaming\npm%3bE:\Python-3.13.4\Scripts%3bC:\Users\Administrator\.dotnet\tools%3bE:\Antigravity\bin%3bC:\Users\Administrator\AppData\Local\Microsoft\WinGet\Packages\UPX.UPX_Microsoft.Winget.Source_8wekyb3d8bbwe\upx-5.0.2-win64%3bE:\Espanso%3bC:\Users\Administrator\go\bin%3bC:\Users\Administrator\AppData\Local\Microsoft\WinGet\Links%3bE:\Obsidian%3bC:\Users\Administrator\AppData\Local\OfficeCli%3bE:\PyCharm 2026.1.2\bin%3bC:\Users\Administrator\.qoder\bin\qodercli%3b" (previous value: "E:\PowerShell\7;E:\VMware\bin\;E:\Python313\Scripts\;E:\Python313\;E:\Python312\Scripts\;E:\Python312\;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Program Files\dotnet\;E:\Sunshine;E:\Sunshine\tools;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Windows\System32\PING.EXE;E:\Bandizip;E:\nodejs\;C:\Program Files\Microsoft SQL Server\120\Tools\Binn\;C:\Program Files\Common Files\Autodesk Shared\;E:\gs\gs10.06.0\bin;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;E:\Topaz Labs LLC\Topaz Gigapixel AI\bin\;E:\Topaz Labs LLC\Topaz Gigapixel\bin\;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;E:\Go\bin;E:\TDM-GCC-64\bin;E:\Git\cmd;E:\GitHub CLI\;E:\PowerShell\7\;C:\Program Files\CMake\bin;C:\Users\Administrator\AppData\Local\Programs\Python\Launcher;E:\Python311\Scripts;E:\Python311;C:\Users\Administrator\AppData\Local\Programs\Python\Python38\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python38;C:\Users\Administrator\.local\bin;E:\Python\Python38\Scripts;E:\Python\Python38;e:\Trae\bin;e:\cursor\resources\app\codeBin;C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Scripts;C:\Users\Administrator\AppData\Local\Programs\Python\Python311;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Users\Administrator\AppData\Local\Programs\Ollama;C:\Users\Administrator\AppData\Local\Programs\Microsoft VS Code\bin;E:\Pycharm\chromedriver-win64;C:\Users\Administrator\AppData\Roaming\npm;E:\Python-3.13.4\Scripts;C:\Users\Administrator\.dotnet\tools;E:\Antigravity\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Packages\UPX.UPX_Microsoft.Winget.Source_8wekyb3d8bbwe\upx-5.0.2-win64;E:\Espanso;C:\Users\Administrator\go\bin;C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Links;E:\Obsidian;C:\Users\Administrator\AppData\Local\OfficeCli;E:\PyCharm 2026.1.2\bin;C:\Users\Administrator\.qoder\bin\qodercli") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Current.targets (101,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Done executing task "SetEnv".
+Task "SetEnv"
+  LIB=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Auxiliary\VS\lib\x64;;C:\Program Files (x86)\Windows Kits\10\lib\10.0.26100.0\ucrt\x64;;;C:\Program Files (x86)\Windows Kits\10\lib\10.0.26100.0\um\x64;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\lib\um\x64;
+Done executing task "SetEnv".
+Task "SetEnv"
+  LIBPATH=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\lib\x64;
+Done executing task "SetEnv".
+Task "SetEnv"
+  INCLUDE=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\include;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\include;;E:\Visual Studio 2026\VC\Auxiliary\VS\include;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;
+Done executing task "SetEnv".
+Task "SetEnv"
+  EXTERNAL_INCLUDE=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\include;;E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\atlmfc\include;;E:\Visual Studio 2026\VC\Auxiliary\VS\include;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;
+Done executing task "SetEnv".
+Done building target "SetBuildDefaultEnvironmentVariables" in project "WinLauncher.vcxproj".
+Target "_PrepareForReferenceResolution" skipped. Previously built successfully.
+Target "GetResolvedWinMD" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareForBuild" depends on it):
+Done building target "GetResolvedWinMD" in project "WinLauncher.vcxproj".
+Target "_CheckWindowsSDKInstalled" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.WindowsSDK.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareForBuild" depends on it):
+Done building target "_CheckWindowsSDKInstalled" in project "WinLauncher.vcxproj".
+Target "GetFrameworkPaths" skipped. Previously built successfully.
+Target "GetReferenceAssemblyPaths" skipped. Previously built successfully.
+Target "SetCABuildNativeEnvironmentVariables" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VisualStudio\v18.0\CodeAnalysis\Microsoft.CodeAnalysis.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "PrepareForBuild" depends on it):
+Task "SetEnv"
+  CAExcludePath=E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\cppwinrt;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8.1\Include\um;
+Done executing task "SetEnv".
+Done building target "SetCABuildNativeEnvironmentVariables" in project "WinLauncher.vcxproj".
+Target "PrepareForBuild" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(429,7): message : Property reassignment: $(BuildProjectReferences)="false" (previous value: "true") at E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets (429,7) [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Task "MakeDir"
+Done executing task "MakeDir".
+Using "CheckVCToolsetVersion" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "CheckVCToolsetVersion"
+Done executing task "CheckVCToolsetVersion".
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(543,7): message : Property 'TMP' with value 'C:\Users\Administrator\AppData\Local\Temp' expanded from the environment. [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(544,7): message : Property 'TEMP' with value 'C:\Users\Administrator\AppData\Local\Temp' expanded from the environment. [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+Using "VCMessage" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "VCMessage"
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+Done executing task "VCMessage".
+Task "MakeDir"
+  Creating directory "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\".
+Done executing task "MakeDir".
+Done building target "PrepareForBuild" in project "WinLauncher.vcxproj".
+Target "_PrepareForReferenceResolution" skipped. Previously built successfully.
+Target "ResolveSDKReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+Done building target "ResolveSDKReferences" in project "WinLauncher.vcxproj".
+Target "ResolveSDKReferences" skipped. Previously built successfully.
+Target "ExpandSDKReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveAssemblyReferences" depends on it):
+Done building target "ExpandSDKReferences" in project "WinLauncher.vcxproj".
+Target "ResolveAssemblyReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveReferences" depends on it):
+Done building target "ResolveAssemblyReferences" in project "WinLauncher.vcxproj".
+Target "AfterResolveReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResolveReferences" depends on it):
+Done building target "AfterResolveReferences" in project "WinLauncher.vcxproj".
+Target "ResolveReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Build" depends on it):
+Done building target "ResolveReferences" in project "WinLauncher.vcxproj".
+Target "PrepareForBuild" skipped. Previously built successfully.
+Target "PrepareForBuild" skipped. Previously built successfully.
+Target "InitializeBuildStatus" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Build" depends on it):
+Task "ReadLinesFromFile"
+Done executing task "ReadLinesFromFile".
+Task "WriteLinesToFile"
+Done executing task "WriteLinesToFile".
+Using "Touch" task from assembly "Microsoft.Build.Tasks.Core, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a".
+Task "Touch"
+  Creating "WinLauncher\x64\Release\WinLauncher.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "WinLauncher\x64\Release\WinLauncher.tlog\unsuccessfulbuild".
+Done executing task "Touch".
+Done building target "InitializeBuildStatus" in project "WinLauncher.vcxproj".
+Target "PrepareProjectReferences" skipped. Previously built successfully.
+Target "BuildGenerateSourcesTraverse" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "BuildGenerateSources" depends on it):
+Done building target "BuildGenerateSourcesTraverse" in project "WinLauncher.vcxproj".
+Target "PrepareForBuild" skipped. Previously built successfully.
+Target "ResolveReferences" skipped. Previously built successfully.
+Target "BeforeBuildGenerateSources" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "BeforeBuildGenerateSources" in project "WinLauncher.vcxproj".
+Target "PreBuildEvent" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "PreBuildEvent" in project "WinLauncher.vcxproj".
+Target "PrepareForBuild" skipped. Previously built successfully.
+Target "InitializeBuildStatus" skipped. Previously built successfully.
+Target "SetBuildDefaultEnvironmentVariables" skipped. Previously built successfully.
+Target "_SelectedFiles" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "SelectCustomBuild" depends on it):
+Done building target "_SelectedFiles" in project "WinLauncher.vcxproj".
+Target "SelectCustomBuild" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CustomBuild" depends on it):
+Done building target "SelectCustomBuild" in project "WinLauncher.vcxproj".
+Target "ComputeCustomBuildOutput" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "CustomBuild" depends on it):
+Task "MakeDir"
+Done executing task "MakeDir".
+Done building target "ComputeCustomBuildOutput" in project "WinLauncher.vcxproj".
+Target "CustomBuild" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Using "GetOutOfDateItems" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "GetOutOfDateItems"
+Done executing task "GetOutOfDateItems".
+Task "GetOutOfDateItems"
+Done executing task "GetOutOfDateItems".
+Done building target "CustomBuild" in project "WinLauncher.vcxproj".
+Target "_SelectedFiles" skipped. Previously built successfully.
+Target "CopyFileToFolders" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Task "GetOutOfDateItems"
+Done executing task "GetOutOfDateItems".
+Done building target "CopyFileToFolders" in project "WinLauncher.vcxproj".
+Target "_Xsd" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "_Xsd" in project "WinLauncher.vcxproj".
+Target "MakeDirsForMidl" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_Midl" depends on it):
+Task "Makedir"
+Done executing task "Makedir".
+Done building target "MakeDirsForMidl" in project "WinLauncher.vcxproj".
+Target "ComputeMIDLGeneratedCompileInputs" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_Midl" depends on it):
+Done building target "ComputeMIDLGeneratedCompileInputs" in project "WinLauncher.vcxproj".
+Target "AfterMidl" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_Midl" depends on it):
+Done building target "AfterMidl" in project "WinLauncher.vcxproj".
+Target "_Midl" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "_Midl" in project "WinLauncher.vcxproj".
+Target "AfterBuildGenerateSources" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.BuildSteps.Targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "AfterBuildGenerateSources" in project "WinLauncher.vcxproj".
+Target "AfterBuildGenerateSourcesEvent" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildGenerateSourcesAction" depends on it):
+Done building target "AfterBuildGenerateSourcesEvent" in project "WinLauncher.vcxproj".
+Target "_BuildGenerateSourcesAction" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "BuildGenerateSources" depends on it):
+Done building target "_BuildGenerateSourcesAction" in project "WinLauncher.vcxproj".
+Target "BuildGenerateSources" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "Build" depends on it):
+Done building target "BuildGenerateSources" in project "WinLauncher.vcxproj".
+Target "PrepareProjectReferences" skipped. Previously built successfully.
+Target "BuildCompileTraverse" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "BuildCompile" depends on it):
+Done building target "BuildCompileTraverse" in project "WinLauncher.vcxproj".
+Target "PrepareForBuild" skipped. Previously built successfully.
+Target "ResolveReferences" skipped. Previously built successfully.
+Target "BeforeClCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "BeforeClCompile" in project "WinLauncher.vcxproj".
+Target "ComputeMIDLGeneratedCompileInputs" skipped. Previously built successfully.
+Target "ComputeCLInputPDBName" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "ComputeCLInputPDBName" in project "WinLauncher.vcxproj".
+Target "ResolveReferences" skipped. Previously built successfully.
+Target "FindReferenceAssembliesForReferences" in file "E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ComputeReferenceCLInput" depends on it):
+Done building target "FindReferenceAssembliesForReferences" in project "WinLauncher.vcxproj".
+Target "GetReferencedVCProjectsInfo" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ComputeReferenceCLInput" depends on it):
+Done building target "GetReferencedVCProjectsInfo" in project "WinLauncher.vcxproj".
+Target "ComputeReferenceCLInput" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "ComputeReferenceCLInput" in project "WinLauncher.vcxproj".
+Target "WarnCompileDuplicatedFilename" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "WarnCompileDuplicatedFilename" in project "WinLauncher.vcxproj".
+Target "SetCppLanguageStandardCapabilities" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ComputeStdModulesCompileInputs" depends on it):
+Done building target "SetCppLanguageStandardCapabilities" in project "WinLauncher.vcxproj".
+Target "ComputeStdModulesCompileInputs" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "ComputeStdModulesCompileInputs" in project "WinLauncher.vcxproj".
+Target "SetCppLanguageStandardCapabilities" skipped. Previously built successfully.
+Target "FixupCLCompileOptions" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "FixupCLCompileOptions" in project "WinLauncher.vcxproj".
+Target "MakeDirsForCl" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Task "MakeDir"
+Done executing task "MakeDir".
+Done building target "MakeDirsForCl" in project "WinLauncher.vcxproj".
+Target "_SelectedFiles" skipped. Previously built successfully.
+Target "ComputeMIDLGeneratedCompileInputs" skipped. Previously built successfully.
+Target "ComputeCLInputPDBName" skipped. Previously built successfully.
+Target "ComputeReferenceCLInput" skipped. Previously built successfully.
+Target "WarnCompileDuplicatedFilename" skipped. Previously built successfully.
+Target "ComputeStdModulesCompileInputs" skipped. Previously built successfully.
+Target "FixupCLCompileOptions" skipped. Previously built successfully.
+Target "SelectCustomBuild" skipped. Previously built successfully.
+Target "SelectClCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ClCompile" depends on it):
+Done building target "SelectClCompile" in project "WinLauncher.vcxproj".
+Target "ClCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Task "Delete"
+Done executing task "Delete".
+Using "CL" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "CL"
+  Forcing recompile of all source files due to missing PDB "WinLauncher\x64\Release\vc143.pdb".
+  Environment Variables passed to tool:
+    VS_UNICODE_OUTPUT=1504
+    SARIF_OUTPUT_PIPE=1512
+  E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\CL.exe /c /Zi /nologo /W3 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _WIN32_WINNT=0x0601 /D NDEBUG /D _WINDOWS /D _CRT_SECURE_NO_WARNINGS /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /permissive- /Fo"WinLauncher\x64\Release\\" /Fd"WinLauncher\x64\Release\vc143.pdb" /external:W3 /Gd /TP /FC /errorReport:queue /utf-8 /std:c++17 App\Application.cpp App\Logger.cpp main.cpp MouseHook.cpp KeyboardHook.cpp ShortcutManager.cpp GlassWindow.cpp PopupWindow.cpp TrayMenuWindow.cpp Config\ConfigWindow.cpp Config\CategoryList.cpp Config\ContextMenu.cpp Config\ShortcutPage.cpp Config\SettingsPage.cpp Config\DropDownMenu.cpp Config\PromptWindow.cpp Config\ConfirmWindow.cpp Config\WaitWindow.cpp Config\ShortcutDialog.cpp Config\ShortcutEditForm.cpp Config\HotkeyDialog.cpp Config\HotkeyEditForm.cpp Config\UrlDialog.cpp Config\UrlEditForm.cpp Config\CommandDialog.cpp Config\CommandEditForm.cpp Config\TextBox.cpp Services\FolderWatcher.cpp Services\FaviconFetcher.cpp Services\SyncFolderService.cpp Services\PrivilegeLaunchService.cpp
+  Tracking command:
+  E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Tracker.exe /d "C:\Program Files (x86)\MSBuild\15.0\FileTracker\FileTracker32.dll" /i C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\WinLauncher.tlog /r "C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\APP\APPLICATION.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\APP\LOGGER.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\CATEGORYLIST.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\COMMANDDIALOG.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\COMMANDEDITFORM.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\CONFIGWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\CONFIRMWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\CONTEXTMENU.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\DROPDOWNMENU.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\HOTKEYDIALOG.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\HOTKEYEDITFORM.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\PROMPTWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\SETTINGSPAGE.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\SHORTCUTDIALOG.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\SHORTCUTEDITFORM.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\SHORTCUTPAGE.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\TEXTBOX.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\URLDIALOG.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\URLEDITFORM.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\CONFIG\WAITWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\GLASSWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\KEYBOARDHOOK.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\MAIN.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\MOUSEHOOK.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\POPUPWINDOW.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\SERVICES\FAVICONFETCHER.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\SERVICES\FOLDERWATCHER.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\SERVICES\PRIVILEGELAUNCHSERVICE.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\SERVICES\SYNCFOLDERSERVICE.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\SHORTCUTMANAGER.CPP|C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\TRAYMENUWINDOW.CPP" /b MSBuildConsole_CancelEventffc9957732f2485fa440b72a905ba3f3  /c "E:\Visual Studio 2026\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\CL.exe"  /c /Zi /nologo /W3 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _WIN32_WINNT=0x0601 /D NDEBUG /D _WINDOWS /D _CRT_SECURE_NO_WARNINGS /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /permissive- /Fo"WinLauncher\x64\Release\\" /Fd"WinLauncher\x64\Release\vc143.pdb" /external:W3 /Gd /TP /FC /errorReport:queue /utf-8 /std:c++17 App\Application.cpp App\Logger.cpp main.cpp MouseHook.cpp KeyboardHook.cpp ShortcutManager.cpp GlassWindow.cpp PopupWindow.cpp TrayMenuWindow.cpp Config\ConfigWindow.cpp Config\CategoryList.cpp Config\ContextMenu.cpp Config\ShortcutPage.cpp Config\SettingsPage.cpp Config\DropDownMenu.cpp Config\PromptWindow.cpp Config\ConfirmWindow.cpp Config\WaitWindow.cpp Config\ShortcutDialog.cpp Config\ShortcutEditForm.cpp Config\HotkeyDialog.cpp Config\HotkeyEditForm.cpp Config\UrlDialog.cpp Config\UrlEditForm.cpp Config\CommandDialog.cpp Config\CommandEditForm.cpp Config\TextBox.cpp Services\FolderWatcher.cpp Services\FaviconFetcher.cpp Services\SyncFolderService.cpp Services\PrivilegeLaunchService.cpp
+  Application.cpp
+  Logger.cpp
+  main.cpp
+  MouseHook.cpp
+  KeyboardHook.cpp
+  ShortcutManager.cpp
+  GlassWindow.cpp
+  PopupWindow.cpp
+  TrayMenuWindow.cpp
+  ConfigWindow.cpp
+  CategoryList.cpp
+  ContextMenu.cpp
+  ShortcutPage.cpp
+  SettingsPage.cpp
+  DropDownMenu.cpp
+  PromptWindow.cpp
+  ConfirmWindow.cpp
+  WaitWindow.cpp
+  ShortcutDialog.cpp
+  ShortcutEditForm.cpp
+  ÕýÔÚ±àÒë...
+  HotkeyDialog.cpp
+  HotkeyEditForm.cpp
+  UrlDialog.cpp
+  UrlEditForm.cpp
+  CommandDialog.cpp
+  CommandEditForm.cpp
+  TextBox.cpp
+  FolderWatcher.cpp
+  FaviconFetcher.cpp
+  SyncFolderService.cpp
+  PrivilegeLaunchService.cpp
+Done executing task "CL".
+Done building target "ClCompile" in project "WinLauncher.vcxproj".
+Target "AfterClCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ClCompile" depends on it):
+Done building target "AfterClCompile" in project "WinLauncher.vcxproj".
+Target "_ClCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_BuildCompileAction" depends on it):
+Done building target "_ClCompile" in project "WinLauncher.vcxproj".
+Target "BeforeResourceCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ResourceCompile" depends on it):
+Done building target "BeforeResourceCompile" in project "WinLauncher.vcxproj".
+Target "MakeDirsForResourceCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ResourceCompile" depends on it):
+Task "MakeDir"
+Done executing task "MakeDir".
+Done building target "MakeDirsForResourceCompile" in project "WinLauncher.vcxproj".
+Target "_SelectedFiles" skipped. Previously built successfully.
+Target "SelectCustomBuild" skipped. Previously built successfully.
+Target "SelectResourceCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "ResourceCompile" depends on it):
+Done building target "SelectResourceCompile" in project "WinLauncher.vcxproj".
+Target "ResourceCompile" in file "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets" from project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (target "_ResourceCompile" depends on it):
+Using "RC" task from assembly "E:\Visual Studio 2026\MSBuild\Microsoft\VC\v170\Microsoft.Build.CppTasks.Common.dll".
+Task "RC"
+  All source files are not up-to-date: missing command TLog "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\WinLauncher.tlog\rc.command.1.tlog".
+  C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe /D _UNICODE /D UNICODE /l"0x0409" /nologo /fo"WinLauncher\x64\Release\resource.res" resource.rc 
+  Tracking command:
+  E:\Visual Studio 2026\MSBuild\Current\Bin\amd64\Tracker.exe /d "C:\Program Files (x86)\MSBuild\15.0\FileTracker\FileTracker32.dll" /i C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\WinLauncher.tlog /r C:\USERS\ADMINISTRATOR\DESKTOP\WINLAUNCHER\WINLAUNCHER\RESOURCE.RC /b MSBuildConsole_CancelEvent5a4fb1fcc2f148cbac690bcf167f3a12  /c "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe"  /D _UNICODE /D UNICODE /l"0x0409" /nologo /fo"WinLauncher\x64\Release\resource.res" resource.rc 
+resource.rc(13): error RC2104: undefined keyword or key name: VOS_NT_WINDOWS32 [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+  
+  The command exited with code 1.
+Done executing task "RC" -- FAILED.
+Done building target "ResourceCompile" in project "WinLauncher.vcxproj" -- FAILED.
+Done Building Project "C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (Rebuild target(s)) -- FAILED.
+
+Build FAILED.
+
+"C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj" (Rebuild target) (1) ->
+(ResourceCompile target) -> 
+  resource.rc(13): error RC2104: undefined keyword or key name: VOS_NT_WINDOWS32 [C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher.vcxproj]
+
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:25.46

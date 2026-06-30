@@ -17,7 +17,7 @@ public:
     void OnLButtonDown(POINT pt, bool& repaint);
     void OnLButtonUp(POINT pt, bool& repaint);
     virtual void OnRButtonDown(POINT pt, bool& repaint);
-    bool IsAnimating() const { return m_animating; }
+    bool IsAnimating() const { return m_animating || m_isAnimatingSelect; }
     void UpdateAnimation(float dt, bool& repaint);
     void Reset();
 

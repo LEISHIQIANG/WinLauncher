@@ -23,7 +23,7 @@
 
 static const int ICON_SIZE = 24;
 static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
-static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 16;
+static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 8;
 
 ConfigWindow* ConfigWindow::s_instance = nullptr;
 AppContext* ConfigWindow::s_ctx = nullptr;

@@ -62,8 +62,6 @@ void CategoryList::BeginSelectAnimation(float targetY)
     {
         m_selectAnimCurrentY = targetY;
         m_selectAnimTargetY = targetY;
-        m_selectAnimStartY = targetY;
-        m_selectAnimElapsed = 0.0f;
         m_isAnimatingSelect = false;
         return;
     }
@@ -71,9 +69,7 @@ void CategoryList::BeginSelectAnimation(float targetY)
     if (std::abs(targetY - m_selectAnimTargetY) <= 0.1f)
         return;
 
-    m_selectAnimStartY = m_selectAnimCurrentY;
     m_selectAnimTargetY = targetY;
-    m_selectAnimElapsed = 0.0f;
     m_isAnimatingSelect = true;
 }
 
@@ -178,9 +174,25 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     // Category Text
     if (tfLeft)
     {
+        float textLeft = 18.0f;
         D2D1_COLOR_F textClr = UIStyle::ThemeColor::TextNormal().d2d;
-        if (isActive)
+
+        if (animEnabled && m_selectAnimCurrentY >= 0.0f)
         {
+            float dist = std::abs(cy - m_selectAnimCurrentY);
+            float factor = 0.0f;
+            if (dist < 40.0f) factor = 1.0f - dist / 40.0f;
+
+            textLeft = 18.0f + 4.0f * factor;
+            textClr = UIStyle::LerpColor(
+                UIStyle::ThemeColor::TextNormal().d2d,
+                UIStyle::ThemeColor::Accent().d2d,
+                factor
+            );
+        }
+        else if (isActive)
+        {
+            textLeft = 22.0f;
             textClr = UIStyle::ThemeColor::Accent().d2d;
         }
 
@@ -189,19 +201,6 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
         if (tb)
         {
             std::wstring name = m_owner->GetCategoryName(i);
-            float textLeft = 18.0f;
-            if (animEnabled && m_selectAnimCurrentY >= 0.0f)
-            {
-                float dist = std::abs(cy - m_selectAnimCurrentY);
-                float factor = 0.0f;
-                if (dist < 40.0f) factor = 1.0f - dist / 40.0f;
-                textLeft = 18.0f + 2.0f * factor;
-            }
-            else if (isActive)
-            {
-                textLeft = 22.0f;
-            }
-
             rt->DrawTextW(name.c_str(), (UINT32)name.size(), tfLeft,
                 D2D1::RectF(textLeft, cy, 115, cy + 32), tb);
             tb->Release();
@@ -612,8 +611,7 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         {
             m_selectAnimCurrentY = targetActiveY;
             m_selectAnimTargetY = targetActiveY;
-            m_selectAnimStartY = targetActiveY;
-            m_selectAnimElapsed = 0.0f;
+            m_isAnimatingSelect = false;
         }
         else
         {
@@ -623,20 +621,18 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
 
     if (m_isAnimatingSelect)
     {
-        constexpr float kSelectAnimDuration = 0.12f;
-        m_selectAnimElapsed += dt;
-        float t = m_selectAnimElapsed / kSelectAnimDuration;
-        float eased = EaseOutCubicLocal(t);
-        m_selectAnimCurrentY = m_selectAnimStartY + (m_selectAnimTargetY - m_selectAnimStartY) * eased;
-
-        if (t >= 1.0f || std::abs(m_selectAnimTargetY - m_selectAnimCurrentY) <= 0.1f)
+        float dy = m_selectAnimTargetY - m_selectAnimCurrentY;
+        if (std::abs(dy) > 0.05f)
+        {
+            m_selectAnimCurrentY += dy * (1.0f - std::exp(-22.0f * dt));
+            selectMoving = true;
+            repaint = true;
+        }
+        else
         {
             m_selectAnimCurrentY = m_selectAnimTargetY;
             m_isAnimatingSelect = false;
         }
-
-        selectMoving = true;
-        repaint = true;
     }
 
     if (!m_animating && !selectMoving) return;

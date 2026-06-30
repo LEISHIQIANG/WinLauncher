@@ -1,0 +1,92 @@
+﻿  Application.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\App\Application.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  Logger.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\App\Logger.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  main.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\main.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  MouseHook.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\MouseHook.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  KeyboardHook.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\KeyboardHook.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ShortcutManager.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\ShortcutManager.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  GlassWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\GlassWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ShadowWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\ShadowWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  PopupWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\PopupWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  TrayMenuWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\TrayMenuWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ToastWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\ToastWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ConfigWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ConfigWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  CategoryList.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\CategoryList.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ContextMenu.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ContextMenu.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ShortcutPage.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ShortcutPage.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  SettingsPage.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\SettingsPage.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  DropDownMenu.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\DropDownMenu.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  PromptWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\PromptWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ConfirmWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ConfirmWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  WaitWindow.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\WaitWindow.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  正在编译...
+  ShortcutDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ShortcutDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  ShortcutEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ShortcutEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  HotkeyDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\HotkeyDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  HotkeyEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\HotkeyEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  UrlDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\UrlDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  UrlEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\UrlEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  CommandDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\CommandDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  CommandEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\CommandEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  BuiltinIconDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\BuiltinIconDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  SystemIconDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\SystemIconDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  SystemIconEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\SystemIconEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  TextBox.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\TextBox.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  FolderWatcher.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\FolderWatcher.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  FaviconFetcher.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\FaviconFetcher.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  SyncFolderService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\SyncFolderService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  PrivilegeLaunchService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\PrivilegeLaunchService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  EnvironmentDetector.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\EnvironmentDetector.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  FileSelectionService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\FileSelectionService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  MacroService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\MacroService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  BatchLaunchService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\BatchLaunchService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  正在编译...
+  UpdateService.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\UpdateService.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  MacroDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\MacroDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  MacroEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\MacroEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  BatchLaunchDialog.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\BatchLaunchDialog.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  BatchLaunchEditForm.cpp
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\BatchLaunchEditForm.cpp(1,1): error C1041: 无法打开程序数据库“C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\x64\Release\vc143.pdb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
