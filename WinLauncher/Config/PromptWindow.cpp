@@ -52,7 +52,7 @@ bool PromptWindow::ShowChoose(HWND parent, const wchar_t* title, const wchar_t* 
                               const std::vector<std::wstring>& options,
                               std::wstring& outResult, AppContext* ctx)
 {
-    int h = 80 + std::max(2, (int)options.size()) * 28;
+    int h = 110 + std::max(2, (int)options.size()) * 28;
     return ShowInternal(parent, Mode::Choose, title, prompt, outResult, options,
                         L"", ctx, 260, h);
 }
@@ -62,7 +62,7 @@ bool PromptWindow::ShowConfirm(HWND parent, const wchar_t* title, const wchar_t*
 {
     std::wstring dummy;
     return ShowInternal(parent, Mode::Confirm, title, message, dummy, {},
-                        L"", ctx, 280, 110);
+                        L"", ctx, 300, 130);
 }
 
 // ──── Internal runner ───────────────────────────────────────────────────
@@ -188,8 +188,9 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         {
             if (m_mode == Mode::Choose)
             {
-                if (m_selectedOption >= 0 && m_selectedOption < (int)m_chooseOptions.size())
-                    m_result = m_chooseOptions[m_selectedOption];
+                if (m_selectedOption < 0 || m_selectedOption >= (int)m_chooseOptions.size())
+                    return 0; // nothing selected, ignore OK
+                m_result = m_chooseOptions[m_selectedOption];
             }
             else if (m_mode == Mode::Input || m_mode == Mode::Password)
             {
@@ -325,11 +326,11 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         bool hcl = HitTestCloseButton(pt);
         if (hcl != m_hoveredClose) { m_hoveredClose = hcl; repaint = true; }
 
-        // Hover for choose options
+        // Hover for choose options (only update on valid options, keep last selection on blank)
         if (m_mode == Mode::Choose)
         {
             int ho2 = HitTestChooseOption(pt);
-            if (ho2 != m_selectedOption && !m_hoveredOk && !m_hoveredCancel)
+            if (ho2 >= 0 && ho2 != m_selectedOption)
             {
                 m_selectedOption = ho2;
                 repaint = true;
@@ -559,7 +560,7 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         if (promptBrush)
         {
             float promptTop = 36.0f;
-            float promptH = (m_mode == Mode::Confirm) ? 42.0f : 20.0f;
+            float promptH = (m_mode == Mode::Confirm) ? 42.0f : 16.0f; // original: 52-36=16
             rt->DrawTextW(m_prompt.c_str(), (UINT32)m_prompt.size(), m_tfPrompt.Get(),
                           D2D1::RectF(20, promptTop, w - 20, promptTop + promptH), promptBrush.Get());
         }
@@ -628,8 +629,8 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     // 5. OK and Cancel Buttons
     {
-        float btnBaseY = h - 32.0f;
         float btnH = 24.0f;
+        float btnBaseY = h - 37.0f; // original layout: buttons at y=98 on 135px window (135-37=98)
 
         // OK Button
         float okLeft = w - 155.0f;
@@ -697,7 +698,7 @@ bool PromptWindow::HitTestOkButton(POINT pt)
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    float btnBaseY = h - 32.0f;
+    float btnBaseY = h - 37.0f;
     return HitTestRect(pt, D2D1::RectF(w - 155.0f, btnBaseY, w - 90.0f, btnBaseY + 24.0f));
 }
 
@@ -707,7 +708,7 @@ bool PromptWindow::HitTestCancelButton(POINT pt)
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    float btnBaseY = h - 32.0f;
+    float btnBaseY = h - 37.0f;
     return HitTestRect(pt, D2D1::RectF(w - 85.0f, btnBaseY, w - 20.0f, btnBaseY + 24.0f));
 }
 
