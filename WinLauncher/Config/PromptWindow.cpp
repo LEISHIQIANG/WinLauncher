@@ -57,12 +57,44 @@ bool PromptWindow::ShowChoose(HWND parent, const wchar_t* title, const wchar_t* 
                         L"", ctx, 260, h);
 }
 
+// Measure text width using project's default font (10pt Microsoft YaHei UI)
+static int MeasureConfirmWidth(const wchar_t* text)
+{
+    ComPtr<IDWriteFactory> dw;
+    HRESULT hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+        __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&dw));
+    if (FAILED(hr) || !dw) return 280;
+
+    ComPtr<IDWriteTextFormat> tf;
+    hr = dw->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+        10.0f, L"zh-cn", &tf);
+    if (FAILED(hr) || !tf) return 280;
+    tf->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+
+    ComPtr<IDWriteTextLayout> layout;
+    size_t len = wcslen(text);
+    hr = dw->CreateTextLayout(text, (UINT32)len, tf.Get(), 9999.0f, 9999.0f, &layout);
+    if (FAILED(hr) || !layout) return 280;
+
+    DWRITE_TEXT_METRICS metrics;
+    layout->GetMetrics(&metrics);
+
+    // padding: 20 left + 80 (title/buttons/close) + 20 right = ~120
+    int w = (int)(metrics.width + 20.0f + 80.0f + 20.0f);
+    // Clamp: min 260, max 600
+    if (w < 260) w = 260;
+    if (w > 600) w = 600;
+    return w;
+}
+
 bool PromptWindow::ShowConfirm(HWND parent, const wchar_t* title, const wchar_t* message,
                                AppContext* ctx)
 {
     std::wstring dummy;
+    int w = MeasureConfirmWidth(message);
     return ShowInternal(parent, Mode::Confirm, title, message, dummy, {},
-                        L"", ctx, 300, 130);
+                        L"", ctx, w, 130);
 }
 
 // ──── Internal runner ───────────────────────────────────────────────────
