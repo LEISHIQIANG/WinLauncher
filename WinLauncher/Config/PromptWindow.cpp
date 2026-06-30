@@ -82,8 +82,8 @@ static int MeasureConfirmWidth(const wchar_t* text)
 
     // padding: 20 left + 80 (title/buttons/close) + 20 right = ~120
     int w = (int)(metrics.width + 20.0f + 80.0f + 20.0f);
-    // Clamp: min 200 (fits 4-char prompt + buttons), max 600
-    if (w < 200) w = 200;
+    // Clamp: min 260, max 600
+    if (w < 260) w = 260;
     if (w > 600) w = 600;
     return w;
 }
