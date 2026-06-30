@@ -206,99 +206,99 @@ Configuration is stored as UTF-8 INI at:
 
 ```
 WinLauncher/
-├── WinLauncher.sln                 # Visual Studio solution
-├── assets/                         # App icons (.ico)
-└── WinLauncher/
-    ├── main.cpp                    # WinMain entry point
-    ├── resource.h / resource.rc    # Windows resources
-    ├── version.h                   # Version macros (0.5.1.4)
-    ├── WinLauncher.exe.manifest    # App manifest (ComCtl6, Win10)
-    │
-    ├── App/                        # Application lifecycle
-    │   ├── Application.h/.cpp      # Init, lifecycle, message loop
-    │   ├── AppContext.h            # DI container
-    │   ├── AppMessages.h           # Custom WM_APP+N messages
-    │   ├── EventBus.h              # Pub/sub event system
-    │   ├── Logger.h/.cpp           # Thread-safe file logger
-    │   └── PluginHost.h            # Plugin system (IPlugin)
-    │
-    ├── Model/                      # Data models
-    │   ├── ShortcutInfo.h          # ShortcutInfo, PopupPage, enums
-    │   └── AppearanceSettings.h    # Theme & appearance config
-    │
-    ├── Services/                   # Business logic layer
-    │   ├── IConfigService.h        # Config service interface
-    │   ├── IIconService.h          # Icon extraction interface
-    │   ├── IniConfigRepository.h    # INI file config store
-    │   ├── SystemIconService.h     # File/system icon extraction
-    │   ├── FolderWatcher.h/.cpp    # ReadDirectoryChangesW monitor
-    │   ├── SyncFolderService.h/.cpp # Folder shortcut loading
-    │   ├── FaviconFetcher.h/.cpp   # Website favicon fetcher
-    │   ├── PrivilegeLaunchService.h/.cpp # UAC admin/de-elevation
-    │   ├── EnvironmentDetector.h/.cpp    # Python, Git Bash detection
-    │   ├── FileSelectionService.h/.cpp   # Explorer file capture
-    │   ├── MacroService.h/.cpp     # Macro record & playback
-    │   ├── BatchLaunchService.h/.cpp     # Sequential batch launch
-    │   ├── UpdateService.h/.cpp    # GitHub auto-update
-    │   ├── IConfigImportService.h   # Config import interface
-    │   ├── JsonImportHelper.h      # JSON config import
-    │   └── QuickLauncherConfigImport.h   # QuickLauncher import
-    │
-    ├── ViewModel/                  # MVVM ViewModels
-    │   ├── PopupViewModel.h        # Popup state, page switching, animation
-    │   └── ConfigViewModel.h       # Config management, CRUD
-    │
-    ├── UI/
-    │   ├── Controls/
-    │   │   ├── IControl.h          # Control interface
-    │   │   ├── Button.h            # Button control
-    │   │   └── IconRenderer.h      # Icon rendering helper
-    │   └── Render/
-    │       ├── IRenderLayer.h      # Render layer interface
-    │       ├── BackgroundLayer.h   # Background rendering
-    │       ├── OverlayLayer.h      # Overlay rendering
-    │       └── Compositor.h        # Layer compositor
-    │
-    ├── Config/                     # Settings & management UI
-    │   ├── ConfigWindow.h/.cpp     # Main settings window
-    │   ├── CategoryList.h/.cpp     # Category sidebar
-    │   ├── ShortcutPage.h/.cpp     # Shortcut management
-    │   ├── SettingsPage.h/.cpp     # General settings
-    │   ├── ContextMenu.h/.cpp      # Right-click menu
-    │   ├── DropDownMenu.h/.cpp     # Dropdown menu
-    │   ├── UIStyle.h               # Theme system, colors, typography
-    │   ├── TextBox.h/.cpp          # Custom text input
-    │   ├── ShortcutDialog.h/.cpp   # Add/edit shortcut dialog
-    │   ├── ShortcutEditForm.h/.cpp # Shortcut editing form
-    │   ├── HotkeyDialog.h/.cpp     # Hotkey editing dialog
-    │   ├── HotkeyEditForm.h/.cpp   # Hotkey editing form
-    │   ├── UrlDialog.h/.cpp        # URL editing dialog
-    │   ├── UrlEditForm.h/.cpp      # URL editing form
-    │   ├── CommandDialog.h/.cpp    # Command editing dialog
-    │   ├── CommandEditForm.h/.cpp  # Command editing form
-    │   ├── MacroDialog.h/.cpp      # Macro editing dialog
-    │   ├── MacroEditForm.h/.cpp    # Macro editing form
-    │   ├── BatchLaunchDialog.h/.cpp     # Batch launch dialog
-    │   ├── BatchLaunchEditForm.h/.cpp   # Batch launch form
-    │   ├── BuiltinIconDialog.h/.cpp     # Built-in icon picker
-    │   ├── SystemIconDialog.h/.cpp      # System icon picker
-    │   ├── SystemIconEditForm.h/.cpp    # System icon editing
-    │   ├── PromptWindow.h/.cpp     # Prompt dialog
-    │   ├── ConfirmWindow.h/.cpp    # Confirmation dialog
-    │   └── WaitWindow.h/.cpp       # Wait/progress dialog
-    │
-    ├── BaseWindow.h                # Abstract Win32 window base
-    ├── GlassWindow.h/.cpp          # D2D frosted glass window
-    ├── ShadowWindow.h/.cpp         # Drop shadow (GDI blur)
-    ├── PopupWindow.h/.cpp          # Main launcher popup
-    ├── TrayMenuWindow.h/.cpp       # System tray menu
-    ├── ToastWindow.h/.cpp          # Toast notifications
-    ├── KeyboardHook.h/.cpp         # WH_KEYBOARD_LL hook
-    ├── MouseHook.h/.cpp            # WH_MOUSE_LL hook
-    ├── ShortcutManager.h/.cpp      # Legacy shortcut facade
-    ├── AutoStartHelper.h           # Task Scheduler auto-start
-    ├── DpiHelper.h                 # Per-monitor DPI helpers
-    └── InputFocusGuard.h           # Text input context guard
++-- WinLauncher.sln                       # Visual Studio solution
++-- assets/                               # App icons (.ico)
+\-- WinLauncher/
+    +-- main.cpp                          # WinMain entry point
+    +-- resource.h / resource.rc          # Windows resources
+    +-- version.h                         # Version macros (0.5.1.4)
+    +-- WinLauncher.exe.manifest          # App manifest (ComCtl6, Win10)
+    |
+    +-- App/                              # Application lifecycle
+    |   +-- Application.h/.cpp            # Init, lifecycle, message loop
+    |   +-- AppContext.h                  # DI container
+    |   +-- AppMessages.h                 # Custom WM_APP+N messages
+    |   +-- EventBus.h                    # Pub/sub event system
+    |   +-- Logger.h/.cpp                 # Thread-safe file logger
+    |   \-- PluginHost.h                  # Plugin system (IPlugin)
+    |
+    +-- Model/                            # Data models
+    |   +-- ShortcutInfo.h                # ShortcutInfo, PopupPage, enums
+    |   \-- AppearanceSettings.h          # Theme & appearance config
+    |
+    +-- Services/                         # Business logic layer
+    |   +-- IConfigService.h              # Config service interface
+    |   +-- IIconService.h                # Icon extraction interface
+    |   +-- IniConfigRepository.h         # INI file config store
+    |   +-- SystemIconService.h           # File/system icon extraction
+    |   +-- FolderWatcher.h/.cpp          # ReadDirectoryChangesW monitor
+    |   +-- SyncFolderService.h/.cpp      # Folder shortcut loading
+    |   +-- FaviconFetcher.h/.cpp         # Website favicon fetcher
+    |   +-- PrivilegeLaunchService.h/.cpp # UAC admin/de-elevation
+    |   +-- EnvironmentDetector.h/.cpp    # Python, Git Bash detection
+    |   +-- FileSelectionService.h/.cpp   # Explorer file capture
+    |   +-- MacroService.h/.cpp           # Macro record & playback
+    |   +-- BatchLaunchService.h/.cpp     # Sequential batch launch
+    |   +-- UpdateService.h/.cpp          # GitHub auto-update
+    |   +-- IConfigImportService.h        # Config import interface
+    |   +-- JsonImportHelper.h            # JSON config import
+    |   \-- QuickLauncherConfigImport.h   # QuickLauncher import
+    |
+    +-- ViewModel/                        # MVVM ViewModels
+    |   +-- PopupViewModel.h              # Popup state, page switching, animation
+    |   \-- ConfigViewModel.h             # Config management, CRUD
+    |
+    +-- UI/
+    |   +-- Controls/
+    |   |   +-- IControl.h                # Control interface
+    |   |   +-- Button.h                  # Button control
+    |   |   \-- IconRenderer.h            # Icon rendering helper
+    |   \-- Render/
+    |       +-- IRenderLayer.h            # Render layer interface
+    |       +-- BackgroundLayer.h         # Background rendering
+    |       +-- OverlayLayer.h            # Overlay rendering
+    |       \-- Compositor.h              # Layer compositor
+    |
+    +-- Config/                           # Settings & management UI
+    |   +-- ConfigWindow.h/.cpp           # Main settings window
+    |   +-- CategoryList.h/.cpp           # Category sidebar
+    |   +-- ShortcutPage.h/.cpp           # Shortcut management
+    |   +-- SettingsPage.h/.cpp           # General settings
+    |   +-- ContextMenu.h/.cpp            # Right-click menu
+    |   +-- DropDownMenu.h/.cpp           # Dropdown menu
+    |   +-- UIStyle.h                     # Theme system, colors, typography
+    |   +-- TextBox.h/.cpp                # Custom text input
+    |   +-- ShortcutDialog.h/.cpp         # Add/edit shortcut dialog
+    |   +-- ShortcutEditForm.h/.cpp       # Shortcut editing form
+    |   +-- HotkeyDialog.h/.cpp           # Hotkey editing dialog
+    |   +-- HotkeyEditForm.h/.cpp         # Hotkey editing form
+    |   +-- UrlDialog.h/.cpp              # URL editing dialog
+    |   +-- UrlEditForm.h/.cpp            # URL editing form
+    |   +-- CommandDialog.h/.cpp          # Command editing dialog
+    |   +-- CommandEditForm.h/.cpp        # Command editing form
+    |   +-- MacroDialog.h/.cpp            # Macro editing dialog
+    |   +-- MacroEditForm.h/.cpp          # Macro editing form
+    |   +-- BatchLaunchDialog.h/.cpp      # Batch launch dialog
+    |   +-- BatchLaunchEditForm.h/.cpp    # Batch launch form
+    |   +-- BuiltinIconDialog.h/.cpp      # Built-in icon picker
+    |   +-- SystemIconDialog.h/.cpp       # System icon picker
+    |   +-- SystemIconEditForm.h/.cpp     # System icon editing
+    |   +-- PromptWindow.h/.cpp           # Prompt dialog
+    |   +-- ConfirmWindow.h/.cpp          # Confirmation dialog
+    |   \-- WaitWindow.h/.cpp             # Wait/progress dialog
+    |
+    +-- BaseWindow.h                      # Abstract Win32 window base
+    +-- GlassWindow.h/.cpp                # D2D frosted glass window
+    +-- ShadowWindow.h/.cpp               # Drop shadow (GDI blur)
+    +-- PopupWindow.h/.cpp                # Main launcher popup
+    +-- TrayMenuWindow.h/.cpp             # System tray menu
+    +-- ToastWindow.h/.cpp                # Toast notifications
+    +-- KeyboardHook.h/.cpp               # WH_KEYBOARD_LL hook
+    +-- MouseHook.h/.cpp                  # WH_MOUSE_LL hook
+    +-- ShortcutManager.h/.cpp            # Legacy shortcut facade
+    +-- AutoStartHelper.h                 # Task Scheduler auto-start
+    +-- DpiHelper.h                       # Per-monitor DPI helpers
+    \-- InputFocusGuard.h                 # Text input context guard
 ```
 
 ---
@@ -549,99 +549,99 @@ msbuild WinLauncher.sln /p:Configuration=Release /p:Platform=x64
 
 ```
 WinLauncher/
-├── WinLauncher.sln                 # Visual Studio 解决方案
-├── assets/                         # 应用图标 (.ico)
-└── WinLauncher/
-    ├── main.cpp                    # WinMain 入口
-    ├── resource.h / resource.rc    # Windows 资源
-    ├── version.h                   # 版本宏 (0.5.1.4)
-    ├── WinLauncher.exe.manifest    # 应用清单 (ComCtl6, Win10)
-    │
-    ├── App/                        # 应用生命周期
-    │   ├── Application.h/.cpp      # 初始化、生命周期、消息循环
-    │   ├── AppContext.h            # 依赖注入容器
-    │   ├── AppMessages.h           # 自定义 WM_APP+N 消息
-    │   ├── EventBus.h              # 发布/订阅事件系统
-    │   ├── Logger.h/.cpp           # 线程安全文件日志
-    │   └── PluginHost.h            # 插件系统 (IPlugin)
-    │
-    ├── Model/                      # 数据模型
-    │   ├── ShortcutInfo.h          # ShortcutInfo、PopupPage、枚举
-    │   └── AppearanceSettings.h    # 主题与外观配置
-    │
-    ├── Services/                   # 业务逻辑层
-    │   ├── IConfigService.h        # 配置服务接口
-    │   ├── IIconService.h          # 图标提取接口
-    │   ├── IniConfigRepository.h    # INI 文件配置存储
-    │   ├── SystemIconService.h     # 文件/系统图标提取
-    │   ├── FolderWatcher.h/.cpp    # ReadDirectoryChangesW 监控
-    │   ├── SyncFolderService.h/.cpp # 文件夹快捷方式加载
-    │   ├── FaviconFetcher.h/.cpp   # 网站图标获取
-    │   ├── PrivilegeLaunchService.h/.cpp # UAC 提权/降权
-    │   ├── EnvironmentDetector.h/.cpp    # Python、Git Bash 检测
-    │   ├── FileSelectionService.h/.cpp   # 资源管理器文件捕获
-    │   ├── MacroService.h/.cpp     # 宏录制与回放
-    │   ├── BatchLaunchService.h/.cpp     # 顺序批量启动
-    │   ├── UpdateService.h/.cpp    # GitHub 自动更新
-    │   ├── IConfigImportService.h   # 配置导入接口
-    │   ├── JsonImportHelper.h      # JSON 配置导入
-    │   └── QuickLauncherConfigImport.h   # QuickLauncher 导入
-    │
-    ├── ViewModel/                  # MVVM 视图模型
-    │   ├── PopupViewModel.h        # 弹窗状态、页面切换、动画
-    │   └── ConfigViewModel.h       # 配置管理、CRUD
-    │
-    ├── UI/
-    │   ├── Controls/
-    │   │   ├── IControl.h          # 控件接口
-    │   │   ├── Button.h            # 按钮控件
-    │   │   └── IconRenderer.h      # 图标渲染辅助
-    │   └── Render/
-    │       ├── IRenderLayer.h      # 渲染层接口
-    │       ├── BackgroundLayer.h   # 背景渲染
-    │       ├── OverlayLayer.h      # 叠加层渲染
-    │       └── Compositor.h        # 图层合成器
-    │
-    ├── Config/                     # 设置与管理界面
-    │   ├── ConfigWindow.h/.cpp     # 主设置窗口
-    │   ├── CategoryList.h/.cpp     # 分类侧边栏
-    │   ├── ShortcutPage.h/.cpp     # 快捷方式管理
-    │   ├── SettingsPage.h/.cpp     # 通用设置
-    │   ├── ContextMenu.h/.cpp      # 右键菜单
-    │   ├── DropDownMenu.h/.cpp     # 下拉菜单
-    │   ├── UIStyle.h               # 主题系统、颜色、字体排版
-    │   ├── TextBox.h/.cpp          # 自定义文本输入
-    │   ├── ShortcutDialog.h/.cpp   # 添加/编辑快捷方式对话框
-    │   ├── ShortcutEditForm.h/.cpp # 快捷方式编辑表单
-    │   ├── HotkeyDialog.h/.cpp     # 热键编辑对话框
-    │   ├── HotkeyEditForm.h/.cpp   # 热键编辑表单
-    │   ├── UrlDialog.h/.cpp        # URL 编辑对话框
-    │   ├── UrlEditForm.h/.cpp      # URL 编辑表单
-    │   ├── CommandDialog.h/.cpp    # 命令编辑对话框
-    │   ├── CommandEditForm.h/.cpp  # 命令编辑表单
-    │   ├── MacroDialog.h/.cpp      # 宏编辑对话框
-    │   ├── MacroEditForm.h/.cpp    # 宏编辑表单
-    │   ├── BatchLaunchDialog.h/.cpp     # 批量启动对话框
-    │   ├── BatchLaunchEditForm.h/.cpp   # 批量启动表单
-    │   ├── BuiltinIconDialog.h/.cpp     # 内置图标选择器
-    │   ├── SystemIconDialog.h/.cpp      # 系统图标选择器
-    │   ├── SystemIconEditForm.h/.cpp    # 系统图标编辑
-    │   ├── PromptWindow.h/.cpp     # 提示对话框
-    │   ├── ConfirmWindow.h/.cpp    # 确认对话框
-    │   └── WaitWindow.h/.cpp       # 等待/进度对话框
-    │
-    ├── BaseWindow.h                # 抽象 Win32 窗口基类
-    ├── GlassWindow.h/.cpp          # D2D 毛玻璃窗口
-    ├── ShadowWindow.h/.cpp         # 投影窗口 (GDI 模糊)
-    ├── PopupWindow.h/.cpp          # 主启动器弹窗
-    ├── TrayMenuWindow.h/.cpp       # 系统托盘菜单
-    ├── ToastWindow.h/.cpp          # Toast 通知
-    ├── KeyboardHook.h/.cpp         # WH_KEYBOARD_LL 钩子
-    ├── MouseHook.h/.cpp            # WH_MOUSE_LL 钩子
-    ├── ShortcutManager.h/.cpp      # 遗留快捷方式门面
-    ├── AutoStartHelper.h           # 任务计划程序开机自启
-    ├── DpiHelper.h                 # 逐显示器 DPI 辅助
-    └── InputFocusGuard.h           # 文本输入上下文保护
++-- WinLauncher.sln                       # Visual Studio 解决方案
++-- assets/                               # 应用图标 (.ico)
+\-- WinLauncher/
+    +-- main.cpp                          # WinMain 入口
+    +-- resource.h / resource.rc          # Windows 资源
+    +-- version.h                         # 版本宏 (0.5.1.4)
+    +-- WinLauncher.exe.manifest          # 应用清单 (ComCtl6, Win10)
+    |
+    +-- App/                              # 应用生命周期
+    |   +-- Application.h/.cpp            # 初始化、生命周期、消息循环
+    |   +-- AppContext.h                  # 依赖注入容器
+    |   +-- AppMessages.h                 # 自定义 WM_APP+N 消息
+    |   +-- EventBus.h                    # 发布/订阅事件系统
+    |   +-- Logger.h/.cpp                 # 线程安全文件日志
+    |   \-- PluginHost.h                  # 插件系统 (IPlugin)
+    |
+    +-- Model/                            # 数据模型
+    |   +-- ShortcutInfo.h                # ShortcutInfo、PopupPage、枚举
+    |   \-- AppearanceSettings.h          # 主题与外观配置
+    |
+    +-- Services/                         # 业务逻辑层
+    |   +-- IConfigService.h              # 配置服务接口
+    |   +-- IIconService.h                # 图标提取接口
+    |   +-- IniConfigRepository.h         # INI 文件配置存储
+    |   +-- SystemIconService.h           # 文件/系统图标提取
+    |   +-- FolderWatcher.h/.cpp          # ReadDirectoryChangesW 监控
+    |   +-- SyncFolderService.h/.cpp      # 文件夹快捷方式加载
+    |   +-- FaviconFetcher.h/.cpp         # 网站图标获取
+    |   +-- PrivilegeLaunchService.h/.cpp # UAC 提权/降权
+    |   +-- EnvironmentDetector.h/.cpp    # Python、Git Bash 检测
+    |   +-- FileSelectionService.h/.cpp   # 资源管理器文件捕获
+    |   +-- MacroService.h/.cpp           # 宏录制与回放
+    |   +-- BatchLaunchService.h/.cpp     # 顺序批量启动
+    |   +-- UpdateService.h/.cpp          # GitHub 自动更新
+    |   +-- IConfigImportService.h        # 配置导入接口
+    |   +-- JsonImportHelper.h            # JSON 配置导入
+    |   \-- QuickLauncherConfigImport.h   # QuickLauncher 导入
+    |
+    +-- ViewModel/                        # MVVM 视图模型
+    |   +-- PopupViewModel.h              # 弹窗状态、页面切换、动画
+    |   \-- ConfigViewModel.h             # 配置管理、CRUD
+    |
+    +-- UI/
+    |   +-- Controls/
+    |   |   +-- IControl.h                # 控件接口
+    |   |   +-- Button.h                  # 按钮控件
+    |   |   \-- IconRenderer.h            # 图标渲染辅助
+    |   \-- Render/
+    |       +-- IRenderLayer.h            # 渲染层接口
+    |       +-- BackgroundLayer.h         # 背景渲染
+    |       +-- OverlayLayer.h            # 叠加层渲染
+    |       \-- Compositor.h              # 图层合成器
+    |
+    +-- Config/                           # 设置与管理界面
+    |   +-- ConfigWindow.h/.cpp           # 主设置窗口
+    |   +-- CategoryList.h/.cpp           # 分类侧边栏
+    |   +-- ShortcutPage.h/.cpp           # 快捷方式管理
+    |   +-- SettingsPage.h/.cpp           # 通用设置
+    |   +-- ContextMenu.h/.cpp            # 右键菜单
+    |   +-- DropDownMenu.h/.cpp           # 下拉菜单
+    |   +-- UIStyle.h                     # 主题系统、颜色、字体排版
+    |   +-- TextBox.h/.cpp                # 自定义文本输入
+    |   +-- ShortcutDialog.h/.cpp         # 添加/编辑快捷方式对话框
+    |   +-- ShortcutEditForm.h/.cpp       # 快捷方式编辑表单
+    |   +-- HotkeyDialog.h/.cpp           # 热键编辑对话框
+    |   +-- HotkeyEditForm.h/.cpp         # 热键编辑表单
+    |   +-- UrlDialog.h/.cpp              # URL 编辑对话框
+    |   +-- UrlEditForm.h/.cpp            # URL 编辑表单
+    |   +-- CommandDialog.h/.cpp          # 命令编辑对话框
+    |   +-- CommandEditForm.h/.cpp        # 命令编辑表单
+    |   +-- MacroDialog.h/.cpp            # 宏编辑对话框
+    |   +-- MacroEditForm.h/.cpp          # 宏编辑表单
+    |   +-- BatchLaunchDialog.h/.cpp      # 批量启动对话框
+    |   +-- BatchLaunchEditForm.h/.cpp    # 批量启动表单
+    |   +-- BuiltinIconDialog.h/.cpp      # 内置图标选择器
+    |   +-- SystemIconDialog.h/.cpp       # 系统图标选择器
+    |   +-- SystemIconEditForm.h/.cpp     # 系统图标编辑
+    |   +-- PromptWindow.h/.cpp           # 提示对话框
+    |   +-- ConfirmWindow.h/.cpp          # 确认对话框
+    |   \-- WaitWindow.h/.cpp             # 等待/进度对话框
+    |
+    +-- BaseWindow.h                      # 抽象 Win32 窗口基类
+    +-- GlassWindow.h/.cpp                # D2D 毛玻璃窗口
+    +-- ShadowWindow.h/.cpp               # 投影窗口 (GDI 模糊)
+    +-- PopupWindow.h/.cpp                # 主启动器弹窗
+    +-- TrayMenuWindow.h/.cpp             # 系统托盘菜单
+    +-- ToastWindow.h/.cpp                # Toast 通知
+    +-- KeyboardHook.h/.cpp               # WH_KEYBOARD_LL 钩子
+    +-- MouseHook.h/.cpp                  # WH_MOUSE_LL 钩子
+    +-- ShortcutManager.h/.cpp            # 遗留快捷方式门面
+    +-- AutoStartHelper.h                 # 任务计划程序开机自启
+    +-- DpiHelper.h                       # 逐显示器 DPI 辅助
+    \-- InputFocusGuard.h                 # 文本输入上下文保护
 ```
 
 ---
