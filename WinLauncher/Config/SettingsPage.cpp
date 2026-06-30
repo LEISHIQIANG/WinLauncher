@@ -1723,7 +1723,7 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
 {
     if (m_categoryIndex != 0) return false;
     int currentWindowMode = m_owner->GetWindowMode();
-    if (currentWindowMode != 0 && currentWindowMode != 1) return false;
+    if (currentWindowMode != 0 && currentWindowMode != 1 && currentWindowMode != 2) return false;
 
     std::vector<int> activeIndices = { 1, 2, 3, 4, 5 };
     for (int i = 0; i < (int)activeIndices.size(); i++)
