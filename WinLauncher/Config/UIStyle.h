@@ -158,6 +158,8 @@ namespace UIStyle
     inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
     inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 2.5f };
     inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 2.5f };
+    inline ThemeConfig g_GlassDarkConfig = { 32.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
+    inline ThemeConfig g_GlassLightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
 
     inline ThemeConfig ToThemeConfig(const Model::ThemeEffectConfig& config)
     {
@@ -175,6 +177,8 @@ namespace UIStyle
         g_LightConfig = ToThemeConfig(settings.light);
         g_AcrylicDarkConfig = ToThemeConfig(settings.acrylicDark);
         g_AcrylicLightConfig = ToThemeConfig(settings.acrylicLight);
+        g_GlassDarkConfig = ToThemeConfig(settings.glassDark);
+        g_GlassLightConfig = ToThemeConfig(settings.glassLight);
     }
 
     inline Model::AppearanceSettings CaptureAppearanceSettings()
@@ -184,6 +188,8 @@ namespace UIStyle
         settings.light = ToModelConfig(g_LightConfig);
         settings.acrylicDark = ToModelConfig(g_AcrylicDarkConfig);
         settings.acrylicLight = ToModelConfig(g_AcrylicLightConfig);
+        settings.glassDark = ToModelConfig(g_GlassDarkConfig);
+        settings.glassLight = ToModelConfig(g_GlassLightConfig);
         return settings;
     }
 
@@ -427,6 +433,8 @@ namespace UIStyle
 
         static inline const ThemeConfig& ConfigFor(ThemeMode mode, int windowMode)
         {
+            if (windowMode == 2)
+                return (mode == ThemeMode::Light) ? g_GlassLightConfig : g_GlassDarkConfig;
             if (windowMode == 1)
                 return (mode == ThemeMode::Light) ? g_AcrylicLightConfig : g_AcrylicDarkConfig;
             return (mode == ThemeMode::Light) ? g_LightConfig : g_DarkConfig;

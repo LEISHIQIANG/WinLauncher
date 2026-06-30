@@ -30,7 +30,8 @@ public:
             m_dirty = false;
         }
 
-        auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
+        int windowMode = UIStyle::GetWindowMode();
+        auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
 
         // 1. Diagonal Specular Radial Glow (Part A of Layer 3) drawn under the base clear layer
         if (cfg.highlight > 0.0f) {

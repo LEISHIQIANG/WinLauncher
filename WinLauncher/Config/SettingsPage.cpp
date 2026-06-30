@@ -421,13 +421,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         }
 
         // Draw Window Mode Buttons side-by-side
-        std::wstring modeLabels[] = { L"毛玻璃材质", L"亚克力材质" };
-        for (int i = 0; i < 2; i++)
+        std::wstring modeLabels[] = { L"毛玻璃材质", L"亚克力材质", L"玻璃材质" };
+        for (int i = 0; i < 3; i++)
         {
             bool isSelected = (i == currentWindowMode);
             bool isHovered = (i == m_hoveredWindowMode);
-            float xStart = (i == 0) ? 160.0f : 345.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 298.0f, xStart + 165.0f, 326.0f);
+            float xStart = 160.0f + i * 120.0f;
+            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 298.0f, xStart + 110.0f, 326.0f);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -460,7 +460,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(modeLabels[i].c_str(), (UINT32)modeLabels[i].size(), tfDefault,
-                        D2D1::RectF(xStart, 302.0f, xStart + 165.0f, 326.0f), textBrush);
+                        D2D1::RectF(xStart, 302.0f, xStart + 110.0f, 326.0f), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -468,7 +468,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         }
 
         // Draw Theme Details (6 Sliders/Cards in 2 columns) - Glass and Acrylic Modes
-        if (currentWindowMode == 0 || currentWindowMode == 1)
+        if (currentWindowMode == 0 || currentWindowMode == 1 || currentWindowMode == 2)
         {
             if (tfDefault)
             {
@@ -483,9 +483,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 }
             }
 
-            auto& cfg = (currentWindowMode == 1) ?
-                ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
-                ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig);
+            auto& cfg = (currentWindowMode == 2) ?
+                ((currentTheme == 1) ? UIStyle::g_GlassLightConfig : UIStyle::g_GlassDarkConfig) :
+                ((currentWindowMode == 1) ?
+                    ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
+                    ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig));
 
             struct DetailItem {
                 int originalIdx;
@@ -1387,7 +1389,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                 else
                 {
                     int hwmode = HitTestWindowMode(pt);
-                    if (hwmode >= 0 && hwmode <= 1)
+                    if (hwmode >= 0 && hwmode <= 2)
                     {
                         m_owner->SetWindowMode(hwmode, pt);
                         repaint = true;
@@ -1403,9 +1405,11 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 int step = (buttonType == 2) ? 1 : -1;
                                 int currentTheme = m_owner->GetTheme();
                                 int currentWindowMode = m_owner->GetWindowMode();
-                                auto& cfg = (currentWindowMode == 1) ?
-                                    ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
-                                    ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig);
+                                auto& cfg = (currentWindowMode == 2) ?
+                                    ((currentTheme == 1) ? UIStyle::g_GlassLightConfig : UIStyle::g_GlassDarkConfig) :
+                                    ((currentWindowMode == 1) ?
+                                        ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
+                                        ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig));
 
                                 if (settingIdx == 0) // Hue
                                 {
@@ -1679,8 +1683,14 @@ int SettingsPage::HitTestWindowMode(POINT pt)
     if (m_categoryIndex != 0) return -1;
     if (pt.y >= 298.0f && pt.y <= 326.0f)
     {
-        if (pt.x >= 160.0f && pt.x <= 325.0f) return 0; // Glass
-        if (pt.x >= 345.0f && pt.x <= 510.0f) return 1; // Acrylic
+        for (int i = 0; i < 3; i++)
+        {
+            float xStart = 160.0f + i * 120.0f;
+            if (pt.x >= xStart && pt.x <= xStart + 110.0f)
+            {
+                return i;
+            }
+        }
     }
     return -1;
 }

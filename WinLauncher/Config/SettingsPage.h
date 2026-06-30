@@ -58,7 +58,7 @@ private:
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredTheme = -1;   // 0 = dark, 1 = light
     int m_hoveredThemeColor = -1; // 0 to 9
-    int m_hoveredWindowMode = -1; // 0 = glass, 1 = acrylic
+    int m_hoveredWindowMode = -1; // 0 = frosted glass, 1 = acrylic, 2 = glass
 
     int m_hoveredAppearanceSetting = -1; // 0 to 5
     int m_hoveredAppearanceButton = 0;   // 1 = minus, 2 = plus, 0 = none

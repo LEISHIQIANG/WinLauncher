@@ -368,6 +368,60 @@ public:
                     {
                         try { m_appearance.acrylicLight.saturation = std::stof(val); } catch (...) {}
                     }
+                    else if (key == L"GlassDarkHue")
+                    {
+                        try { m_appearance.glassDark.hue = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassDarkBlur")
+                    {
+                        try { m_appearance.glassDark.blur = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassDarkOpacity")
+                    {
+                        try { m_appearance.glassDark.opacity = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassDarkHighlight")
+                    {
+                        try { m_appearance.glassDark.highlight = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassDarkBrightness")
+                    {
+                        try {
+                            m_appearance.glassDark.brightness = std::stof(val);
+                            if (m_appearance.glassDark.brightness > 1.0f) m_appearance.glassDark.brightness = 1.0f;
+                        } catch (...) {}
+                    }
+                    else if (key == L"GlassDarkSaturation")
+                    {
+                        try { m_appearance.glassDark.saturation = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassLightHue")
+                    {
+                        try { m_appearance.glassLight.hue = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassLightBlur")
+                    {
+                        try { m_appearance.glassLight.blur = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassLightOpacity")
+                    {
+                        try { m_appearance.glassLight.opacity = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassLightHighlight")
+                    {
+                        try { m_appearance.glassLight.highlight = std::stof(val); } catch (...) {}
+                    }
+                    else if (key == L"GlassLightBrightness")
+                    {
+                        try {
+                            m_appearance.glassLight.brightness = std::stof(val);
+                            if (m_appearance.glassLight.brightness > 1.0f) m_appearance.glassLight.brightness = 1.0f;
+                        } catch (...) {}
+                    }
+                    else if (key == L"GlassLightSaturation")
+                    {
+                        try { m_appearance.glassLight.saturation = std::stof(val); } catch (...) {}
+                    }
                 }
             }
             else if (currentItem)
@@ -551,7 +605,19 @@ public:
         content += L"AcrylicLightOpacity=" + std::to_wstring(m_appearance.acrylicLight.opacity) + L"\r\n";
         content += L"AcrylicLightHighlight=" + std::to_wstring(m_appearance.acrylicLight.highlight) + L"\r\n";
         content += L"AcrylicLightBrightness=" + std::to_wstring(m_appearance.acrylicLight.brightness) + L"\r\n";
-        content += L"AcrylicLightSaturation=" + std::to_wstring(m_appearance.acrylicLight.saturation) + L"\r\n\r\n";
+        content += L"AcrylicLightSaturation=" + std::to_wstring(m_appearance.acrylicLight.saturation) + L"\r\n";
+        content += L"GlassDarkHue=" + std::to_wstring(m_appearance.glassDark.hue) + L"\r\n";
+        content += L"GlassDarkBlur=" + std::to_wstring(m_appearance.glassDark.blur) + L"\r\n";
+        content += L"GlassDarkOpacity=" + std::to_wstring(m_appearance.glassDark.opacity) + L"\r\n";
+        content += L"GlassDarkHighlight=" + std::to_wstring(m_appearance.glassDark.highlight) + L"\r\n";
+        content += L"GlassDarkBrightness=" + std::to_wstring(m_appearance.glassDark.brightness) + L"\r\n";
+        content += L"GlassDarkSaturation=" + std::to_wstring(m_appearance.glassDark.saturation) + L"\r\n";
+        content += L"GlassLightHue=" + std::to_wstring(m_appearance.glassLight.hue) + L"\r\n";
+        content += L"GlassLightBlur=" + std::to_wstring(m_appearance.glassLight.blur) + L"\r\n";
+        content += L"GlassLightOpacity=" + std::to_wstring(m_appearance.glassLight.opacity) + L"\r\n";
+        content += L"GlassLightHighlight=" + std::to_wstring(m_appearance.glassLight.highlight) + L"\r\n";
+        content += L"GlassLightBrightness=" + std::to_wstring(m_appearance.glassLight.brightness) + L"\r\n";
+        content += L"GlassLightSaturation=" + std::to_wstring(m_appearance.glassLight.saturation) + L"\r\n\r\n";
 
         int pageIndex = 0;
         for (const auto& page : pages)

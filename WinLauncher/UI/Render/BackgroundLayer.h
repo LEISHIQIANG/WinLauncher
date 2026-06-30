@@ -68,7 +68,7 @@ public:
 
         if (!m_bgCap) return;
 
-        auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
+        auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
 
         if (dc)
         {

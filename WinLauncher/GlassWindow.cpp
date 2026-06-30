@@ -511,7 +511,12 @@ void GlassWindow::CompositeBackgroundToCache()
 
     // A. Draw Blurred Desktop Screenshot (Layer 0)
     ID2D1DeviceContext* dc = nullptr;
-    auto& cfg = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig;
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        windowMode = m_appCtx->configService->GetWindowMode();
+    }
+    auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
 
     if (SUCCEEDED(bmpRt->QueryInterface(&dc)))
     {
