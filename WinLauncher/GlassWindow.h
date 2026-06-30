@@ -53,6 +53,8 @@ protected:
     void ApplySystemBackdrop();
     bool EnsureD2D();
     void ReleaseD2D();
+    void ResetBackgroundResources(const wchar_t* reason, bool includeRenderTarget = false);
+    void MarkBackgroundDirty(const wchar_t* reason, bool logEvent = false);
     void CaptureBackground();
     void CompositeBackgroundToCache();
     void DoPaint();

@@ -63,6 +63,26 @@ void Logger::SetDefault(Logger* logger)
     s_defaultLogger = logger;
 }
 
+bool Logger::ShouldLogEvery(ULONGLONG& lastLogTick, DWORD intervalMs)
+{
+    ULONGLONG now = GetTickCount64();
+    if (lastLogTick != 0 && now - lastLogTick < intervalMs)
+    {
+        return false;
+    }
+    lastLogTick = now;
+    return true;
+}
+
+bool Logger::ShouldLogElapsed(ULONGLONG& lastLogTick, double elapsedMs, double thresholdMs, DWORD intervalMs)
+{
+    if (elapsedMs < thresholdMs)
+    {
+        return false;
+    }
+    return ShouldLogEvery(lastLogTick, intervalMs);
+}
+
 Logger*& Logger::GetInstanceRef()
 {
     static Logger* s_instance = nullptr;
@@ -70,6 +90,9 @@ Logger*& Logger::GetInstanceRef()
 }
 
 namespace {
+    constexpr std::streamoff MaxLogFileBytes = 4 * 1024 * 1024;
+    constexpr std::streamoff TargetLogFileBytes = 2 * 1024 * 1024;
+
     const char* GetFileName(const char* path)
     {
         if (!path) return "";
@@ -110,9 +133,9 @@ void Logger::LogV(Level level, const char* file, int line, const char* func, con
     switch (level)
     {
     case INFO:    levelStr = L"INFO"; break;
-    case WORNING: levelStr = L"WORNING"; break;
+    case WORNING: levelStr = L"WARN"; break;
     case DEBUG:   levelStr = L"DEBUG"; break;
-    case ERRA:    levelStr = L"ERRA"; break;
+    case ERRA:    levelStr = L"ERROR"; break;
     }
 
     wchar_t prefix[256];
@@ -143,6 +166,13 @@ void Logger::LogV(Level level, const char* file, int line, const char* func, con
             WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), &utf8[0], clen, nullptr, nullptr);
             m_file.write(utf8.data(), utf8.size());
             m_file.flush();
+            std::streampos pos = m_file.tellp();
+            if (pos != std::streampos(-1) &&
+                static_cast<std::streamoff>(pos) > MaxLogFileBytes &&
+                ShouldLogEvery(m_lastSizeTrimTick, 60000))
+            {
+                TrimLogFileBySizeLocked();
+            }
         }
     }
 }
@@ -375,5 +405,59 @@ void Logger::PruneLogFile()
     }
 
     // Reopen log file for appending
+    m_file.open(m_logFilePath, std::ios::app);
+    TrimLogFileBySizeLocked();
+}
+
+void Logger::TrimLogFileBySizeLocked()
+{
+    if (m_logFilePath.empty())
+    {
+        return;
+    }
+
+    if (m_file.is_open())
+    {
+        m_file.close();
+    }
+
+    std::ifstream inFile(m_logFilePath, std::ios::binary | std::ios::ate);
+    if (!inFile.is_open())
+    {
+        m_file.open(m_logFilePath, std::ios::app);
+        return;
+    }
+
+    std::streamoff fileSize = inFile.tellg();
+    if (fileSize <= MaxLogFileBytes)
+    {
+        inFile.close();
+        m_file.open(m_logFilePath, std::ios::app);
+        return;
+    }
+
+    std::streamoff startOffset = fileSize > TargetLogFileBytes ? fileSize - TargetLogFileBytes : 0;
+    inFile.seekg(startOffset, std::ios::beg);
+    if (startOffset > 0)
+    {
+        std::string partialLine;
+        std::getline(inFile, partialLine);
+    }
+
+    std::ostringstream retained;
+    retained << "[log-maintenance] trimmed log file from " << fileSize
+             << " bytes to keep the most recent approximately " << TargetLogFileBytes
+             << " bytes\n";
+    retained << inFile.rdbuf();
+    inFile.close();
+
+    std::ofstream outFile(m_logFilePath, std::ios::trunc | std::ios::binary);
+    if (outFile.is_open())
+    {
+        std::string data = retained.str();
+        outFile.write(data.data(), data.size());
+        outFile.close();
+    }
+
     m_file.open(m_logFilePath, std::ios::app);
 }

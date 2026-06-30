@@ -8,7 +8,7 @@
 #define WINLAUNCHER_VERSION_MAJOR    0
 #define WINLAUNCHER_VERSION_MINOR    5
 #define WINLAUNCHER_VERSION_PATCH    1
-#define WINLAUNCHER_VERSION_BUILD    4
+#define WINLAUNCHER_VERSION_BUILD    5
 
 // -- 下面的内容通常无需手动修改 --
 
@@ -26,7 +26,7 @@
                                             L"" WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_BUILD)
 
 // 多字节版本号字符串 ("0.0.0.1")
-#define WINLAUNCHER_VERSION_ASTR            "" WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_MAJOR) "." \
-                                            "" WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_MINOR) "." \
-                                            "" WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_PATCH) "." \
-                                            "" WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_BUILD)
+#define WINLAUNCHER_VERSION_ASTR            WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_MAJOR) "." \
+                                            WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_MINOR) "." \
+                                            WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_PATCH) "." \
+                                            WINLAUNCHER_VER_STRINGIFY(WINLAUNCHER_VERSION_BUILD)

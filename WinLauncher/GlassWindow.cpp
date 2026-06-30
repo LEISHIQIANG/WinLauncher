@@ -23,6 +23,7 @@ static bool IsWindows11OrLater();
 static float EaseOutCubic(float t);
 static float EaseInCubic(float t);
 static double PerfNowMs();
+static const wchar_t* WindowModeName(int windowMode);
 static float ClampCornerRadius(float radius, float width, float height);
 
 using SWCAFn = BOOL(WINAPI*)(HWND, void*);
@@ -147,13 +148,12 @@ static double PerfNowMs()
 
 static bool ShouldLogPerf(ULONGLONG& lastLogTick, double elapsedMs, double thresholdMs)
 {
-    if (elapsedMs < thresholdMs)
-        return false;
-    ULONGLONG now = GetTickCount64();
-    if (now - lastLogTick < 1000)
-        return false;
-    lastLogTick = now;
-    return true;
+    return Logger::ShouldLogElapsed(lastLogTick, elapsedMs, thresholdMs, 1000);
+}
+
+static const wchar_t* WindowModeName(int windowMode)
+{
+    return windowMode == 1 ? L"acrylic" : L"glass";
 }
 
 static float ClampCornerRadius(float radius, float width, float height)
@@ -240,13 +240,14 @@ void GlassWindow::UpdateWindowRoundRegion()
 void GlassWindow::ApplySystemBackdrop()
 {
     MARGINS m{ -1, -1, -1, -1 };
-    DwmExtendFrameIntoClientArea(m_hWnd, &m);
+    HRESULT frameHr = DwmExtendFrameIntoClientArea(m_hWnd, &m);
 
     UpdateWindowCornerRadius();
+    HRESULT cornerHr = S_OK;
     if (m_cornerRadius > 0.0f)
     {
         DWORD corner = 2;
-        DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+        cornerHr = DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     }
     UpdateWindowRoundRegion();
 
@@ -258,13 +259,25 @@ void GlassWindow::ApplySystemBackdrop()
     }
 
     DWORD border = 0xFFFFFFFE;
-    DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
+    HRESULT borderHr = DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
 
     int windowMode = 0;
     if (m_appCtx && m_appCtx->configService)
     {
         windowMode = m_appCtx->configService->GetWindowMode();
     }
+
+    LOG_G_INFO_NODE(
+        L"ui.glass",
+        L"system_backdrop_apply",
+        L"windowMode=%d(%s) frameHr=0x%08X cornerHr=0x%08X borderHr=0x%08X cornerRadius=%.2f hwnd=%p",
+        windowMode,
+        WindowModeName(windowMode),
+        frameHr,
+        cornerHr,
+        borderHr,
+        m_cornerRadius,
+        m_hWnd);
 
     if (windowMode == 1) // Acrylic
     {
@@ -286,7 +299,17 @@ void GlassWindow::ApplySystemBackdrop()
         int backdropType = 1; // DWMSBT_DISABLE
         for (int attr : {38, 1029})
         {
-            DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
+            HRESULT backdropHr = DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
+            if (FAILED(backdropHr))
+            {
+                LOG_G_WARNING_NODE(
+                    L"ui.glass",
+                    L"dwm_backdrop_disable_failed",
+                    L"attr=%d hr=0x%08X hwnd=%p",
+                    attr,
+                    backdropHr,
+                    m_hWnd);
+            }
         }
         SetAccent(m_hWnd, 2, 0x00000000);
     }
@@ -301,11 +324,26 @@ bool GlassWindow::EnsureD2D()
         D2D1_FACTORY_TYPE factoryType = m_d2dHardwareAccelerationEnabled
             ? D2D1_FACTORY_TYPE_MULTI_THREADED
             : D2D1_FACTORY_TYPE_SINGLE_THREADED;
-        D2D1CreateFactory(factoryType, IID_PPV_ARGS(&m_d2d));
+        HRESULT factoryHr = D2D1CreateFactory(factoryType, IID_PPV_ARGS(&m_d2d));
+        if (FAILED(factoryHr))
+        {
+            LOG_G_ERROR_NODE(
+                L"ui.glass",
+                L"d2d_factory_failed",
+                L"hr=0x%08X hardwareAcceleration=%d hwnd=%p",
+                factoryHr,
+                (int)m_d2dHardwareAccelerationEnabled,
+                m_hWnd);
+            return false;
+        }
     }
     if (!m_dw)
     {
-        DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), &m_dw);
+        HRESULT dwriteHr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), &m_dw);
+        if (FAILED(dwriteHr))
+        {
+            LOG_G_ERROR_NODE(L"ui.glass", L"dwrite_factory_failed", L"hr=0x%08X hwnd=%p", dwriteHr, m_hWnd);
+        }
         if (m_dw && !m_tf)
         {
             UIStyle::Typography::CreateTextFormat(
@@ -333,8 +371,14 @@ bool GlassWindow::EnsureD2D()
         &m_rt);
     if (FAILED(hr) && m_d2dHardwareAccelerationEnabled)
     {
-        if (m_appCtx && m_appCtx->logger)
-            LOG_ERROR(m_appCtx->logger, L"Create hardware HwndRenderTarget failed: 0x%08X, falling back to default", hr);
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"render_target_hardware_failed",
+            L"hr=0x%08X fallback=default size=%dx%d hwnd=%p",
+            hr,
+            cr.right,
+            cr.bottom,
+            m_hWnd);
         hr = m_d2d->CreateHwndRenderTarget(
             D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
                 D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED)),
@@ -343,8 +387,15 @@ bool GlassWindow::EnsureD2D()
     }
     if (FAILED(hr))
     {
-        if (m_appCtx && m_appCtx->logger)
-            LOG_ERROR(m_appCtx->logger, L"CreateHwndRenderTarget failed: 0x%08X", hr);
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"render_target_failed",
+            L"hr=0x%08X hardwareAcceleration=%d size=%dx%d hwnd=%p",
+            hr,
+            (int)m_d2dHardwareAccelerationEnabled,
+            cr.right,
+            cr.bottom,
+            m_hWnd);
         return false;
     }
 
@@ -362,11 +413,48 @@ bool GlassWindow::EnsureD2D()
         m_compositor->MarkAllDirty();
     }
 
+    LOG_G_INFO_NODE(
+        L"ui.glass",
+        L"render_target_ready",
+        L"size=%dx%d dpi=%.1f hardwareAcceleration=%d targetType=%d hwnd=%p",
+        cr.right,
+        cr.bottom,
+        dpi,
+        (int)m_d2dHardwareAccelerationEnabled,
+        (int)targetType,
+        m_hWnd);
+
     return true;
 }
 
 void GlassWindow::ReleaseD2D()
 {
+    ResetBackgroundResources(L"release_d2d", true);
+    m_tf.Reset();
+    m_dw.Reset();
+    m_d2d.Reset();
+}
+
+void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRenderTarget)
+{
+    bool hadResources =
+        m_bgCap.Get() || m_bgFinal.Get() || m_compositeRt.Get() ||
+        m_blurEffect.Get() || m_satEffect.Get() || m_sheenBlurEffect.Get() ||
+        m_sheenGsc.Get() || m_sheenBrush.Get() || m_sheenLayerRt.Get() ||
+        m_sheenLayerBitmap.Get() || m_roundedClipLayer.Get() ||
+        m_roundedClipGeometry.Get() || (includeRenderTarget && m_rt.Get());
+
+    if (hadResources)
+    {
+        LOG_G_INFO_NODE(
+            L"ui.glass",
+            L"background_resources_reset",
+            L"reason=%s includeRenderTarget=%d hwnd=%p",
+            reason ? reason : L"unknown",
+            includeRenderTarget ? 1 : 0,
+            m_hWnd);
+    }
+
     m_brushCache.clear();
     m_bgCap.Reset();
     m_bgFinal.Reset();
@@ -382,17 +470,46 @@ void GlassWindow::ReleaseD2D()
     m_roundedClipGeometry.Reset();
     m_effectWinSize = {};
     m_effectCornerRadius = -1.0f;
-    m_tf.Reset();
-    m_dw.Reset();
-    m_rt.Reset();
-    m_d2d.Reset();
+    m_themeTransitionStopCollection.Reset();
     m_pixbuf.clear();
+    if (includeRenderTarget)
+    {
+        m_rt.Reset();
+    }
+    m_bgCaptureDirty = true;
+    m_bgCompositeDirty = true;
+}
+
+void GlassWindow::MarkBackgroundDirty(const wchar_t* reason, bool logEvent)
+{
+    m_bgCaptureDirty = true;
+    m_bgCompositeDirty = true;
+    if (m_compositor)
+    {
+        m_compositor->MarkAllDirty();
+    }
+    if (logEvent)
+    {
+        LOG_G_INFO_NODE(
+            L"ui.glass",
+            L"background_dirty",
+            L"reason=%s hwnd=%p",
+            reason ? reason : L"unknown",
+            m_hWnd);
+    }
 }
 
 void GlassWindow::UpdateTheme()
 {
     if (m_d2d && m_d2dHardwareAccelerationEnabled != UIStyle::Performance::IsHardwareAccelerationEnabled())
     {
+        LOG_G_INFO_NODE(
+            L"ui.glass",
+            L"hardware_acceleration_changed",
+            L"old=%d new=%d reason=theme_update hwnd=%p",
+            (int)m_d2dHardwareAccelerationEnabled,
+            (int)UIStyle::Performance::IsHardwareAccelerationEnabled(),
+            m_hWnd);
         ReleaseD2D();
     }
     m_brushCache.clear();
@@ -420,6 +537,14 @@ void GlassWindow::UpdateTheme()
     {
         m_compositor->MarkAllDirty();
     }
+    LOG_G_INFO_NODE(
+        L"ui.glass",
+        L"theme_updated",
+        L"themeMode=%d themeTransitionActive=%d pendingBackdrop=%d hwnd=%p",
+        (int)UIStyle::GetThemeMode(),
+        (int)m_themeTransitionActive,
+        (int)m_pendingBackdropUpdate,
+        m_hWnd);
     if (m_hWnd)
     {
         InvalidateRect(m_hWnd, nullptr, TRUE);
@@ -430,6 +555,13 @@ void GlassWindow::UpdateBackgroundStyle()
 {
     if (m_d2d && m_d2dHardwareAccelerationEnabled != UIStyle::Performance::IsHardwareAccelerationEnabled())
     {
+        LOG_G_INFO_NODE(
+            L"ui.glass",
+            L"hardware_acceleration_changed",
+            L"old=%d new=%d reason=background_style hwnd=%p",
+            (int)m_d2dHardwareAccelerationEnabled,
+            (int)UIStyle::Performance::IsHardwareAccelerationEnabled(),
+            m_hWnd);
         ReleaseD2D();
     }
     m_brushCache.clear();
@@ -450,6 +582,13 @@ void GlassWindow::UpdateBackgroundStyle()
     }
 
     m_bgCompositeDirty = true;
+    LOG_G_INFO_NODE(
+        L"ui.glass",
+        L"background_style_updated",
+        L"windowMode=%d(%s) hwnd=%p",
+        windowMode,
+        WindowModeName(windowMode),
+        m_hWnd);
     if (m_hWnd)
     {
         InvalidateRect(m_hWnd, nullptr, TRUE);
@@ -458,21 +597,76 @@ void GlassWindow::UpdateBackgroundStyle()
 
 void GlassWindow::CaptureBackground()
 {
-    if (!m_rt) return;
+    if (!m_rt)
+    {
+        LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=no_render_target hwnd=%p", m_hWnd);
+        return;
+    }
 
     double captureStartMs = PerfNowMs();
     D2D1_SIZE_U pixelSize = m_rt->GetPixelSize();
     POINT clientOrigin{ 0, 0 };
-    ClientToScreen(m_hWnd, &clientOrigin);
+    if (!ClientToScreen(m_hWnd, &clientOrigin))
+    {
+        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_client_to_screen_failed", L"error=%lu hwnd=%p", GetLastError(), m_hWnd);
+        return;
+    }
     int w = (int)pixelSize.width;
     int h = (int)pixelSize.height;
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0)
+    {
+        LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=invalid_size size=%dx%d hwnd=%p", w, h, m_hWnd);
+        return;
+    }
 
     HDC sdc = GetDC(nullptr);
+    if (!sdc)
+    {
+        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_getdc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
+        return;
+    }
     HDC mdc = CreateCompatibleDC(sdc);
+    if (!mdc)
+    {
+        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_dc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
+        ReleaseDC(nullptr, sdc);
+        return;
+    }
     HBITMAP bmp = CreateCompatibleBitmap(sdc, w, h);
-    SelectObject(mdc, bmp);
-    BitBlt(mdc, 0, 0, w, h, sdc, clientOrigin.x, clientOrigin.y, SRCCOPY);
+    if (!bmp)
+    {
+        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_bitmap_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
+        DeleteDC(mdc);
+        ReleaseDC(nullptr, sdc);
+        return;
+    }
+    HGDIOBJ oldBitmap = SelectObject(mdc, bmp);
+    if (!oldBitmap)
+    {
+        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_select_bitmap_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
+        DeleteObject(bmp);
+        DeleteDC(mdc);
+        ReleaseDC(nullptr, sdc);
+        return;
+    }
+    if (!BitBlt(mdc, 0, 0, w, h, sdc, clientOrigin.x, clientOrigin.y, SRCCOPY))
+    {
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_capture_bitblt_failed",
+            L"error=%lu size=%dx%d origin=(%d,%d) hwnd=%p",
+            GetLastError(),
+            w,
+            h,
+            clientOrigin.x,
+            clientOrigin.y,
+            m_hWnd);
+        SelectObject(mdc, oldBitmap);
+        DeleteObject(bmp);
+        DeleteDC(mdc);
+        ReleaseDC(nullptr, sdc);
+        return;
+    }
 
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -482,10 +676,30 @@ void GlassWindow::CaptureBackground()
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
     m_pixbuf.resize(w * h);
-    GetDIBits(mdc, bmp, 0, h, m_pixbuf.data(), &bi, DIB_RGB_COLORS);
+    int scanLines = GetDIBits(mdc, bmp, 0, h, m_pixbuf.data(), &bi, DIB_RGB_COLORS);
+    if (scanLines != h)
+    {
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_capture_getdibits_failed",
+            L"error=%lu scanLines=%d expected=%d size=%dx%d hwnd=%p",
+            GetLastError(),
+            scanLines,
+            h,
+            w,
+            h,
+            m_hWnd);
+        m_pixbuf.clear();
+        SelectObject(mdc, oldBitmap);
+        DeleteObject(bmp);
+        DeleteDC(mdc);
+        ReleaseDC(nullptr, sdc);
+        return;
+    }
     for (int i = 0; i < w * h; i++)
         m_pixbuf[i] |= 0xFF000000;
 
+    SelectObject(mdc, oldBitmap);
     DeleteObject(bmp);
     DeleteDC(mdc);
     ReleaseDC(nullptr, sdc);
@@ -495,6 +709,15 @@ void GlassWindow::CaptureBackground()
         D2D1_SIZE_U size = m_bgCap->GetPixelSize();
         if (size.width != (UINT32)w || size.height != (UINT32)h)
         {
+            LOG_G_DEBUG_NODE(
+                L"ui.glass",
+                L"background_capture_bitmap_recreated",
+                L"reason=size_changed old=%ux%u new=%dx%d hwnd=%p",
+                size.width,
+                size.height,
+                w,
+                h,
+                m_hWnd);
             m_bgCap.Reset();
         }
         else
@@ -507,6 +730,15 @@ void GlassWindow::CaptureBackground()
             m_rt->GetDpi(&rtDpiX, &rtDpiY);
             if (fabsf(bmpDpiX - rtDpiX) > 0.5f || fabsf(bmpDpiY - rtDpiY) > 0.5f)
             {
+                LOG_G_DEBUG_NODE(
+                    L"ui.glass",
+                    L"background_capture_bitmap_recreated",
+                    L"reason=dpi_changed bitmapDpi=%.1fx%.1f rtDpi=%.1fx%.1f hwnd=%p",
+                    bmpDpiX,
+                    bmpDpiY,
+                    rtDpiX,
+                    rtDpiY,
+                    m_hWnd);
                 m_bgCap.Reset();
             }
         }
@@ -514,15 +746,33 @@ void GlassWindow::CaptureBackground()
 
     if (m_bgCap)
     {
-        m_bgCap->CopyFromMemory(nullptr, m_pixbuf.data(), w * 4);
+        HRESULT copyHr = m_bgCap->CopyFromMemory(nullptr, m_pixbuf.data(), w * 4);
+        if (FAILED(copyHr))
+        {
+            LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_copy_failed", L"hr=0x%08X size=%dx%d hwnd=%p", copyHr, w, h, m_hWnd);
+            m_bgCap.Reset();
+        }
     }
-    else
+    if (!m_bgCap)
     {
         float dx = 96.0f, dy = 96.0f;
         m_rt->GetDpi(&dx, &dy);
         D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dx, dy);
-        m_rt->CreateBitmap(D2D1::SizeU(w, h), m_pixbuf.data(), w * 4, &props, &m_bgCap);
+        HRESULT createHr = m_rt->CreateBitmap(D2D1::SizeU(w, h), m_pixbuf.data(), w * 4, &props, &m_bgCap);
+        if (FAILED(createHr))
+        {
+            LOG_G_ERROR_NODE(
+                L"ui.glass",
+                L"background_capture_create_d2d_bitmap_failed",
+                L"hr=0x%08X size=%dx%d dpi=%.1fx%.1f hwnd=%p",
+                createHr,
+                w,
+                h,
+                dx,
+                dy,
+                m_hWnd);
+        }
     }
     m_pixbuf.clear();
 
@@ -530,7 +780,22 @@ void GlassWindow::CaptureBackground()
     static ULONGLONG s_lastCaptureLogTick = 0;
     if (ShouldLogPerf(s_lastCaptureLogTick, elapsedMs, 12.0))
     {
-        LOG_G_WORNING(L"GlassWindow perf: CaptureBackground took %.2fms size=%dx%d hwnd=%p", elapsedMs, w, h, m_hWnd);
+        FLOAT dpiX = 96.0f;
+        FLOAT dpiY = 96.0f;
+        m_rt->GetDpi(&dpiX, &dpiY);
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"background_capture_slow",
+            L"elapsedMs=%.2f thresholdMs=12.00 size=%dx%d dpi=%.1fx%.1f origin=(%d,%d) hasBitmap=%d hwnd=%p",
+            elapsedMs,
+            w,
+            h,
+            dpiX,
+            dpiY,
+            clientOrigin.x,
+            clientOrigin.y,
+            m_bgCap ? 1 : 0,
+            m_hWnd);
     }
 }
 
@@ -565,7 +830,21 @@ void GlassWindow::CompositeBackgroundToCache()
     {
         HRESULT hr = m_rt->CreateCompatibleRenderTarget(
             D2D1::SizeF(w, h), &m_compositeRt);
-        if (FAILED(hr)) { m_bgFinal.Reset(); return; }
+        if (FAILED(hr))
+        {
+            m_bgFinal.Reset();
+            LOG_G_ERROR_NODE(
+                L"ui.glass",
+                L"background_composite_target_failed",
+                L"hr=0x%08X size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
+                hr,
+                w,
+                h,
+                scale,
+                systemScale,
+                m_hWnd);
+            return;
+        }
         FLOAT dpiX, dpiY;
         m_rt->GetDpi(&dpiX, &dpiY);
         m_compositeRt->SetDpi(dpiX, dpiY);
@@ -632,9 +911,29 @@ void GlassWindow::CompositeBackgroundToCache()
     if (SUCCEEDED(bmpRt->QueryInterface(&dc)))
     {
         if (!m_blurEffect)
-            dc->CreateEffect(CLSID_D2D1GaussianBlur, &m_blurEffect);
+        {
+            HRESULT blurHr = dc->CreateEffect(CLSID_D2D1GaussianBlur, &m_blurEffect);
+            if (FAILED(blurHr))
+            {
+                static ULONGLONG s_lastBlurEffectLogTick = 0;
+                if (Logger::ShouldLogEvery(s_lastBlurEffectLogTick, 5000))
+                {
+                    LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_effect_failed", L"hr=0x%08X hwnd=%p", blurHr, m_hWnd);
+                }
+            }
+        }
         if (!m_satEffect)
-            dc->CreateEffect(CLSID_D2D1Saturation, &m_satEffect);
+        {
+            HRESULT satHr = dc->CreateEffect(CLSID_D2D1Saturation, &m_satEffect);
+            if (FAILED(satHr))
+            {
+                static ULONGLONG s_lastSaturationEffectLogTick = 0;
+                if (Logger::ShouldLogEvery(s_lastSaturationEffectLogTick, 5000))
+                {
+                    LOG_G_WARNING_NODE(L"ui.glass", L"background_saturation_effect_failed", L"hr=0x%08X hwnd=%p", satHr, m_hWnd);
+                }
+            }
+        }
 
         if (m_blurEffect && m_satEffect)
         {
@@ -816,13 +1115,36 @@ void GlassWindow::CompositeBackgroundToCache()
     else
     {
         m_bgFinal.Reset();
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_composite_enddraw_failed",
+            L"hr=0x%08X size=%.0fx%.0f windowMode=%d(%s) hwnd=%p",
+            hr,
+            w,
+            h,
+            windowMode,
+            WindowModeName(windowMode),
+            m_hWnd);
     }
 
     double elapsedMs = PerfNowMs() - compositeStartMs;
     static ULONGLONG s_lastCompositeLogTick = 0;
     if (ShouldLogPerf(s_lastCompositeLogTick, elapsedMs, 12.0))
     {
-        LOG_G_WORNING(L"GlassWindow perf: CompositeBackgroundToCache took %.2fms size=%.0fx%.0f hwnd=%p", elapsedMs, w, h, m_hWnd);
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"background_composite_slow",
+            L"elapsedMs=%.2f thresholdMs=12.00 size=%.0fx%.0f scale=%.2f systemScale=%.2f corner=%.2f windowMode=%d(%s) finalBitmap=%d hwnd=%p",
+            elapsedMs,
+            w,
+            h,
+            scale,
+            systemScale,
+            drawCornerRadius,
+            windowMode,
+            WindowModeName(windowMode),
+            m_bgFinal ? 1 : 0,
+            m_hWnd);
     }
 }
 
@@ -870,25 +1192,33 @@ void GlassWindow::DoPaint()
         static ULONGLONG s_lastCompositorPaintLogTick = 0;
         if (ShouldLogPerf(s_lastCompositorPaintLogTick, elapsedMs, 16.0))
         {
-            LOG_G_WORNING(L"GlassWindow perf: DoPaint compositor path took %.2fms size=%.0fx%.0f hwnd=%p", elapsedMs, w, h, m_hWnd);
+            LOG_G_WARNING_NODE(
+                L"ui.glass",
+                L"paint_slow",
+                L"path=compositor elapsedMs=%.2f thresholdMs=16.00 size=%.0fx%.0f scale=%.2f themeTransition=%d animState=%d hwnd=%p",
+                elapsedMs,
+                w,
+                h,
+                scale,
+                (int)m_themeTransitionActive,
+                (int)m_animState,
+                m_hWnd);
         }
         if (hr == D2DERR_RECREATE_TARGET)
         {
-            m_bgCap.Reset(); m_bgFinal.Reset(); m_compositeRt.Reset();
-            m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
-            m_sheenGsc.Reset(); m_sheenBrush.Reset();
-            m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
-            m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
-            m_effectWinSize = {};
-            m_effectCornerRadius = -1.0f;
-            m_rt.Reset();
-            m_brushCache.clear();
-            m_themeTransitionStopCollection.Reset();
+            LOG_G_WARNING_NODE(L"ui.glass", L"paint_recreate_target", L"path=compositor hr=0x%08X hwnd=%p", hr, m_hWnd);
+            ResetBackgroundResources(L"paint_recreate_target_compositor", true);
             if (m_compositor) m_compositor->MarkAllDirty();
-            m_bgCaptureDirty = true;
-            m_bgCompositeDirty = true;
             EnsureD2D();
             InvalidateRect(m_hWnd, nullptr, FALSE);
+        }
+        else if (FAILED(hr))
+        {
+            static ULONGLONG s_lastCompositorEndDrawLogTick = 0;
+            if (Logger::ShouldLogEvery(s_lastCompositorEndDrawLogTick, 1000))
+            {
+                LOG_G_ERROR_NODE(L"ui.glass", L"paint_enddraw_failed", L"path=compositor hr=0x%08X hwnd=%p", hr, m_hWnd);
+            }
         }
         return;
     }
@@ -962,24 +1292,38 @@ void GlassWindow::DoPaint()
     static ULONGLONG s_lastPaintLogTick = 0;
     if (ShouldLogPerf(s_lastPaintLogTick, elapsedMs, 16.0))
     {
-        LOG_G_WORNING(L"GlassWindow perf: DoPaint legacy path took %.2fms size=%.0fx%.0f bgDirty=%d hwnd=%p", elapsedMs, w, h, (int)m_bgCaptureDirty, m_hWnd);
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"paint_slow",
+            L"path=legacy elapsedMs=%.2f thresholdMs=16.00 size=%.0fx%.0f scale=%.2f windowMode=%d(%s) captureDirty=%d compositeDirty=%d finalBitmap=%d capBitmap=%d themeTransition=%d animState=%d hwnd=%p",
+            elapsedMs,
+            w,
+            h,
+            scale,
+            windowMode,
+            WindowModeName(windowMode),
+            (int)m_bgCaptureDirty,
+            (int)m_bgCompositeDirty,
+            m_bgFinal ? 1 : 0,
+            m_bgCap ? 1 : 0,
+            (int)m_themeTransitionActive,
+            (int)m_animState,
+            m_hWnd);
     }
     if (hr == D2DERR_RECREATE_TARGET)
     {
-        m_bgCap.Reset(); m_bgFinal.Reset(); m_compositeRt.Reset();
-        m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
-        m_sheenGsc.Reset(); m_sheenBrush.Reset();
-        m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
-        m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
-        m_effectWinSize = {};
-        m_effectCornerRadius = -1.0f;
-        m_rt.Reset();
-        m_brushCache.clear();
-        m_themeTransitionStopCollection.Reset();
-        m_bgCaptureDirty = true;
-        m_bgCompositeDirty = true;
+        LOG_G_WARNING_NODE(L"ui.glass", L"paint_recreate_target", L"path=legacy hr=0x%08X hwnd=%p", hr, m_hWnd);
+        ResetBackgroundResources(L"paint_recreate_target_legacy", true);
         EnsureD2D();
         InvalidateRect(m_hWnd, nullptr, FALSE);
+    }
+    else if (FAILED(hr))
+    {
+        static ULONGLONG s_lastLegacyEndDrawLogTick = 0;
+        if (Logger::ShouldLogEvery(s_lastLegacyEndDrawLogTick, 1000))
+        {
+            LOG_G_ERROR_NODE(L"ui.glass", L"paint_enddraw_failed", L"path=legacy hr=0x%08X hwnd=%p", hr, m_hWnd);
+        }
     }
 }
 
@@ -1034,7 +1378,30 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
             if (sizeChanged && m_rt)
             {
-                m_rt->Resize(D2D1::SizeU(cr.right, cr.bottom));
+                HRESULT resizeHr = m_rt->Resize(D2D1::SizeU(cr.right, cr.bottom));
+                if (FAILED(resizeHr))
+                {
+                    LOG_G_ERROR_NODE(
+                        L"ui.glass",
+                        L"render_target_resize_failed",
+                        L"hr=0x%08X size=%dx%d flags=0x%X hwnd=%p",
+                        resizeHr,
+                        cr.right,
+                        cr.bottom,
+                        wp->flags,
+                        hWnd);
+                }
+                else
+                {
+                    LOG_G_INFO_NODE(
+                        L"ui.glass",
+                        L"window_resized",
+                        L"clientSize=%dx%d flags=0x%X hwnd=%p",
+                        cr.right,
+                        cr.bottom,
+                        wp->flags,
+                        hWnd);
+                }
                 if (m_compositor)
                     m_compositor->OnResize(m_rt->GetSize());
             }
@@ -1053,25 +1420,20 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     {
                         m_rt->SetDpi(effectiveDpi, effectiveDpi);
                         UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
-                        m_bgCap.Reset();
-                        m_bgFinal.Reset();
-                        m_compositeRt.Reset();
-                        m_blurEffect.Reset();
-                        m_satEffect.Reset();
-                        m_sheenBlurEffect.Reset();
-                        m_sheenGsc.Reset();
-                        m_sheenBrush.Reset();
-                        m_sheenLayerRt.Reset();
-                        m_sheenLayerBitmap.Reset();
-                        m_roundedClipLayer.Reset();
-                        m_roundedClipGeometry.Reset();
-                        m_effectWinSize = {};
-                        m_effectCornerRadius = -1.0f;
+                        LOG_G_INFO_NODE(
+                            L"ui.glass",
+                            L"render_target_dpi_adjusted",
+                            L"reason=windowpos oldDpi=%.1fx%.1f newDpi=%.1f flags=0x%X hwnd=%p",
+                            currentDpiX,
+                            currentDpiY,
+                            effectiveDpi,
+                            wp->flags,
+                            hWnd);
+                        ResetBackgroundResources(L"windowpos_dpi_changed", false);
                         if (m_compositor)
                             m_compositor->MarkAllDirty();
                     }
-                    m_bgCaptureDirty = true;
-                    m_bgCompositeDirty = true;
+                    MarkBackgroundDirty(L"windowpos_changed", false);
                 }
             }
 
@@ -1115,26 +1477,21 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_EXITSIZEMOVE:
-        m_bgCaptureDirty = true;
-        m_bgCompositeDirty = true;
+        MarkBackgroundDirty(L"exit_size_move", true);
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
 
     case WM_DWMCOMPOSITIONCHANGED:
-        if (m_appCtx && m_appCtx->logger)
-            LOG_INFO(m_appCtx->logger, L"GlassWindow: DWM composition changed");
+        LOG_G_INFO_NODE(L"ui.glass", L"dwm_composition_changed", L"hwnd=%p", hWnd);
         ApplySystemBackdrop();
-        m_bgCap.Reset();
-        m_bgCaptureDirty = true;
-        m_bgCompositeDirty = true;
+        ResetBackgroundResources(L"dwm_composition_changed", false);
         InvalidateRect(hWnd, nullptr, TRUE);
         return 0;
 
     case WM_SHOWWINDOW:
         if (wParam)
         {
-            m_bgCaptureDirty = true;
-            m_bgCompositeDirty = true;
+            MarkBackgroundDirty(L"window_show", true);
             if (m_bgRefreshMs > 0)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
 
@@ -1171,6 +1528,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         else
         {
+            LOG_G_INFO_NODE(L"ui.glass", L"window_hidden", L"hwnd=%p", hWnd);
             KillTimer(hWnd, 0x888);
             if (m_shadowWindow)
             {
@@ -1182,8 +1540,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_TIMER:
         if (wParam == 0x888)
         {
-            m_bgCaptureDirty = true;
-            m_bgCompositeDirty = true;
+            MarkBackgroundDirty(L"background_refresh_timer", false);
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
@@ -1296,30 +1653,24 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         float newDpiY = newDpiX;
 
         if (m_appCtx && m_appCtx->logger)
-            LOG_INFO(m_appCtx->logger, L"GlassWindow: DPI changed: oldScale = %.2f, newScale = %.2f, newSystemScale = %.2f", oldScale, newScale, newSystemScale);
+            LOG_INFO_NODE(
+                m_appCtx->logger,
+                L"ui.glass",
+                L"wm_dpi_changed",
+                L"oldScale=%.2f newScale=%.2f newSystemScale=%.2f suggestedRect=%p hwnd=%p",
+                oldScale,
+                newScale,
+                newSystemScale,
+                (void*)lParam,
+                hWnd);
 
         if (m_rt)
         {
             m_rt->SetDpi(newDpiX, newDpiY);
             UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
-            m_bgCap.Reset();
-            m_bgFinal.Reset();
-            m_compositeRt.Reset();
-            m_blurEffect.Reset();
-            m_satEffect.Reset();
-            m_sheenBlurEffect.Reset();
-            m_sheenGsc.Reset();
-            m_sheenBrush.Reset();
-            m_sheenLayerRt.Reset();
-            m_sheenLayerBitmap.Reset();
-            m_roundedClipLayer.Reset();
-            m_roundedClipGeometry.Reset();
-            m_effectWinSize = {};
-            m_effectCornerRadius = -1.0f;
+            ResetBackgroundResources(L"wm_dpi_changed", false);
             if (m_compositor)
                 m_compositor->MarkAllDirty();
-            m_bgCaptureDirty = true;
-            m_bgCompositeDirty = true;
         }
 
         RECT* const prcNewWindow = (RECT*)lParam;
@@ -1361,8 +1712,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_DESTROY:
-        if (m_appCtx && m_appCtx->logger)
-            LOG_INFO(m_appCtx->logger, L"GlassWindow: destroying window and releasing resources");
+        LOG_G_INFO_NODE(L"ui.glass", L"window_destroy", L"hwnd=%p", hWnd);
         KillTimer(hWnd, 0x888);
         KillTimer(hWnd, 0x889);
         if (m_shadowWindow)

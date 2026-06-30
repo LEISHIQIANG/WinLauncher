@@ -34,6 +34,8 @@ public:
     // Default global logger instance for convenience and global logging
     static Logger* GetDefault();
     static void SetDefault(Logger* logger);
+    static bool ShouldLogEvery(ULONGLONG& lastLogTick, DWORD intervalMs = 1000);
+    static bool ShouldLogElapsed(ULONGLONG& lastLogTick, double elapsedMs, double thresholdMs, DWORD intervalMs = 1000);
 
     // Dynamic instance registry for exception callback
     static Logger*& GetInstanceRef();
@@ -55,6 +57,7 @@ private:
 
     void CleanupLoop();
     void PruneLogFile();
+    void TrimLogFileBySizeLocked();
     bool ParseLogTime(const std::string& line, std::chrono::system_clock::time_point& outTime);
 
     std::ofstream m_file;
@@ -68,6 +71,7 @@ private:
     std::atomic<bool> m_stopCleanup{false};
     std::condition_variable m_cv;
     std::mutex m_cleanupMutex;
+    ULONGLONG m_lastSizeTrimTick = 0;
 };
 
 // Logging Macros capturing file, line, and function details
@@ -85,3 +89,15 @@ private:
 #define LOG_G_WORNING(...) if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define LOG_G_DEBUG(...)   if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::DEBUG, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define LOG_G_ERRA(...)    if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+
+// Structured node macros. Keep node names stable, for example:
+// ui.glass / render.background / render.compositor / app.lifecycle.
+#define LOG_INFO_NODE(logger, node, event, fmt, ...)    if (logger) logger->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_WARNING_NODE(logger, node, event, fmt, ...) if (logger) logger->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_DEBUG_NODE(logger, node, event, fmt, ...)   if (logger) logger->Log(Logger::DEBUG, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_ERROR_NODE(logger, node, event, fmt, ...)   if (logger) logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+
+#define LOG_G_INFO_NODE(node, event, fmt, ...)    if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_G_WARNING_NODE(node, event, fmt, ...) if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::WORNING, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_G_DEBUG_NODE(node, event, fmt, ...)   if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::DEBUG, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
+#define LOG_G_ERROR_NODE(node, event, fmt, ...)   if (Logger::GetDefault()) Logger::GetDefault()->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"[node=%ls][event=%ls] " fmt, node, event, __VA_ARGS__)
