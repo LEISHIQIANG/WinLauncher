@@ -25,12 +25,22 @@ public:
 private:
     bool HitTestAutoStart(POINT pt);
     int HitTestTrigger(POINT pt);
+    int HitTestPopupAlignMode(POINT pt);
+    int HitTestPopupAutoClose(POINT pt);
+    int HitTestPopupMultiOpenWhenPinned(POINT pt);
+    int HitTestSortMode(POINT pt);
+    bool HitTestHoverLeaveDelay(POINT pt, int& buttonType);
     int HitTestTheme(POINT pt);
     int HitTestThemeColor(POINT pt);
     int HitTestWindowMode(POINT pt);
     bool HitTestOpenConfigFile(POINT pt);
     bool HitTestOpenLogFile(POINT pt);
     bool HitTestConfigDirText(POINT pt);
+    bool HitTestOpenConfigHistoryDir(POINT pt);
+    bool HitTestCreateConfigBackup(POINT pt);
+    bool HitTestRestoreConfigBackup(POINT pt);
+    bool HitTestClearConfig(POINT pt);
+    bool HitTestClearConfigHistory(POINT pt);
     bool HitTestImportJson(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
@@ -54,8 +64,19 @@ private:
     bool m_hoveredOpenConfigFile = false;
     bool m_hoveredOpenLogFile = false;
     bool m_hoveredConfigDirText = false;
+    bool m_hoveredOpenConfigHistoryDir = false;
+    bool m_hoveredCreateConfigBackup = false;
+    bool m_hoveredRestoreConfigBackup = false;
+    bool m_hoveredClearConfig = false;
+    bool m_hoveredClearConfigHistory = false;
     bool m_hoveredImportJson = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
+    int m_hoveredPopupAlignMode = -1;
+    int m_hoveredPopupAutoClose = -1;
+    int m_hoveredPopupMultiOpenWhenPinned = -1;
+    int m_hoveredSortMode = -1;
+    bool m_hoveredHoverLeaveDelay = false;
+    int m_hoveredHoverLeaveDelayButton = 0;
     int m_hoveredTheme = -1;   // 0 = dark, 1 = light
     int m_hoveredThemeColor = -1; // 0 to 9
     int m_hoveredWindowMode = -1; // 0 = glow, 1 = acrylic, 2 = glass

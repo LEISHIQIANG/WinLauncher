@@ -4,6 +4,15 @@
 #include <string>
 #include <vector>
 
+struct ConfigHistoryEntry
+{
+    std::wstring filePath;
+    std::wstring displayName;
+    std::wstring kind;
+    unsigned long long lastWriteTime = 0;
+    unsigned long long sizeBytes = 0;
+};
+
 class IConfigService
 {
 public:
@@ -13,6 +22,12 @@ public:
     virtual void SaveConfig(const std::vector<Model::PopupPage>& pages) = 0;
     virtual std::wstring GetConfigDir() const = 0;
     virtual std::wstring GetConfigFilePath() const = 0;
+    virtual std::wstring GetConfigHistoryDir() const = 0;
+    virtual std::vector<ConfigHistoryEntry> GetConfigHistory() = 0;
+    virtual bool CreateConfigBackup(const std::wstring& reason) = 0;
+    virtual bool RestoreConfigBackup(const std::wstring& backupPath) = 0;
+    virtual bool ClearConfig() = 0;
+    virtual bool ClearConfigHistory() = 0;
     virtual Model::AppearanceSettings GetAppearanceSettings() const = 0;
     virtual void SetAppearanceSettings(const Model::AppearanceSettings& settings) = 0;
 
@@ -50,6 +65,16 @@ public:
     virtual void SetDockHeight(int height) = 0;
     virtual bool GetSearchMode() = 0;
     virtual void SetSearchMode(bool enabled) = 0;
+    virtual int GetPopupAlignMode() = 0;
+    virtual void SetPopupAlignMode(int mode) = 0;
+    virtual bool GetPopupAutoClose() = 0;
+    virtual void SetPopupAutoClose(bool enabled) = 0;
+    virtual bool GetPopupMultiOpenWhenPinned() = 0;
+    virtual void SetPopupMultiOpenWhenPinned(bool enabled) = 0;
+    virtual int GetHoverLeaveDelay() = 0;
+    virtual void SetHoverLeaveDelay(int delayMs) = 0;
+    virtual int GetSortMode() = 0;
+    virtual void SetSortMode(int mode) = 0;
 
     virtual bool GetAnimationEnabled() = 0;
     virtual void SetAnimationEnabled(bool enabled) = 0;

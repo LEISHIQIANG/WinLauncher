@@ -29,6 +29,31 @@ static constexpr UINT_PTR CONFIG_BACKGROUND_STYLE_TIMER_ID = 102;
 static constexpr UINT CONFIG_SAVE_DEBOUNCE_MS = 500;
 static constexpr UINT CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS = 120;
 
+namespace
+{
+    std::wstring FormatHistoryTime(unsigned long long fileTimeValue)
+    {
+        if (fileTimeValue == 0)
+            return L"未知时间";
+
+        FILETIME ft{};
+        ULARGE_INTEGER value{};
+        value.QuadPart = fileTimeValue;
+        ft.dwLowDateTime = value.LowPart;
+        ft.dwHighDateTime = value.HighPart;
+
+        FILETIME localFt{};
+        SYSTEMTIME st{};
+        if (!FileTimeToLocalFileTime(&ft, &localFt) || !FileTimeToSystemTime(&localFt, &st))
+            return L"未知时间";
+
+        wchar_t buf[32]{};
+        swprintf_s(buf, L"%04u-%02u-%02u %02u:%02u:%02u",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        return buf;
+    }
+}
+
 ConfigWindow* ConfigWindow::s_instance = nullptr;
 AppContext* ConfigWindow::s_ctx = nullptr;
 
@@ -455,6 +480,28 @@ std::wstring ConfigWindow::GetConfigFilePath()
     return m_configDir + L"\\launcher_config.ini";
 }
 
+std::wstring ConfigWindow::GetConfigHistoryDir()
+{
+    if (m_appCtx && m_appCtx->configService)
+        return m_appCtx->configService->GetConfigHistoryDir();
+    return GetConfigDir() + L"\\history";
+}
+
+std::wstring ConfigWindow::GetConfigHistorySummary()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return L"暂无配置历史";
+
+    auto history = m_appCtx->configService->GetConfigHistory();
+    if (history.empty())
+        return L"暂无配置历史";
+
+    const auto& latest = history.front();
+    unsigned long long kb = (latest.sizeBytes + 1023ULL) / 1024ULL;
+    return L"历史 " + std::to_wstring(history.size()) + L" 条，最近: " +
+        FormatHistoryTime(latest.lastWriteTime) + L"，" + std::to_wstring(kb) + L" KB";
+}
+
 void ConfigWindow::OpenConfigFile()
 {
     std::wstring path = GetConfigFilePath();
@@ -474,6 +521,137 @@ void ConfigWindow::OpenConfigDir()
     std::wstring dir = GetConfigDir();
     if (!dir.empty())
         ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void ConfigWindow::OpenConfigHistoryDir()
+{
+    std::wstring dir = GetConfigHistoryDir();
+    if (!dir.empty())
+        ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void ConfigWindow::ReloadAfterConfigFileOperation()
+{
+    LoadConfig();
+    if (m_appCtx && m_appCtx->configService)
+    {
+        UIStyle::ApplyAppearanceSettings(m_appCtx->configService->GetAppearanceSettings());
+        MouseHook::SetTriggerType(m_appCtx->configService->GetTriggerType());
+        UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
+        UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
+        UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
+        if (m_appCtx->configService->HasCustomGlobalScalePercent())
+            UIStyle::Scaling::SetGlobalScalePercent(m_appCtx->configService->GetGlobalScalePercent());
+        else
+            UIStyle::Scaling::SetDefaultGlobalScalePercent(DpiHelper::GetPrimaryDisplayScalePercent());
+        UIStyle::Animation::SetEnabled(m_appCtx->configService->GetAnimationEnabled());
+        UIStyle::Animation::SetDurationMs((float)m_appCtx->configService->GetAnimationDuration());
+        UIStyle::Performance::SetHardwareAccelerationEnabled(m_appCtx->configService->GetHardwareAccelerationEnabled());
+        UIStyle::Performance::ApplyProcessPolicy();
+    }
+    if (m_appCtx && m_appCtx->eventBus)
+    {
+        m_appCtx->eventBus->Publish(EventType::ConfigChanged);
+        m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        m_appCtx->eventBus->Publish(EventType::UiScaleChanged);
+    }
+    InvalidateRect(GetHWND(), nullptr, FALSE);
+}
+
+void ConfigWindow::CreateConfigBackupNow()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return;
+
+    SaveConfig();
+    bool ok = m_appCtx->configService->CreateConfigBackup(L"manual");
+    ConfirmWindow::Show(GetHWND(), ok ? L"备份完成" : L"备份失败",
+        ok ? L"已创建当前配置的手动备份，可在配置历史中回滚找回。"
+           : L"未能创建配置备份，请检查配置目录权限或磁盘状态。",
+        m_appCtx, false);
+    InvalidateRect(GetHWND(), nullptr, FALSE);
+}
+
+void ConfigWindow::RestoreLatestConfigBackup()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return;
+
+    SaveConfig();
+    auto history = m_appCtx->configService->GetConfigHistory();
+    if (history.empty())
+    {
+        ConfirmWindow::Show(GetHWND(), L"无法回滚", L"当前没有可用的配置历史。", m_appCtx, false);
+        return;
+    }
+
+    std::wstring prompt = L"将回滚到最近历史:\n" + FormatHistoryTime(history.front().lastWriteTime) +
+        L"\n当前配置会先自动备份。是否继续？";
+    if (!ConfirmWindow::Show(GetHWND(), L"回滚配置", prompt.c_str(), m_appCtx))
+        return;
+
+    if (HWND hwnd = GetHWND())
+        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
+
+    bool ok = m_appCtx->configService->RestoreConfigBackup(history.front().filePath);
+    if (ok)
+    {
+        ReloadAfterConfigFileOperation();
+    }
+
+    ConfirmWindow::Show(GetHWND(), ok ? L"回滚完成" : L"回滚失败",
+        ok ? L"配置已恢复到最近历史，并已刷新当前窗口。"
+           : L"未能恢复配置历史，请检查历史文件是否仍存在。",
+        m_appCtx, false);
+}
+
+void ConfigWindow::ClearConfigData()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return;
+
+    if (!ConfirmWindow::Show(GetHWND(), L"清除配置",
+        L"只清空当前快捷方式和设置，不删除配置历史。\n清除前会立即自动备份当前配置。是否继续？",
+        m_appCtx))
+    {
+        return;
+    }
+
+    SaveConfig();
+    if (HWND hwnd = GetHWND())
+        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
+
+    bool ok = m_appCtx->configService->ClearConfig();
+    if (ok)
+    {
+        m_currentCategory = 0;
+        ReloadAfterConfigFileOperation();
+    }
+
+    ConfirmWindow::Show(GetHWND(), ok ? L"配置已清除" : L"清除失败",
+        ok ? L"已恢复默认配置，原配置已保存在配置历史中。"
+           : L"未能清除配置，当前配置可能未完成备份或文件权限异常。",
+        m_appCtx, false);
+}
+
+void ConfigWindow::ClearConfigHistoryData()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return;
+
+    if (!ConfirmWindow::Show(GetHWND(), L"清除配置历史",
+        L"将删除所有配置历史备份。\n删除后无法从历史中回滚找回。是否继续？",
+        m_appCtx))
+    {
+        return;
+    }
+
+    bool ok = m_appCtx->configService->ClearConfigHistory();
+    ConfirmWindow::Show(GetHWND(), ok ? L"历史已清除" : L"清除失败",
+        ok ? L"配置历史已清空。"
+           : L"部分历史文件未能删除，请检查配置历史目录。",
+        m_appCtx, false);
+    InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
 void ConfigWindow::ImportJsonConfig()
@@ -986,6 +1164,61 @@ int ConfigWindow::GetDockHeight()
 void ConfigWindow::SetDockHeight(int height)
 {
     if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetDockHeight(height);
+}
+
+int ConfigWindow::GetPopupAlignMode()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupAlignMode();
+    return 0;
+}
+
+void ConfigWindow::SetPopupAlignMode(int mode)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupAlignMode(mode);
+}
+
+bool ConfigWindow::GetPopupAutoClose()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupAutoClose();
+    return true;
+}
+
+void ConfigWindow::SetPopupAutoClose(bool enabled)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupAutoClose(enabled);
+}
+
+bool ConfigWindow::GetPopupMultiOpenWhenPinned()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupMultiOpenWhenPinned();
+    return false;
+}
+
+void ConfigWindow::SetPopupMultiOpenWhenPinned(bool enabled)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupMultiOpenWhenPinned(enabled);
+}
+
+int ConfigWindow::GetHoverLeaveDelay()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetHoverLeaveDelay();
+    return 200;
+}
+
+void ConfigWindow::SetHoverLeaveDelay(int delayMs)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetHoverLeaveDelay(delayMs);
+}
+
+int ConfigWindow::GetSortMode()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetSortMode();
+    return 0;
+}
+
+void ConfigWindow::SetSortMode(int mode)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetSortMode(mode);
 }
 
 bool ConfigWindow::GetAnimationEnabled()

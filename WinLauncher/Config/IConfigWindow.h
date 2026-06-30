@@ -16,9 +16,16 @@ public:
     virtual HWND GetWindowHWND() = 0;
     virtual std::wstring GetConfigDir() = 0;
     virtual std::wstring GetConfigFilePath() = 0;
+    virtual std::wstring GetConfigHistoryDir() = 0;
+    virtual std::wstring GetConfigHistorySummary() = 0;
     virtual void OpenConfigFile() = 0;
     virtual void OpenLogFile() = 0;
     virtual void OpenConfigDir() = 0;
+    virtual void OpenConfigHistoryDir() = 0;
+    virtual void CreateConfigBackupNow() = 0;
+    virtual void RestoreLatestConfigBackup() = 0;
+    virtual void ClearConfigData() = 0;
+    virtual void ClearConfigHistoryData() = 0;
     virtual void StartAnimation() = 0;
     virtual IDWriteTextFormat* GetLeftFont() = 0;
     virtual IDWriteTextFormat* GetTitleFont() = 0;
@@ -72,6 +79,16 @@ public:
     virtual void SetGlobalScalePercent(int percent) = 0;
     virtual int GetDockHeight() = 0;
     virtual void SetDockHeight(int height) = 0;
+    virtual int GetPopupAlignMode() = 0;
+    virtual void SetPopupAlignMode(int mode) = 0;
+    virtual bool GetPopupAutoClose() = 0;
+    virtual void SetPopupAutoClose(bool enabled) = 0;
+    virtual bool GetPopupMultiOpenWhenPinned() = 0;
+    virtual void SetPopupMultiOpenWhenPinned(bool enabled) = 0;
+    virtual int GetHoverLeaveDelay() = 0;
+    virtual void SetHoverLeaveDelay(int delayMs) = 0;
+    virtual int GetSortMode() = 0;
+    virtual void SetSortMode(int mode) = 0;
 
     virtual bool GetAnimationEnabled() = 0;
     virtual void SetAnimationEnabled(bool enabled) = 0;

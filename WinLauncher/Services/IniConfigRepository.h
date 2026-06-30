@@ -9,6 +9,11 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cwctype>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 #include "FolderWatcher.h"
 #include "SyncFolderService.h"
@@ -21,6 +26,8 @@
 class IniConfigRepository : public IConfigService
 {
 public:
+    static constexpr int AutoBackupDebounceSeconds = 180;
+
     explicit IniConfigRepository(Logger* logger = nullptr, HWND notifyHwnd = nullptr, UINT notifyMessage = 0)
         : m_logger(logger)
         , m_notifyHwnd(notifyHwnd)
@@ -38,6 +45,11 @@ public:
         , m_globalScalePercent(100)
         , m_dockHeight(1)
         , m_searchMode(false)
+        , m_popupAlignMode(0)
+        , m_popupAutoClose(true)
+        , m_popupMultiOpenWhenPinned(false)
+        , m_hoverLeaveDelay(200)
+        , m_sortMode(0)
         , m_animationEnabled(true)
         , m_animationDuration(200)
         , m_hardwareAccelerationEnabled(true)
@@ -46,6 +58,7 @@ public:
     {
         m_configDir = ConfigPath::PrepareUserConfigDirectory();
         m_configFilePath = m_configDir + L"\\launcher_config.ini";
+        m_historyDir = m_configDir + L"\\history";
     }
 
 private:
@@ -239,6 +252,26 @@ public:
                     else if (key == L"SearchMode")
                     {
                         try { m_searchMode = (std::stoi(val) != 0); } catch (...) { m_searchMode = false; }
+                    }
+                    else if (key == L"PopupAlignMode")
+                    {
+                        try { SetPopupAlignMode(std::stoi(val)); } catch (...) { m_popupAlignMode = 0; }
+                    }
+                    else if (key == L"PopupAutoClose")
+                    {
+                        try { m_popupAutoClose = (std::stoi(val) != 0); } catch (...) { m_popupAutoClose = true; }
+                    }
+                    else if (key == L"PopupMultiOpenWhenPinned")
+                    {
+                        try { m_popupMultiOpenWhenPinned = (std::stoi(val) != 0); } catch (...) { m_popupMultiOpenWhenPinned = false; }
+                    }
+                    else if (key == L"HoverLeaveDelay")
+                    {
+                        try { SetHoverLeaveDelay(std::stoi(val)); } catch (...) { m_hoverLeaveDelay = 200; }
+                    }
+                    else if (key == L"SortMode")
+                    {
+                        try { SetSortMode(std::stoi(val)); } catch (...) { m_sortMode = 0; }
                     }
                     else if (key == L"AnimationEnabled")
                     {
@@ -577,6 +610,11 @@ public:
         }
         content += L"DockHeight=" + std::to_wstring(m_dockHeight) + L"\r\n";
         content += L"SearchMode=" + std::to_wstring(m_searchMode ? 1 : 0) + L"\r\n";
+        content += L"PopupAlignMode=" + std::to_wstring(m_popupAlignMode) + L"\r\n";
+        content += L"PopupAutoClose=" + std::to_wstring(m_popupAutoClose ? 1 : 0) + L"\r\n";
+        content += L"PopupMultiOpenWhenPinned=" + std::to_wstring(m_popupMultiOpenWhenPinned ? 1 : 0) + L"\r\n";
+        content += L"HoverLeaveDelay=" + std::to_wstring(m_hoverLeaveDelay) + L"\r\n";
+        content += L"SortMode=" + std::to_wstring(m_sortMode) + L"\r\n";
         content += L"AnimationEnabled=" + std::to_wstring(m_animationEnabled ? 1 : 0) + L"\r\n";
         content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
         content += L"HardwareAccelerationEnabled=" + std::to_wstring(m_hardwareAccelerationEnabled ? 1 : 0) + L"\r\n";
@@ -654,7 +692,7 @@ public:
             pageIndex++;
         }
         ConfigPath::EnsureDirectoryExists(m_configDir);
-        if (WriteFile(m_configFilePath, content))
+        if (ProtectedWriteFile(m_configFilePath, content))
         {
             LOG_INFO(m_logger, L"Saved %zu pages to config", pages.size());
         }
@@ -666,6 +704,126 @@ public:
 
     virtual std::wstring GetConfigDir() const override { return m_configDir; }
     virtual std::wstring GetConfigFilePath() const override { return m_configFilePath; }
+    virtual std::wstring GetConfigHistoryDir() const override { return m_historyDir; }
+
+    virtual std::vector<ConfigHistoryEntry> GetConfigHistory() override
+    {
+        std::vector<ConfigHistoryEntry> entries;
+        ConfigPath::EnsureDirectoryExists(m_historyDir);
+
+        WIN32_FIND_DATAW fd{};
+        std::wstring pattern = m_historyDir + L"\\*.ini";
+        HANDLE hFind = FindFirstFileW(pattern.c_str(), &fd);
+        if (hFind == INVALID_HANDLE_VALUE)
+            return entries;
+
+        do
+        {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                continue;
+
+            ConfigHistoryEntry entry;
+            entry.displayName = fd.cFileName;
+            entry.filePath = m_historyDir + L"\\" + entry.displayName;
+            entry.lastWriteTime = FileTimeToUInt64(fd.ftLastWriteTime);
+            ULARGE_INTEGER size{};
+            size.HighPart = fd.nFileSizeHigh;
+            size.LowPart = fd.nFileSizeLow;
+            entry.sizeBytes = size.QuadPart;
+            entry.kind = ParseHistoryKind(entry.displayName);
+            entries.push_back(std::move(entry));
+        } while (FindNextFileW(hFind, &fd));
+
+        FindClose(hFind);
+        std::sort(entries.begin(), entries.end(), [](const ConfigHistoryEntry& a, const ConfigHistoryEntry& b) {
+            return a.lastWriteTime > b.lastWriteTime;
+        });
+        return entries;
+    }
+
+    virtual bool CreateConfigBackup(const std::wstring& reason) override
+    {
+        bool ok = BackupCurrentConfig(reason);
+        if (ok)
+            CancelPendingAutoBackup();
+        return ok;
+    }
+
+    virtual bool RestoreConfigBackup(const std::wstring& backupPath) override
+    {
+        if (!IsPathUnderDirectory(m_historyDir, backupPath))
+        {
+            LOG_ERROR(m_logger, L"Refused config restore outside history dir: %s", backupPath.c_str());
+            return false;
+        }
+        if (GetFileAttributesW(backupPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+        {
+            LOG_ERROR(m_logger, L"Config restore backup not found: %s", backupPath.c_str());
+            return false;
+        }
+
+        CancelPendingAutoBackup();
+        BackupCurrentConfig(L"before-restore");
+        ConfigPath::EnsureDirectoryExists(m_configDir);
+        std::wstring tempPath = m_configFilePath + L".restore.tmp";
+        DeleteFileW(tempPath.c_str());
+        if (!CopyFileW(backupPath.c_str(), tempPath.c_str(), FALSE))
+        {
+            LOG_ERROR(m_logger, L"Failed to copy config restore temp from %s", backupPath.c_str());
+            return false;
+        }
+        if (!MoveFileExW(tempPath.c_str(), m_configFilePath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            DeleteFileW(tempPath.c_str());
+            LOG_ERROR(m_logger, L"Failed to replace config from backup: %s", backupPath.c_str());
+            return false;
+        }
+
+        LoadConfig();
+        LOG_INFO(m_logger, L"Restored config from backup: %s", backupPath.c_str());
+        return true;
+    }
+
+    virtual bool ClearConfig() override
+    {
+        CancelPendingAutoBackup();
+        bool hasCurrentConfig = GetFileAttributesW(m_configFilePath.c_str()) != INVALID_FILE_ATTRIBUTES;
+        if (hasCurrentConfig && !BackupCurrentConfig(L"auto"))
+        {
+            LOG_ERROR(m_logger, L"Refused to clear config because immediate auto backup failed: %s", m_configFilePath.c_str());
+            return false;
+        }
+        if (!DeleteFileW(m_configFilePath.c_str()) && GetFileAttributesW(m_configFilePath.c_str()) != INVALID_FILE_ATTRIBUTES)
+        {
+            LOG_ERROR(m_logger, L"Failed to delete config before clearing: %s", m_configFilePath.c_str());
+            return false;
+        }
+        ResetRuntimeSettingsToDefaults();
+        CreateDefaultConfig();
+        if (GetFileAttributesW(m_configFilePath.c_str()) == INVALID_FILE_ATTRIBUTES)
+        {
+            LOG_ERROR(m_logger, L"Failed to recreate default config after clearing");
+            return false;
+        }
+        LOG_INFO(m_logger, L"Cleared config and recreated defaults");
+        return true;
+    }
+
+    virtual bool ClearConfigHistory() override
+    {
+        auto entries = GetConfigHistory();
+        bool ok = true;
+        for (const auto& entry : entries)
+        {
+            if (!DeleteFileW(entry.filePath.c_str()))
+            {
+                ok = false;
+                LOG_ERROR(m_logger, L"Failed to delete config history item: %s", entry.filePath.c_str());
+            }
+        }
+        return ok;
+    }
+
     virtual Model::AppearanceSettings GetAppearanceSettings() const override { return m_appearance; }
     virtual void SetAppearanceSettings(const Model::AppearanceSettings& settings) override { m_appearance = settings; }
 
@@ -712,6 +870,31 @@ public:
     virtual void SetDockHeight(int height) override { m_dockHeight = height; }
     virtual bool GetSearchMode() override { return m_searchMode; }
     virtual void SetSearchMode(bool enabled) override { m_searchMode = enabled; }
+    virtual int GetPopupAlignMode() override { return m_popupAlignMode; }
+    virtual void SetPopupAlignMode(int mode) override
+    {
+        if (mode < 0) mode = 0;
+        if (mode > 3) mode = 3;
+        m_popupAlignMode = mode;
+    }
+    virtual bool GetPopupAutoClose() override { return m_popupAutoClose; }
+    virtual void SetPopupAutoClose(bool enabled) override { m_popupAutoClose = enabled; }
+    virtual bool GetPopupMultiOpenWhenPinned() override { return m_popupMultiOpenWhenPinned; }
+    virtual void SetPopupMultiOpenWhenPinned(bool enabled) override { m_popupMultiOpenWhenPinned = enabled; }
+    virtual int GetHoverLeaveDelay() override { return m_hoverLeaveDelay; }
+    virtual void SetHoverLeaveDelay(int delayMs) override
+    {
+        if (delayMs < 0) delayMs = 0;
+        if (delayMs > 5000) delayMs = 5000;
+        m_hoverLeaveDelay = delayMs;
+    }
+    virtual int GetSortMode() override { return m_sortMode; }
+    virtual void SetSortMode(int mode) override
+    {
+        if (mode < 0) mode = 0;
+        if (mode > 1) mode = 1;
+        m_sortMode = mode;
+    }
     virtual bool GetAnimationEnabled() override { return m_animationEnabled; }
     virtual void SetAnimationEnabled(bool enabled) override { m_animationEnabled = enabled; }
     virtual int GetAnimationDuration() override { return m_animationDuration; }
@@ -737,6 +920,7 @@ public:
 
     virtual ~IniConfigRepository() override
     {
+        StopAutoBackupWorker();
         m_folderWatcher.Stop();
     }
 
@@ -861,6 +1045,35 @@ private:
         return pages;
     }
 
+    void ResetRuntimeSettingsToDefaults()
+    {
+        m_appearance = Model::AppearanceSettings{};
+        m_triggerType = 0;
+        m_popupColumns = 6;
+        m_popupRows = 4;
+        m_popupIconSize = 24;
+        m_popupIconGap = 4;
+        m_popupIconRadius = 6;
+        m_popupWndPadding = 8;
+        m_themeMode = 0;
+        m_themeColorIndex = 0;
+        m_windowMode = 0;
+        m_globalScalePercent = 100;
+        m_hasGlobalScalePercent = false;
+        m_dockHeight = 1;
+        m_searchMode = false;
+        m_popupAlignMode = 0;
+        m_popupAutoClose = true;
+        m_popupMultiOpenWhenPinned = false;
+        m_hoverLeaveDelay = 200;
+        m_sortMode = 0;
+        m_animationEnabled = true;
+        m_animationDuration = 200;
+        m_hardwareAccelerationEnabled = true;
+        m_hideTrayIcon = false;
+        m_autoUpdate = true;
+    }
+
     static std::wstring ReadFile(const std::wstring& path)
     {
         std::ifstream fs(path, std::ios::binary);
@@ -884,8 +1097,216 @@ private:
         return true;
     }
 
+    bool ProtectedWriteFile(const std::wstring& path, const std::wstring& wstr)
+    {
+        std::wstring existing = ReadFile(path);
+        bool contentChanged = !existing.empty() && existing != wstr;
+
+        std::wstring tempPath = path + L".tmp";
+        DeleteFileW(tempPath.c_str());
+        if (!WriteFile(tempPath, wstr))
+            return false;
+
+        if (MoveFileExW(tempPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            if (contentChanged)
+                ScheduleAutoBackup();
+            PruneConfigHistory(80);
+            return true;
+        }
+
+        DeleteFileW(tempPath.c_str());
+        return false;
+    }
+
+    void ScheduleAutoBackup()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_autoBackupMutex);
+            m_autoBackupPending = true;
+            m_autoBackupDue = std::chrono::steady_clock::now() + std::chrono::seconds(AutoBackupDebounceSeconds);
+            if (!m_autoBackupWorkerStarted)
+            {
+                m_autoBackupWorkerStarted = true;
+                m_autoBackupThread = std::thread([this]() { AutoBackupWorkerLoop(); });
+            }
+        }
+        m_autoBackupCv.notify_one();
+        LOG_INFO(m_logger, L"Scheduled auto config backup in %d seconds", AutoBackupDebounceSeconds);
+    }
+
+    void CancelPendingAutoBackup()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_autoBackupMutex);
+            m_autoBackupPending = false;
+        }
+        m_autoBackupCv.notify_one();
+    }
+
+    void StopAutoBackupWorker()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_autoBackupMutex);
+            m_autoBackupStopping = true;
+            m_autoBackupPending = false;
+        }
+        m_autoBackupCv.notify_one();
+        if (m_autoBackupThread.joinable())
+            m_autoBackupThread.join();
+    }
+
+    void AutoBackupWorkerLoop()
+    {
+        std::unique_lock<std::mutex> lock(m_autoBackupMutex);
+        while (!m_autoBackupStopping)
+        {
+            if (!m_autoBackupPending)
+            {
+                m_autoBackupCv.wait(lock, [this]() {
+                    return m_autoBackupStopping || m_autoBackupPending;
+                });
+                continue;
+            }
+
+            auto due = m_autoBackupDue;
+            bool interrupted = m_autoBackupCv.wait_until(lock, due, [this, due]() {
+                return m_autoBackupStopping || !m_autoBackupPending || m_autoBackupDue != due;
+            });
+            if (interrupted)
+                continue;
+
+            m_autoBackupPending = false;
+            lock.unlock();
+            BackupCurrentConfig(L"auto");
+            lock.lock();
+        }
+    }
+
+    bool BackupCurrentConfig(const std::wstring& reason)
+    {
+        if (GetFileAttributesW(m_configFilePath.c_str()) == INVALID_FILE_ATTRIBUTES)
+            return false;
+
+        ConfigPath::EnsureDirectoryExists(m_historyDir);
+        std::wstring backupPath = MakeHistoryPath(reason);
+        if (!CopyFileW(m_configFilePath.c_str(), backupPath.c_str(), FALSE))
+        {
+            LOG_ERROR(m_logger, L"Failed to create config backup: %s", backupPath.c_str());
+            return false;
+        }
+        PruneConfigHistory(80);
+        LOG_INFO(m_logger, L"Created config backup: %s", backupPath.c_str());
+        return true;
+    }
+
+    std::wstring MakeHistoryPath(const std::wstring& reason)
+    {
+        std::wstring safeReason = SanitizeHistoryReason(reason);
+        if (safeReason.empty())
+            safeReason = L"manual";
+
+        std::wstring base = m_historyDir + L"\\" + MakeTimestamp() + L"-" + safeReason;
+        std::wstring path = base + L".ini";
+        int suffix = 1;
+        while (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+        {
+            path = base + L"-" + std::to_wstring(suffix++) + L".ini";
+        }
+        return path;
+    }
+
+    static std::wstring MakeTimestamp()
+    {
+        SYSTEMTIME st{};
+        GetLocalTime(&st);
+        wchar_t buf[32]{};
+        swprintf_s(buf, L"%04u%02u%02u-%02u%02u%02u-%03u",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+        return buf;
+    }
+
+    static std::wstring SanitizeHistoryReason(const std::wstring& reason)
+    {
+        std::wstring result;
+        result.reserve(reason.size());
+        for (wchar_t ch : reason)
+        {
+            if ((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') ||
+                (ch >= L'0' && ch <= L'9') || ch == L'-' || ch == L'_')
+            {
+                result.push_back(ch);
+            }
+        }
+        return result;
+    }
+
+    static std::wstring ParseHistoryKind(const std::wstring& fileName)
+    {
+        size_t firstDash = fileName.find(L'-');
+        if (firstDash == std::wstring::npos) return L"unknown";
+        size_t secondDash = fileName.find(L'-', firstDash + 1);
+        if (secondDash == std::wstring::npos) return L"unknown";
+        size_t dot = fileName.rfind(L'.');
+        if (dot == std::wstring::npos || dot <= secondDash + 1) return L"unknown";
+        return fileName.substr(secondDash + 1, dot - secondDash - 1);
+    }
+
+    static unsigned long long FileTimeToUInt64(const FILETIME& ft)
+    {
+        ULARGE_INTEGER value{};
+        value.LowPart = ft.dwLowDateTime;
+        value.HighPart = ft.dwHighDateTime;
+        return value.QuadPart;
+    }
+
+    static std::wstring FullPath(const std::wstring& path)
+    {
+        DWORD len = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+        if (len == 0) return path;
+        std::wstring result(len, L'\0');
+        DWORD written = GetFullPathNameW(path.c_str(), len, &result[0], nullptr);
+        if (written == 0) return path;
+        result.resize(written);
+        return result;
+    }
+
+    static bool StartsWithNoCase(const std::wstring& value, const std::wstring& prefix)
+    {
+        if (value.size() < prefix.size()) return false;
+        for (size_t i = 0; i < prefix.size(); ++i)
+        {
+            if (towlower(value[i]) != towlower(prefix[i]))
+                return false;
+        }
+        return true;
+    }
+
+    static bool IsPathUnderDirectory(const std::wstring& dir, const std::wstring& path)
+    {
+        std::wstring fullDir = FullPath(dir);
+        std::wstring fullPath = FullPath(path);
+        while (!fullDir.empty() && (fullDir.back() == L'\\' || fullDir.back() == L'/'))
+            fullDir.pop_back();
+        fullDir += L"\\";
+        return StartsWithNoCase(fullPath, fullDir);
+    }
+
+    void PruneConfigHistory(size_t keepCount)
+    {
+        auto entries = GetConfigHistory();
+        if (entries.size() <= keepCount)
+            return;
+
+        for (size_t i = keepCount; i < entries.size(); ++i)
+        {
+            DeleteFileW(entries[i].filePath.c_str());
+        }
+    }
+
     std::wstring m_configDir;
     std::wstring m_configFilePath;
+    std::wstring m_historyDir;
     Logger* m_logger = nullptr;
     HWND m_notifyHwnd = nullptr;
     UINT m_notifyMessage = 0;
@@ -904,10 +1325,22 @@ private:
     bool m_hasGlobalScalePercent = false;
     int m_dockHeight = 50;
     bool m_searchMode = false;
+    int m_popupAlignMode = 0;
+    bool m_popupAutoClose = true;
+    bool m_popupMultiOpenWhenPinned = false;
+    int m_hoverLeaveDelay = 200;
+    int m_sortMode = 0;
     bool m_animationEnabled = true;
     int m_animationDuration = 200;
     bool m_hardwareAccelerationEnabled = true;
     bool m_hideTrayIcon;
     bool m_autoUpdate;
+    std::mutex m_autoBackupMutex;
+    std::condition_variable m_autoBackupCv;
+    std::thread m_autoBackupThread;
+    bool m_autoBackupWorkerStarted = false;
+    bool m_autoBackupStopping = false;
+    bool m_autoBackupPending = false;
+    std::chrono::steady_clock::time_point m_autoBackupDue{};
     FolderWatcher m_folderWatcher;
 };

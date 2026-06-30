@@ -9,6 +9,7 @@
 #include "Config/TextBox.h"
 #include "Services/FileSelectionService.h"
 #include <mutex>
+#include <memory>
 
 using Microsoft::WRL::ComPtr;
 
@@ -65,6 +66,9 @@ private:
     void UpdateSearch();
     void UpdateImeWindowPosition();
     void SavePopupConfig();
+    void ShowAt(HWND parent, POINT pt);
+    void HideSelf();
+    void DestroySelf();
     void DrawTopBar(ID2D1HwndRenderTarget* rt);
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);
     void DrawDock(ID2D1HwndRenderTarget* rt);
@@ -82,6 +86,10 @@ private:
     };
 
     static PopupWindow* s_instance;
+    static std::vector<PopupWindow*> s_extraWindows;
+    static void PruneExtraWindows();
+    static void RemoveExtraWindow(PopupWindow* window);
+    static PopupWindow* FindByHwnd(HWND hwnd);
 
     std::unique_ptr<PopupViewModel> m_viewModel;
     std::unique_ptr<IIconService> m_iconService; // public for helper function access
@@ -127,6 +135,7 @@ private:
     int m_hoveredTab;
     int m_hoveredDock;   // index into m_dockPage.shortcuts, -1 if none
     bool m_cursorBlink;
+    bool m_destroyOnHide = false;
     HWND m_restoreForegroundWnd = nullptr;
     PressedShortcutKind m_pressedShortcutKind = PressedShortcutKind::None;
     int m_pressedShortcutIndex = -1;

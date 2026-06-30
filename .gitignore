@@ -1,0 +1,15 @@
+# Visual Studio
+.vs/
+
+# Workbuddy
+.workbuddy/
+
+# Build output
+x64/
+Release/
+Debug/
+*.exe
+
+# OS files
+Thumbs.db
+*.DS_Store

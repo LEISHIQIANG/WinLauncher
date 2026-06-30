@@ -35,9 +35,16 @@ public:
     virtual HWND GetWindowHWND() override;
     virtual std::wstring GetConfigDir() override;
     virtual std::wstring GetConfigFilePath() override;
+    virtual std::wstring GetConfigHistoryDir() override;
+    virtual std::wstring GetConfigHistorySummary() override;
     virtual void OpenConfigFile() override;
     virtual void OpenLogFile() override;
     virtual void OpenConfigDir() override;
+    virtual void OpenConfigHistoryDir() override;
+    virtual void CreateConfigBackupNow() override;
+    virtual void RestoreLatestConfigBackup() override;
+    virtual void ClearConfigData() override;
+    virtual void ClearConfigHistoryData() override;
     virtual void StartAnimation() override;
     virtual IDWriteTextFormat* GetLeftFont() override { return m_tfLeft.Get(); }
     virtual IDWriteTextFormat* GetTitleFont() override { return m_tfTitle.Get(); }
@@ -89,6 +96,16 @@ public:
     virtual void SetGlobalScalePercent(int percent) override;
     virtual int GetDockHeight() override;
     virtual void SetDockHeight(int height) override;
+    virtual int GetPopupAlignMode() override;
+    virtual void SetPopupAlignMode(int mode) override;
+    virtual bool GetPopupAutoClose() override;
+    virtual void SetPopupAutoClose(bool enabled) override;
+    virtual bool GetPopupMultiOpenWhenPinned() override;
+    virtual void SetPopupMultiOpenWhenPinned(bool enabled) override;
+    virtual int GetHoverLeaveDelay() override;
+    virtual void SetHoverLeaveDelay(int delayMs) override;
+    virtual int GetSortMode() override;
+    virtual void SetSortMode(int mode) override;
     virtual bool GetAnimationEnabled() override;
     virtual void SetAnimationEnabled(bool enabled) override;
     virtual int GetAnimationDuration() override;
@@ -107,6 +124,7 @@ private:
     void ClearPages();
     void LoadConfig();
     void SaveConfig();
+    void ReloadAfterConfigFileOperation();
     static void ShowMode(HWND parent, AppContext* ctx, bool settingsMode);
     void SetSettingsMode(bool settingsMode);
     void ResizeToCurrentScale();

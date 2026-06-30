@@ -14,11 +14,13 @@
 #include <algorithm>
 #include <imm.h>
 #include <string>
+#include <tuple>
 #pragma comment(lib, "imm32.lib")
 #include "Services/MacroService.h"
 #include "Services/BatchLaunchService.h"
 
 PopupWindow* PopupWindow::s_instance = nullptr;
+std::vector<PopupWindow*> PopupWindow::s_extraWindows;
 
 static const int ICON_SIZE      = 24;
 static const int CELL_MARGIN_X  = 6;
@@ -33,6 +35,7 @@ static const UINT_PTR AUTO_HIDE_TIMER_ID = 1;
 static const UINT_PTR POPUP_ANIMATION_TIMER_ID = 2;
 static const UINT POPUP_ANIMATION_FRAME_MS = 8;
 static const UINT_PTR TIMELINE_ANIMATION_TIMER_ID = 3;
+static const UINT_PTR CLICK_CLOSE_TIMER_ID = 4;
 static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
@@ -393,11 +396,39 @@ HWND PopupWindow::GetRestoreForegroundWindow()
     return (hWnd && IsWindow(hWnd)) ? hWnd : nullptr;
 }
 
+void PopupWindow::PruneExtraWindows()
+{
+    s_extraWindows.erase(
+        std::remove_if(s_extraWindows.begin(), s_extraWindows.end(), [](PopupWindow* window) {
+            return !window || !window->GetHWND() || !IsWindow(window->GetHWND());
+        }),
+        s_extraWindows.end());
+}
+
+void PopupWindow::RemoveExtraWindow(PopupWindow* window)
+{
+    s_extraWindows.erase(
+        std::remove(s_extraWindows.begin(), s_extraWindows.end(), window),
+        s_extraWindows.end());
+}
+
+PopupWindow* PopupWindow::FindByHwnd(HWND hwnd)
+{
+    if (!hwnd) return nullptr;
+    if (s_instance && s_instance->GetHWND() == hwnd)
+        return s_instance;
+
+    PruneExtraWindows();
+    for (PopupWindow* window : s_extraWindows)
+    {
+        if (window && window->GetHWND() == hwnd)
+            return window;
+    }
+    return nullptr;
+}
+
 void PopupWindow::Show(HWND parent, POINT pt)
 {
-    HWND prevActive = GetForegroundWindow();
-    double showStart = GetTimeInSeconds();
-
     if (!s_instance)
     {
         Init(nullptr);
@@ -405,35 +436,82 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
     if (!s_instance) return;
 
-    if (prevActive && prevActive != s_instance->GetHWND())
+    PruneExtraWindows();
+    bool multiOpenPinned = s_instance->m_appCtx &&
+        s_instance->m_appCtx->configService &&
+        s_instance->m_appCtx->configService->GetPopupMultiOpenWhenPinned();
+
+    if (multiOpenPinned &&
+        s_instance->GetHWND() &&
+        IsWindowVisible(s_instance->GetHWND()) &&
+        s_instance->m_pinned)
     {
-        s_instance->m_restoreForegroundWnd = prevActive;
+        const size_t maxExtraWindows = 2;
+        while (s_extraWindows.size() >= maxExtraWindows)
+        {
+            PopupWindow* oldWindow = s_extraWindows.front();
+            s_extraWindows.erase(s_extraWindows.begin());
+            if (!oldWindow)
+            {
+                continue;
+            }
+            HWND oldHwnd = oldWindow->GetHWND();
+            if (oldHwnd)
+            {
+                oldWindow->StopAutoHideTimer();
+                KillTimer(oldHwnd, CLICK_CLOSE_TIMER_ID);
+                KillTimer(oldHwnd, POPUP_ANIMATION_TIMER_ID);
+                KillTimer(oldHwnd, TIMELINE_ANIMATION_TIMER_ID);
+                DestroyWindow(oldHwnd);
+            }
+            delete oldWindow;
+        }
+
+        PopupWindow* extra = new PopupWindow(s_instance->m_appCtx);
+        extra->m_configDir = s_instance->m_configDir;
+        extra->OnConfigChanged();
+        s_extraWindows.push_back(extra);
+        extra->ShowAt(parent, pt);
+        return;
+    }
+
+    s_instance->ShowAt(parent, pt);
+}
+
+void PopupWindow::ShowAt(HWND parent, POINT pt)
+{
+    HWND prevActive = GetForegroundWindow();
+    double showStart = GetTimeInSeconds();
+
+    if (prevActive && prevActive != this->GetHWND())
+    {
+        this->m_restoreForegroundWnd = prevActive;
     }
 
     POINT clickPt = pt; // Store the original click position
 
     // 1. Load configuration and page data if not already loaded
-    if (s_instance->m_pages.empty())
+    if (this->m_pages.empty())
     {
-        s_instance->OnConfigChanged();
+        this->OnConfigChanged();
     }
-    else if (s_instance->m_viewModel)
+    else if (this->m_viewModel)
     {
-        s_instance->m_currentPage = s_instance->m_viewModel->GetCurrentPage();
-        s_instance->m_scrollPosition = (float)s_instance->m_currentPage;
-        s_instance->m_scrollVelocity = 0.0f;
+        this->m_currentPage = this->m_viewModel->GetCurrentPage();
+        this->m_scrollPosition = (float)this->m_currentPage;
+        this->m_scrollVelocity = 0.0f;
     }
 
     // 2. Calculate window dimensions using user settings
-    int cols = s_instance->GetColumns();
-    int rows = s_instance->GetRows();
-    int w = cols * s_instance->CellWidth() + s_instance->GetWndPadding() * 2 - s_instance->GetIconGap();
+    int cols = this->GetColumns();
+    int rows = this->GetRows();
+    int w = cols * this->CellWidth() + this->GetWndPadding() * 2 - this->GetIconGap();
     int indicatorHeight = 0;
     int topBarHeight = 32;
-    int dockRows = s_instance->GetDockHeight();
-    int ch = s_instance->CellHeight();
-    int wndPad = s_instance->GetWndPadding();
-    int iconGap = s_instance->GetIconGap();
+    int dockRows = this->GetDockHeight();
+    int ch = this->CellHeight();
+    int wndPad = this->GetWndPadding();
+    int iconGap = this->GetIconGap();
     int mainGridCardBottom = wndPad + rows * ch - iconGap + topBarHeight;
     int lineY = mainGridCardBottom + wndPad;
     int dockTopY = lineY + wndPad;
@@ -450,8 +528,27 @@ void PopupWindow::Show(HWND parent, POINT pt)
     int w_px = (int)(w * scale);
     int h_px = (int)(h * scale);
 
+    int alignMode = (m_appCtx && m_appCtx->configService)
+        ? m_appCtx->configService->GetPopupAlignMode()
+        : 0;
     int targetX = pt.x - w_px / 2;
     int targetY = pt.y - h_px / 2;
+    if (alignMode == 1)
+    {
+        targetX = pt.x;
+        targetY = pt.y;
+    }
+    else if (alignMode == 2)
+    {
+        targetX = wa.left + ((wa.right - wa.left) - w_px) / 2;
+        targetY = wa.top + ((wa.bottom - wa.top) - h_px) / 2;
+    }
+    else if (alignMode == 3)
+    {
+        int margin = (int)(16.0f * scale);
+        targetX = wa.right - w_px - margin;
+        targetY = wa.bottom - h_px - margin;
+    }
 
     if (targetX + w_px > wa.right) targetX = wa.right - w_px;
     if (targetY + h_px > wa.bottom) targetY = wa.bottom - h_px;
@@ -465,25 +562,25 @@ void PopupWindow::Show(HWND parent, POINT pt)
     popupCenter.x = targetX + w_px / 2;
     popupCenter.y = targetY + h_px / 2;
 
-    s_instance->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
+    this->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
 
     // 3. Handle window (create or reposition) and ensure stable render target
-    HWND hwnd = s_instance->GetHWND();
+    HWND hwnd = this->GetHWND();
     if (hwnd)
     {
-        if (s_instance->EnsureD2D() && s_instance->m_rt)
+        if (this->EnsureD2D() && this->m_rt)
         {
-            s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
-            UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
-            s_instance->m_bgCap.Reset();
-            s_instance->m_bgFinal.Reset();
-            s_instance->m_compositeRt.Reset();
-            s_instance->m_effectWinSize = {};
+            this->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+            UIStyle::Typography::ApplyRenderTargetTextDefaults(this->m_rt.Get());
+            this->m_bgCap.Reset();
+            this->m_bgFinal.Reset();
+            this->m_compositeRt.Reset();
+            this->m_effectWinSize = {};
         }
         SetWindowPos(hwnd, HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-        if (s_instance->EnsureD2D())
+        if (this->EnsureD2D())
         {
-            s_instance->EnsureIcons();
+            this->EnsureIcons();
         }
         if (!IsWindowVisible(hwnd))
         {
@@ -494,49 +591,49 @@ void PopupWindow::Show(HWND parent, POINT pt)
     }
     else
     {
-        s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, pt.x, pt.y, w_px, h_px, parent);
-        if (s_instance->GetHWND())
+        this->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, pt.x, pt.y, w_px, h_px, parent);
+        if (this->GetHWND())
         {
-            SetWindowDisplayAffinitySafe(s_instance->GetHWND());
-            s_instance->ApplySystemBackdrop();
-            if (s_instance->EnsureD2D())
+            SetWindowDisplayAffinitySafe(this->GetHWND());
+            this->ApplySystemBackdrop();
+            if (this->EnsureD2D())
             {
-                if (s_instance->m_rt)
+                if (this->m_rt)
                 {
-                    s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
-                    UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+                    this->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+                    UIStyle::Typography::ApplyRenderTargetTextDefaults(this->m_rt.Get());
                 }
-                s_instance->EnsureIcons();
+                this->EnsureIcons();
             }
-            ShowWindow(s_instance->GetHWND(), SW_SHOW);
-            SetActiveWindow(s_instance->GetHWND());
-            SetForegroundWindow(s_instance->GetHWND());
+            ShowWindow(this->GetHWND(), SW_SHOW);
+            SetActiveWindow(this->GetHWND());
+            SetForegroundWindow(this->GetHWND());
         }
     }
 
-    if (s_instance->GetHWND())
+    if (this->GetHWND())
     {
-        if (s_instance->m_rt)
+        if (this->m_rt)
         {
-            s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
-            UIStyle::Typography::ApplyRenderTargetTextDefaults(s_instance->m_rt.Get());
+            this->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+            UIStyle::Typography::ApplyRenderTargetTextDefaults(this->m_rt.Get());
         }
 
-        s_instance->m_hovered = -1;
-        s_instance->m_trackMouse = false;
-        s_instance->m_animating = false;
-        s_instance->m_scrollPosition = (float)s_instance->m_currentPage;
-        s_instance->m_scrollVelocity = 0.0f;
-        s_instance->m_searchActive = s_instance->m_appCtx && s_instance->m_appCtx->configService
-            ? s_instance->m_appCtx->configService->GetSearchMode()
+        this->m_hovered = -1;
+        this->m_trackMouse = false;
+        this->m_animating = false;
+        this->m_scrollPosition = (float)this->m_currentPage;
+        this->m_scrollVelocity = 0.0f;
+        this->m_searchActive = this->m_appCtx && this->m_appCtx->configService
+            ? this->m_appCtx->configService->GetSearchMode()
             : false;
-        s_instance->m_searchQuery.clear();
-        s_instance->m_searchResults.clear();
-        s_instance->m_selectedSearchResult = -1;
-        s_instance->m_hoveredTab = -1;
-        s_instance->m_hoveredDock = -1;
-        s_instance->m_cursorBlink = true;
-        s_instance->ResetPressedShortcut();
+        this->m_searchQuery.clear();
+        this->m_searchResults.clear();
+        this->m_selectedSearchResult = -1;
+        this->m_hoveredTab = -1;
+        this->m_hoveredDock = -1;
+        this->m_cursorBlink = true;
+        this->ResetPressedShortcut();
 
         // Initialize or update the bounds of the search textbox
         D2D1_RECT_F topRect = D2D1::RectF(
@@ -546,7 +643,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
             (float)wndPad + 22.0f
         );
 
-        if (!s_instance->m_searchTextBoxCreated)
+        if (!this->m_searchTextBoxCreated)
         {
             UIStyle::TextBoxStyle style;
             style.bgNormal = UIStyle::ThemeColor::ButtonBgNormal();
@@ -556,44 +653,44 @@ void PopupWindow::Show(HWND parent, POINT pt)
             style.paddingTop = 4.0f;
             style.paddingBottom = 4.0f;
             style.paddingRight = 8.0f;
-            style.fontSize = s_instance->GetFontSize();
-            s_instance->m_searchTextBox.SetStyle(style);
+            style.fontSize = this->GetFontSize();
+            this->m_searchTextBox.SetStyle(style);
 
-            s_instance->m_searchTextBox.Create(s_instance->GetHWND(), s_instance->m_dw.Get(), topRect, L"");
-            s_instance->m_searchTextBoxCreated = true;
+            this->m_searchTextBox.Create(this->GetHWND(), this->m_dw.Get(), topRect, L"");
+            this->m_searchTextBoxCreated = true;
         }
         else
         {
-            s_instance->m_searchTextBox.SetBounds(topRect);
-            s_instance->m_searchTextBox.UpdateLayout(scale);
-            s_instance->m_searchTextBox.SetText(L"");
+            this->m_searchTextBox.SetBounds(topRect);
+            this->m_searchTextBox.UpdateLayout(scale);
+            this->m_searchTextBox.SetText(L"");
         }
 
-        s_instance->m_searchTextBox.SetFocus(s_instance->m_searchActive);
+        this->m_searchTextBox.SetFocus(this->m_searchActive);
 
-        if (s_instance->m_searchActive)
+        if (this->m_searchActive)
         {
-            s_instance->m_searchTextBox.UpdateImeWindowPosition(s_instance->GetHWND(), scale);
+            this->m_searchTextBox.UpdateImeWindowPosition(this->GetHWND(), scale);
         }
  
-        SetFocus(s_instance->GetHWND());
+        SetFocus(this->GetHWND());
 
-        s_instance->StartAutoHideTimer();
+        this->StartAutoHideTimer();
 
-        s_instance->m_bgCaptureDirty = true;
-        s_instance->m_bgCompositeDirty = true;
+        this->m_bgCaptureDirty = true;
+        this->m_bgCompositeDirty = true;
         double bgStart = GetTimeInSeconds();
-        s_instance->CaptureBackground();
-        s_instance->CompositeBackgroundToCache();
+        this->CaptureBackground();
+        this->CompositeBackgroundToCache();
         double bgElapsedMs = (GetTimeInSeconds() - bgStart) * 1000.0;
         if (bgElapsedMs >= POPUP_SLOW_FRAME_MS)
         {
             LOG_G_WORNING(L"PopupWindow perf: initial background refresh took %.2fms", bgElapsedMs);
         }
-        InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+        InvalidateRect(this->GetHWND(), nullptr, FALSE);
 
-        if (s_instance->m_viewModel)
-            s_instance->m_viewModel->NotifyPopupShown();
+        if (this->m_viewModel)
+            this->m_viewModel->NotifyPopupShown();
 
         double showElapsedMs = (GetTimeInSeconds() - showStart) * 1000.0;
         if (showElapsedMs >= POPUP_SLOW_SHOW_MS)
@@ -601,8 +698,8 @@ void PopupWindow::Show(HWND parent, POINT pt)
             LOG_G_WORNING(
                 L"PopupWindow perf: Show took %.2fms pages=%d dockItems=%d window=%dx%d",
                 showElapsedMs,
-                (int)s_instance->m_pages.size(),
-                (int)s_instance->m_dockPage.shortcuts.size(),
+                (int)this->m_pages.size(),
+                (int)this->m_dockPage.shortcuts.size(),
                 w_px,
                 h_px);
         }
@@ -613,40 +710,95 @@ void PopupWindow::Hide()
 {
     if (s_instance)
     {
-        HWND h = s_instance->GetHWND();
-        if (h)
-        {
-            if (GetCapture() == h)
-            {
-                ReleaseCapture();
-            }
-            s_instance->ResetPressedShortcut();
-            s_instance->StopAutoHideTimer();
-            KillTimer(h, POPUP_ANIMATION_TIMER_ID);
-            KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
-            s_instance->m_animating = false;
-        }
+        s_instance->HideSelf();
+    }
+}
 
-        if (h && UIStyle::Animation::IsEnabled())
+void PopupWindow::HideSelf()
+{
+    HWND h = GetHWND();
+    if (h)
+    {
+        if (GetCapture() == h)
         {
-            s_instance->StartCloseTransition([h]() {
-                ShowWindow(h, SW_HIDE);
-                if (s_instance && s_instance->m_viewModel)
-                {
-                    s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
-                    s_instance->m_viewModel->NotifyPopupHidden();
-                }
-            });
+            ReleaseCapture();
         }
-        else
-        {
-            if (h) ShowWindow(h, SW_HIDE);
-            if (s_instance && s_instance->m_viewModel)
+        ResetPressedShortcut();
+        StopAutoHideTimer();
+        KillTimer(h, CLICK_CLOSE_TIMER_ID);
+        KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+        KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+        m_animating = false;
+    }
+
+    if (m_destroyOnHide)
+    {
+        DestroySelf();
+        return;
+    }
+
+    if (h && UIStyle::Animation::IsEnabled())
+    {
+        PopupWindow* inst = this;
+        StartCloseTransition([h, inst]() {
+            ShowWindow(h, SW_HIDE);
+            if (inst->m_viewModel)
             {
-                s_instance->m_viewModel->SetCurrentPage(s_instance->m_currentPage);
-                s_instance->m_viewModel->NotifyPopupHidden();
+                inst->m_viewModel->SetCurrentPage(inst->m_currentPage);
+                inst->m_viewModel->NotifyPopupHidden();
             }
+        });
+    }
+    else
+    {
+        if (h) ShowWindow(h, SW_HIDE);
+        if (m_viewModel)
+        {
+            m_viewModel->SetCurrentPage(m_currentPage);
+            m_viewModel->NotifyPopupHidden();
         }
+    }
+}
+
+void PopupWindow::DestroySelf()
+{
+    PopupWindow* inst = this;
+    HWND h = GetHWND();
+    if (h)
+    {
+        if (GetCapture() == h)
+        {
+            ReleaseCapture();
+        }
+        ResetPressedShortcut();
+        StopAutoHideTimer();
+        KillTimer(h, CLICK_CLOSE_TIMER_ID);
+        KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+        KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+        m_animating = false;
+    }
+
+    auto finishDestroy = [h, inst]() {
+        if (inst->m_viewModel)
+        {
+            inst->m_viewModel->SetCurrentPage(inst->m_currentPage);
+            inst->m_viewModel->NotifyPopupHidden();
+        }
+        if (h && IsWindow(h))
+        {
+            DestroyWindow(h);
+        }
+        RemoveExtraWindow(inst);
+        delete inst;
+    };
+
+    if (h && IsWindowVisible(h) && UIStyle::Animation::IsEnabled())
+    {
+        StartCloseTransition(finishDestroy);
+    }
+    else
+    {
+        finishDestroy();
     }
 }
 
@@ -659,6 +811,23 @@ void PopupWindow::ResetPressedShortcut()
 
 void PopupWindow::Release()
 {
+    auto extraWindows = s_extraWindows;
+    s_extraWindows.clear();
+    for (PopupWindow* extra : extraWindows)
+    {
+        if (!extra) continue;
+        HWND h = extra->GetHWND();
+        if (h)
+        {
+            extra->StopAutoHideTimer();
+            KillTimer(h, CLICK_CLOSE_TIMER_ID);
+            KillTimer(h, POPUP_ANIMATION_TIMER_ID);
+            KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+            DestroyWindow(h);
+        }
+        delete extra;
+    }
+
     if (s_instance)
     {
         PopupWindow* inst = s_instance;
@@ -668,6 +837,7 @@ void PopupWindow::Release()
         if (h)
         {
             inst->StopAutoHideTimer();
+            KillTimer(h, CLICK_CLOSE_TIMER_ID);
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
             DestroyWindow(h);
@@ -797,6 +967,25 @@ void PopupWindow::UpdateSearch()
             item.originalShortcutIndex = (int)sIndex;
             m_searchResults.push_back(item);
         }
+    }
+
+    int sortMode = (m_appCtx && m_appCtx->configService)
+        ? m_appCtx->configService->GetSortMode()
+        : 0;
+    if (sortMode == 1)
+    {
+        std::stable_sort(m_searchResults.begin(), m_searchResults.end(), [&](const SearchResultItem& a, const SearchResultItem& b) {
+            auto score = [&](const SearchResultItem& item) {
+                std::wstring name = item.shortcut.name;
+                std::transform(name.begin(), name.end(), name.begin(), [](wchar_t c) {
+                    return (wchar_t)towlower(c);
+                });
+                size_t pos = name.find(queryLower);
+                int posScore = (pos == std::wstring::npos) ? 10000 : (int)pos;
+                return std::make_tuple(posScore, (int)name.size(), item.originalPageIndex, item.originalShortcutIndex);
+            };
+            return score(a) < score(b);
+        });
     }
 }
 
@@ -1711,6 +1900,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_TIMER:
     {
+        if (wParam == CLICK_CLOSE_TIMER_ID)
+        {
+            KillTimer(hWnd, CLICK_CLOSE_TIMER_ID);
+            bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
+            if (!autoClose && !m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)
+            {
+                HideSelf();
+            }
+            return 0;
+        }
         if (wParam == AUTO_HIDE_TIMER_ID)
         {
             if (m_searchActive)
@@ -1719,12 +1918,31 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 InvalidateRect(hWnd, nullptr, FALSE);
             }
 
+            bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
             if (m_pinned) return 0;
             if (m_pressedShortcutKind != PressedShortcutKind::None) return 0;
 
             POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
-            if (pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom)
+            bool outside = pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom;
+            if (!autoClose)
+            {
+                if (outside)
+                {
+                    bool mousePressed =
+                        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 ||
+                        (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ||
+                        (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0 ||
+                        (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0 ||
+                        (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0;
+                    if (mousePressed)
+                    {
+                        SetTimer(hWnd, CLICK_CLOSE_TIMER_ID, 50, nullptr);
+                    }
+                }
+                return 0;
+            }
+            if (outside)
             {
                 bool imeActive = false;
                 HIMC hIMC = ImmGetContext(hWnd);
@@ -1748,7 +1966,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                 if (!imeActive)
                 {
-                    Hide();
+                    HideSelf();
                 }
             }
             return 0;
@@ -1780,6 +1998,19 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
+        }
+        break;
+    }
+
+    case WM_ACTIVATE:
+    {
+        if (LOWORD(wParam) == WA_INACTIVE)
+        {
+            bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
+            if (!autoClose && !m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)
+            {
+                SetTimer(hWnd, CLICK_CLOSE_TIMER_ID, 100, nullptr);
+            }
         }
         break;
     }
@@ -1855,12 +2086,23 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
-            Hide();
+            bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
+            if (autoClose && !m_pinned)
+            {
+                UINT delay = (UINT)(m_appCtx && m_appCtx->configService ? m_appCtx->configService->GetHoverLeaveDelay() : 200);
+                if (delay == 0) delay = 1;
+                SetTimer(hWnd, AUTO_HIDE_TIMER_ID, delay, nullptr);
+            }
+            else if (!autoClose && !m_pinned)
+            {
+                SetTimer(hWnd, AUTO_HIDE_TIMER_ID, 50, nullptr);
+            }
             return 0;
         }
 
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
+        StartAutoHideTimer();
 
         if (m_searchActive)
         {
@@ -1922,9 +2164,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         m_trackMouse = false;
         m_hoveredTab = -1;
         m_hoveredDock = -1;
-        if (!m_pinned)
+        bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
+        if (autoClose && !m_pinned)
         {
-            Hide();
+            UINT delay = (UINT)(m_appCtx && m_appCtx->configService ? m_appCtx->configService->GetHoverLeaveDelay() : 200);
+            if (delay == 0) delay = 1;
+            SetTimer(hWnd, AUTO_HIDE_TIMER_ID, delay, nullptr);
+        }
+        else if (!autoClose && !m_pinned)
+        {
+            SetTimer(hWnd, AUTO_HIDE_TIMER_ID, 50, nullptr);
         }
         return 0;
     }
@@ -2124,7 +2373,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (hit == pressedIndex && hit >= 0 && hit < (int)m_searchResults.size())
                 {
                     auto& sc = m_searchResults[hit].shortcut;
-                    if (!m_pinned) Hide();
+                    if (!m_pinned) HideSelf();
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching search result shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -2145,7 +2394,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (dockHit == pressedIndex && dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
                 {
                     auto& sc = m_dockPage.shortcuts[dockHit];
-                    if (!m_pinned) Hide();
+                    if (!m_pinned) HideSelf();
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -2164,7 +2413,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     hit < (int)m_pages[pressedPage].shortcuts.size())
                 {
                     auto& sc = m_pages[pressedPage].shortcuts[hit];
-                    if (!m_pinned) Hide();
+                    if (!m_pinned) HideSelf();
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -2198,7 +2447,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_MBUTTONDOWN:
-        Hide();
+        HideSelf();
         return 0;
 
     case WM_CAPTURECHANGED:
@@ -2237,7 +2486,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             else
             {
-                Hide();
+                HideSelf();
             }
         }
         else if (wParam == VK_TAB)
@@ -2281,7 +2530,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                             m_searchResults[m_selectedSearchResult].originalShortcutIndex
                         );
                     }
-                    if (!m_pinned) Hide();
+                    if (!m_pinned) HideSelf();
                 }
             }
             else if (wParam == VK_UP)
@@ -2861,10 +3110,17 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
         std::vector<MacroEvent> events;
         if (MacroHelper::Parse(sc.arguments, speed, triggerMode, events))
         {
-            bool launchedFromPopup = (s_instance && parent == s_instance->GetHWND());
-            bool popupWillHide = launchedFromPopup && !s_instance->m_pinned;
+            PopupWindow* sourcePopup = PopupWindow::FindByHwnd(parent);
+            bool launchedFromPopup = sourcePopup != nullptr;
+            bool popupWillHide = launchedFromPopup && !sourcePopup->m_pinned;
             bool waitForClose = popupWillHide || triggerMode == L"after_close";
-            HWND restoreWnd = waitForClose ? PopupWindow::GetRestoreForegroundWindow() : nullptr;
+            HWND restoreWnd = nullptr;
+            if (waitForClose && sourcePopup)
+            {
+                restoreWnd = sourcePopup->m_restoreForegroundWnd && IsWindow(sourcePopup->m_restoreForegroundWnd)
+                    ? sourcePopup->m_restoreForegroundWnd
+                    : nullptr;
+            }
             return MacroPlayer::Play(events, speed, waitForClose ? L"after_close" : triggerMode, parent, restoreWnd);
         }
         return false;
