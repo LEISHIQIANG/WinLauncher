@@ -294,7 +294,7 @@ void Application::Shutdown()
 
     LOG_INFO(m_appCtx->logger, L"Application::Shutdown: releasing window singletons");
     PopupWindow::Release();
-    ConfigWindow::Release();
+    ConfigWindow::Release(true);
     TrayMenuWindow::Release();
     ToastWindow::Hide();
 

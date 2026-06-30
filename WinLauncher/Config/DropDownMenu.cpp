@@ -19,7 +19,7 @@ DropDownMenu::~DropDownMenu()
 {
 }
 
-void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx)
+void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth)
 {
     Hide();
 
@@ -47,6 +47,7 @@ void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, A
         itemW += 24.0f;
         if (itemW > maxW) maxW = itemW;
     }
+    if (minWidth > maxW) maxW = minWidth;
 
     int w = (int)maxW;
     int h = (int)(pad * 2 + items.size() * itemH - 2.0f);
@@ -190,7 +191,8 @@ void DropDownMenu::OnPaintContent(ID2D1HwndRenderTarget* rt)
         D2D1_RECT_F itemRect = D2D1::RectF(pad, pad + i * itemH, w - pad, pad + (i + 1) * itemH - 2.0f);
         D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 4.0f, 4.0f);
 
-        bool isHovered = (i == m_hovered);
+        bool isDisabled = m_items[i].disabled;
+        bool isHovered = (i == m_hovered) && !isDisabled;
 
         auto bgBrush = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBgHover().d2d : UIStyle::ThemeColor::ButtonBgNormal().d2d);
         if (bgBrush) rt->FillRoundedRectangle(roundedItem, bgBrush.Get());
@@ -200,7 +202,9 @@ void DropDownMenu::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
         if (m_tfMenu)
         {
-            auto tb = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
+            D2D1_COLOR_F txtClr = UIStyle::ThemeColor::TextNormal().d2d;
+            if (isDisabled) txtClr.a = 0.35f;
+            auto tb = GetOrCreateBrush(txtClr);
             if (tb)
             {
                 rt->DrawTextW(m_items[i].text.c_str(), (UINT32)m_items[i].text.size(),
@@ -218,22 +222,23 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         if (LOWORD(wParam) == WA_INACTIVE)
             Hide();
         return 0;
-
+ 
     case WM_MOUSEMOVE:
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         int h = HitTest(pt);
+        if (h >= 0 && h < (int)m_items.size() && m_items[h].disabled) h = -1;
         if (h != m_hovered) { m_hovered = h; InvalidateRect(hWnd, nullptr, FALSE); }
         return 0;
     }
-
+ 
     case WM_LBUTTONDOWN:
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         int hit = HitTest(pt);
-        if (hit >= 0 && hit < (int)m_items.size())
+        if (hit >= 0 && hit < (int)m_items.size() && !m_items[hit].disabled)
         {
             auto callback = m_items[hit].callback;
             Hide();

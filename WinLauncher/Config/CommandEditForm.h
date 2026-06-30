@@ -49,7 +49,7 @@ public:
     CommandEditForm();
     ~CommandEditForm();
 
-    static constexpr float PreferredContentHeight() { return 338.0f; }
+    static constexpr float PreferredContentHeight() { return 348.0f; }
 
     bool Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const CommandEditFormInitParams& init, AppContext* ctx = nullptr);
     void Destroy();
@@ -79,15 +79,12 @@ public:
 private:
     void EnsureFonts(IDWriteFactory* dwriteFactory);
     void SelectCommandType(HWND hWnd);
-    void SelectBuiltinCommand(HWND hWnd);
     void BrowseIconFile(HWND hWnd);
 
     // Hit-testing helpers (logical coordinates)
     bool HitTestRect(POINT pt, const D2D1_RECT_F& rect);
     bool HitTestSelectTypeButton(POINT pt);
-    bool HitTestSelectBuiltinButton(POINT pt);
     bool HitTestBrowseIconButton(POINT pt);
-    bool HitTestRunAsAdminCheckbox(POINT pt);
     bool HitTestShowWindowCheckbox(POINT pt);
     bool HitTestCaptureOutputCheckbox(POINT pt);
     bool HitTestInvertLightCheckbox(POINT pt);
@@ -108,7 +105,6 @@ private:
     // UI Controls
     TextBox m_nameBox;
     TextBox m_typeBox;
-    TextBox m_builtinBox;
     TextBox m_commandBox;
     TextBox m_iconBox;
     TextBox* m_focusedBox = nullptr;
@@ -125,9 +121,7 @@ private:
 
     // Hover states
     bool m_hoveredSelectType    = false;
-    bool m_hoveredSelectBuiltin = false;
     bool m_hoveredBrowseIcon    = false;
-    bool m_hoveredRunAsAdmin    = false;
     bool m_hoveredShowWindow    = false;
     bool m_hoveredCaptureOutput = false;
     bool m_hoveredInvertLight   = false;

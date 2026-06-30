@@ -5,6 +5,7 @@
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
 #include "ContextMenu.h"
+#include "DropDownMenu.h"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <shlobj.h>
@@ -53,17 +54,14 @@ static const float Y_LBL_NAME        = 16.0f;
 static const float Y_BOX_NAME        = 32.0f;
 static const float Y_LBL_TYPE        = 60.0f; // Command type row
 static const float Y_BOX_TYPE        = 76.0f; // Textbox + Select button
-static const float Y_LBL_BUILTIN     = 104.0f; // Built-in command row
-static const float Y_BOX_BUILTIN     = 120.0f; // Textbox + Select button
-static const float Y_LBL_CMD         = 148.0f; // Command text
-static const float Y_BOX_CMD         = 164.0f; // Textbox
-static const float Y_SEC_ADV         = 192.0f; // "高级选项" separator
-static const float Y_CB_ROW1         = 208.0f; // "以管理员身份运行" and "显示控制台窗口"
-static const float Y_CB_ROW2         = 238.0f; // "捕获输出"
-static const float Y_LBL_ICON        = 268.0f; // Icon Path
-static const float Y_BOX_ICON        = 284.0f; // Textbox + Select button
-static const float Y_ICON_INVERT     = 314.0f; // Theme inversion checkboxes
-static const float Y_PREVIEW         = 272.0f; // Preview bottom aligns with icon box bottom
+static const float Y_LBL_CMD         = 104.0f; // Command text
+static const float Y_BOX_CMD         = 120.0f; // Multi-line Textbox (height 100)
+static const float Y_SEC_ADV         = 228.0f; // "高级选项" separator
+static const float Y_CB_ROW1         = 244.0f; // "显示控制台窗口" and "捕获命令行输出"
+static const float Y_LBL_ICON        = 276.0f; // Icon Path
+static const float Y_BOX_ICON        = 292.0f; // Textbox + Select button
+static const float Y_ICON_INVERT     = 322.0f; // Theme inversion checkboxes
+static const float Y_PREVIEW         = 280.0f; // Preview bottom aligns with icon box bottom
 
 CommandEditForm::CommandEditForm()
 {
@@ -104,28 +102,18 @@ bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, con
     m_nameBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_NAME, m_bounds.left + W - 20, m_bounds.top + Y_BOX_NAME + 24), m_init.name);
 
     // Command Type Display Box
-    std::wstring typeDisp = L"cmd (系统命令行)";
-    if (m_commandType == L"powershell") typeDisp = L"powershell (PowerShell)";
-    else if (m_commandType == L"builtin") typeDisp = L"builtin (内置命令)";
+    std::wstring typeDisp = L"CMD";
+    if (m_commandType == L"powershell") typeDisp = L"PowerShell";
+    else if (m_commandType == L"python") typeDisp = L"Python";
+    else if (m_commandType == L"gitbash") typeDisp = L"GitBash";
 
     m_typeBox.SetStyle(style);
-    m_typeBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 85, m_bounds.top + Y_BOX_TYPE + 24), typeDisp);
+    m_typeBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 125, m_bounds.top + Y_BOX_TYPE + 24), typeDisp);
 
-    // Builtin Command Display Box
-    std::wstring builtinDisp = m_builtinCmd;
-    if (m_builtinCmd == L"toggle_topmost") builtinDisp = L"置顶/取消置顶 (Toggle Topmost)";
-    else if (m_builtinCmd == L"show_config_window") builtinDisp = L"配置窗口 (Config Window)";
-    else if (m_builtinCmd == L"show_log") builtinDisp = L"运行日志 (Log Window)";
-    else if (m_builtinCmd == L"show_diagnostics") builtinDisp = L"诊断中心 (Diagnostics)";
-    else if (m_builtinCmd == L"open_data_dir") builtinDisp = L"打开数据目录 (Data Directory)";
-    else if (m_builtinCmd == L"open_install_dir") builtinDisp = L"打开安装目录 (Install Directory)";
-
-    m_builtinBox.SetStyle(style);
-    m_builtinBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_BUILTIN, m_bounds.left + W - 85, m_bounds.top + Y_BOX_BUILTIN + 24), builtinDisp);
-
-    // Command Box
+    // Command Box (6 lines height)
     m_commandBox.SetStyle(style);
-    m_commandBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_CMD, m_bounds.left + W - 20, m_bounds.top + Y_BOX_CMD + 24), m_init.command);
+    m_commandBox.SetMultiline(true);
+    m_commandBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_CMD, m_bounds.left + W - 20, m_bounds.top + Y_BOX_CMD + 100.0f), m_init.command);
 
     // Icon Box
     m_iconBox.SetStyle(style);
@@ -146,7 +134,6 @@ void CommandEditForm::Destroy()
 {
     m_nameBox.Destroy();
     m_typeBox.Destroy();
-    m_builtinBox.Destroy();
     m_commandBox.Destroy();
     m_iconBox.Destroy();
 
@@ -164,13 +151,10 @@ void CommandEditForm::UpdateLayout(const D2D1_RECT_F& logicalBounds, float scale
     m_nameBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_NAME, m_bounds.left + W - 20, m_bounds.top + Y_BOX_NAME + 24));
     m_nameBox.UpdateLayout(scale);
 
-    m_typeBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 85, m_bounds.top + Y_BOX_TYPE + 24));
+    m_typeBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 125, m_bounds.top + Y_BOX_TYPE + 24));
     m_typeBox.UpdateLayout(scale);
 
-    m_builtinBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_BUILTIN, m_bounds.left + W - 85, m_bounds.top + Y_BOX_BUILTIN + 24));
-    m_builtinBox.UpdateLayout(scale);
-
-    m_commandBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_CMD, m_bounds.left + W - 20, m_bounds.top + Y_BOX_CMD + 24));
+    m_commandBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_CMD, m_bounds.left + W - 20, m_bounds.top + Y_BOX_CMD + 100.0f));
     m_commandBox.UpdateLayout(scale);
 
     m_iconBox.SetBounds(D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 121, m_bounds.top + Y_BOX_ICON + 24));
@@ -211,13 +195,7 @@ bool CommandEditForm::HitTestRect(POINT pt, const D2D1_RECT_F& rect)
 bool CommandEditForm::HitTestSelectTypeButton(POINT pt)
 {
     float W = m_bounds.right - m_bounds.left;
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 20, m_bounds.top + Y_BOX_TYPE + 24));
-}
-
-bool CommandEditForm::HitTestSelectBuiltinButton(POINT pt)
-{
-    float W = m_bounds.right - m_bounds.left;
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_BUILTIN, m_bounds.left + W - 20, m_bounds.top + Y_BOX_BUILTIN + 24));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 120, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 20, m_bounds.top + Y_BOX_TYPE + 24));
 }
 
 bool CommandEditForm::HitTestBrowseIconButton(POINT pt)
@@ -226,19 +204,14 @@ bool CommandEditForm::HitTestBrowseIconButton(POINT pt)
     return HitTestRect(pt, D2D1::RectF(m_bounds.left + W - 116, m_bounds.top + Y_BOX_ICON, m_bounds.left + W - 61, m_bounds.top + Y_BOX_ICON + 24));
 }
 
-bool CommandEditForm::HitTestRunAsAdminCheckbox(POINT pt)
+bool CommandEditForm::HitTestShowWindowCheckbox(POINT pt)
 {
     return HitTestRect(pt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22));
 }
 
-bool CommandEditForm::HitTestShowWindowCheckbox(POINT pt)
-{
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + 185, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22));
-}
-
 bool CommandEditForm::HitTestCaptureOutputCheckbox(POINT pt)
 {
-    return HitTestRect(pt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_CB_ROW2, m_bounds.left + 175, m_bounds.top + Y_CB_ROW2 + 22));
+    return HitTestRect(pt, D2D1::RectF(m_bounds.left + 185, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22));
 }
 
 bool CommandEditForm::HitTestInvertLightCheckbox(POINT pt)
@@ -256,15 +229,12 @@ void CommandEditForm::OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repain
     POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
     m_nameBox.OnMouseMove(hWnd, rawPt, scale, repaint);
     m_typeBox.OnMouseMove(hWnd, rawPt, scale, repaint);
-    m_builtinBox.OnMouseMove(hWnd, rawPt, scale, repaint);
     m_commandBox.OnMouseMove(hWnd, rawPt, scale, repaint);
     m_iconBox.OnMouseMove(hWnd, rawPt, scale, repaint);
 
     auto update = [&](bool& flag, bool newVal){ if (flag != newVal){ flag = newVal; repaint = true; } };
     update(m_hoveredSelectType,    HitTestSelectTypeButton(pt));
-    update(m_hoveredSelectBuiltin, HitTestSelectBuiltinButton(pt));
     update(m_hoveredBrowseIcon,    HitTestBrowseIconButton(pt));
-    update(m_hoveredRunAsAdmin,    HitTestRunAsAdminCheckbox(pt));
     update(m_hoveredShowWindow,    HitTestShowWindowCheckbox(pt));
     update(m_hoveredCaptureOutput, HitTestCaptureOutputCheckbox(pt));
     update(m_hoveredInvertLight,   HitTestInvertLightCheckbox(pt));
@@ -282,23 +252,9 @@ void CommandEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repa
         return;
     }
 
-    if (HitTestSelectBuiltinButton(pt) && m_commandType == L"builtin")
-    {
-        SelectBuiltinCommand(hWnd);
-        repaint = true;
-        return;
-    }
-
     if (HitTestBrowseIconButton(pt))
     {
         BrowseIconFile(hWnd);
-        repaint = true;
-        return;
-    }
-
-    if (HitTestRunAsAdminCheckbox(pt))
-    {
-        m_runAsAdmin = !m_runAsAdmin;
         repaint = true;
         return;
     }
@@ -376,14 +332,13 @@ void CommandEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repain
     POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
     m_nameBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
     m_typeBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
-    m_builtinBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
     m_commandBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
     m_iconBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
 }
 
 void CommandEditForm::OnChar(HWND hWnd, WPARAM wParam, bool& repaint)
 {
-    if (m_focusedBox && m_focusedBox != &m_typeBox && m_focusedBox != &m_builtinBox)
+    if (m_focusedBox && m_focusedBox != &m_typeBox)
     {
         m_focusedBox->OnChar(hWnd, wParam, repaint);
 
@@ -490,44 +445,74 @@ bool CommandEditForm::Validate(HWND hWnd)
         return false;
     }
 
-    if (m_commandType != L"builtin" && cmd.empty())
+    if (cmd.empty())
     {
         ConfirmWindow::Show(hWnd, L"验证失败", L"请输入命令行内容！", m_ctx, false);
-        return false;
-    }
-
-    if (m_commandType == L"builtin" && m_builtinCmd.empty())
-    {
-        ConfirmWindow::Show(hWnd, L"验证失败", L"请选择内置命令！", m_ctx, false);
         return false;
     }
 
     return true;
 }
 
-void CommandEditForm::SelectCommandType(HWND hWnd)
+static bool CheckExecutableAvailable(const wchar_t* name)
 {
-    POINT pt; GetCursorPos(&pt);
-    std::vector<ContextMenu::Item> items = {
-        { L"cmd (系统命令行)", [this]() { m_commandType = L"cmd"; m_typeBox.SetText(L"cmd (系统命令行)"); } },
-        { L"powershell (PowerShell)", [this]() { m_commandType = L"powershell"; m_typeBox.SetText(L"powershell (PowerShell)"); } },
-        { L"builtin (内置命令)", [this]() { m_commandType = L"builtin"; m_typeBox.SetText(L"builtin (内置命令)"); } }
-    };
-    ContextMenu::Show(hWnd, pt, items, nullptr);
+    wchar_t dummy[MAX_PATH];
+    return SearchPathW(nullptr, name, nullptr, MAX_PATH, dummy, nullptr) > 0;
 }
 
-void CommandEditForm::SelectBuiltinCommand(HWND hWnd)
+static bool CheckGitBashAvailable()
 {
-    POINT pt; GetCursorPos(&pt);
-    std::vector<ContextMenu::Item> items = {
-        { L"置顶/取消置顶 (Toggle Topmost)", [this]() { m_builtinCmd = L"toggle_topmost"; m_builtinBox.SetText(L"置顶/取消置顶 (Toggle Topmost)"); } },
-        { L"配置窗口 (Config Window)", [this]() { m_builtinCmd = L"show_config_window"; m_builtinBox.SetText(L"配置窗口 (Config Window)"); } },
-        { L"运行日志 (Log Window)", [this]() { m_builtinCmd = L"show_log"; m_builtinBox.SetText(L"运行日志 (Log Window)"); } },
-        { L"诊断中心 (Diagnostics)", [this]() { m_builtinCmd = L"show_diagnostics"; m_builtinBox.SetText(L"诊断中心 (Diagnostics)"); } },
-        { L"打开数据目录 (Data Directory)", [this]() { m_builtinCmd = L"open_data_dir"; m_builtinBox.SetText(L"打开数据目录 (Data Directory)"); } },
-        { L"打开安装目录 (Install Directory)", [this]() { m_builtinCmd = L"open_install_dir"; m_builtinBox.SetText(L"打开安装目录 (Install Directory)"); } }
+    wchar_t foundPath[MAX_PATH]{};
+    DWORD len = SearchPathW(nullptr, L"git.exe", nullptr, MAX_PATH, foundPath, nullptr);
+    if (len > 0 && len < MAX_PATH)
+    {
+        std::wstring gp(foundPath);
+        size_t cmdPos = gp.rfind(L"\\cmd\\");
+        if (cmdPos != std::wstring::npos)
+        {
+            std::wstring root = gp.substr(0, cmdPos);
+            std::wstring candidate = root + L"\\bin\\bash.exe";
+            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
+                return true;
+            candidate = root + L"\\usr\\bin\\bash.exe";
+            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
+                return true;
+        }
+    }
+
+    static const wchar_t* commonPaths[] = {
+        L"C:\\Program Files\\Git\\bin\\bash.exe",
+        L"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        L"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+        L"C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
     };
-    ContextMenu::Show(hWnd, pt, items, nullptr);
+    for (auto p : commonPaths)
+    {
+        if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES)
+            return true;
+    }
+
+    return false;
+}
+
+void CommandEditForm::SelectCommandType(HWND hWnd)
+{
+    float W = m_bounds.right - m_bounds.left;
+    POINT clientPt = { (int)(m_bounds.left + W - 120), (int)(m_bounds.top + Y_BOX_TYPE + 24) };
+    POINT screenPt = DpiHelper::LogicalClientToScreen(hWnd, clientPt);
+
+    bool cmdOK = CheckExecutableAvailable(L"cmd.exe");
+    bool psOK = CheckExecutableAvailable(L"powershell.exe");
+    bool pyOK = CheckExecutableAvailable(L"python.exe");
+    bool gitOK = CheckGitBashAvailable();
+
+    std::vector<DropDownMenu::Item> items = {
+        { L"CMD", [this, hWnd]() { m_commandType = L"cmd"; m_typeBox.SetText(L"CMD"); InvalidateRect(hWnd, nullptr, FALSE); }, !cmdOK },
+        { L"PowerShell", [this, hWnd]() { m_commandType = L"powershell"; m_typeBox.SetText(L"PowerShell"); InvalidateRect(hWnd, nullptr, FALSE); }, !psOK },
+        { L"Python", [this, hWnd]() { m_commandType = L"python"; m_typeBox.SetText(L"Python"); InvalidateRect(hWnd, nullptr, FALSE); }, !pyOK },
+        { L"GitBash", [this, hWnd]() { m_commandType = L"gitbash"; m_typeBox.SetText(L"GitBash"); InvalidateRect(hWnd, nullptr, FALSE); }, !gitOK }
+    };
+    DropDownMenu::Show(hWnd, screenPt, items, m_ctx, 100.0f);
 }
 
 void CommandEditForm::BrowseIconFile(HWND hWnd)
@@ -571,26 +556,12 @@ void CommandEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (lblBrush) rt->DrawTextW(L"命令类型", 4, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_TYPE, m_bounds.left + W - 20, m_bounds.top + Y_LBL_TYPE + 16), lblBrush.Get());
     }
     m_typeBox.Paint(rt, scale);
-    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 20, m_bounds.top + Y_BOX_TYPE + 24), m_hoveredSelectType);
-
-    // Builtin Command Label (drawn enabled/disabled based on type)
-    bool isBuiltin = (m_commandType == L"builtin");
-    if (m_tfLabel)
-    {
-        D2D1_COLOR_F clr = UIStyle::ThemeColor::TextMuted().d2d;
-        if (!isBuiltin) clr.a = 0.25f;
-        auto lblBrush = GetOrCreateBrush(rt, clr);
-        if (lblBrush) rt->DrawTextW(L"内置命令选择", 6, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_BUILTIN, m_bounds.left + W - 20, m_bounds.top + Y_LBL_BUILTIN + 16), lblBrush.Get());
-    }
-    m_builtinBox.Paint(rt, scale);
-    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 80, m_bounds.top + Y_BOX_BUILTIN, m_bounds.left + W - 20, m_bounds.top + Y_BOX_BUILTIN + 24), m_hoveredSelectBuiltin, isBuiltin);
+    DrawButton(rt, L"选择...", D2D1::RectF(m_bounds.left + W - 120, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 20, m_bounds.top + Y_BOX_TYPE + 24), m_hoveredSelectType);
 
     // Command Content Label
     if (m_tfLabel)
     {
-        D2D1_COLOR_F clr = UIStyle::ThemeColor::TextMuted().d2d;
-        if (isBuiltin) clr.a = 0.25f;
-        auto lblBrush = GetOrCreateBrush(rt, clr);
+        auto lblBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextMuted().d2d);
         if (lblBrush) rt->DrawTextW(L"命令行内容", 5, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_CMD, m_bounds.left + W - 20, m_bounds.top + Y_LBL_CMD + 16), lblBrush.Get());
     }
     m_commandBox.Paint(rt, scale);
@@ -599,32 +570,18 @@ void CommandEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
     DrawSectionLabel(rt, L"配置选项", D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_SEC_ADV, m_bounds.left + W - 20, m_bounds.top + Y_SEC_ADV + 16));
 
     // Checkbox Row 1
-    DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), m_runAsAdmin, m_hoveredRunAsAdmin, !isBuiltin);
+    DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), m_showWindow, m_hoveredShowWindow);
     if (m_tfLabel)
     {
-        D2D1_COLOR_F clr = UIStyle::ThemeColor::TextNormal().d2d;
-        if (isBuiltin) clr.a = 0.3f;
-        auto txtBrush = GetOrCreateBrush(rt, clr);
-        if (txtBrush) rt->DrawTextW(L"以管理员身份运行", 8, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 40, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
+        auto txtBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
+        if (txtBrush) rt->DrawTextW(L"显示控制台窗口", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 40, m_bounds.top + Y_CB_ROW1, m_bounds.left + 175, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
     }
 
-    DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 185, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), m_showWindow, m_hoveredShowWindow, !isBuiltin);
+    DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 185, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), m_captureOutput, m_hoveredCaptureOutput);
     if (m_tfLabel)
     {
-        D2D1_COLOR_F clr = UIStyle::ThemeColor::TextNormal().d2d;
-        if (isBuiltin) clr.a = 0.3f;
-        auto txtBrush = GetOrCreateBrush(rt, clr);
-        if (txtBrush) rt->DrawTextW(L"显示控制台窗口", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 205, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
-    }
-
-    // Checkbox Row 2
-    DrawCheckbox(rt, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_CB_ROW2, m_bounds.left + 175, m_bounds.top + Y_CB_ROW2 + 22), m_captureOutput, m_hoveredCaptureOutput, !isBuiltin);
-    if (m_tfLabel)
-    {
-        D2D1_COLOR_F clr = UIStyle::ThemeColor::TextNormal().d2d;
-        if (isBuiltin) clr.a = 0.3f;
-        auto txtBrush = GetOrCreateBrush(rt, clr);
-        if (txtBrush) rt->DrawTextW(L"捕获命令行输出", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 40, m_bounds.top + Y_CB_ROW2, m_bounds.left + 175, m_bounds.top + Y_CB_ROW2 + 22), txtBrush.Get());
+        auto txtBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
+        if (txtBrush) rt->DrawTextW(L"捕获命令行输出", 7, m_tfLabel.Get(), D2D1::RectF(m_bounds.left + 205, m_bounds.top + Y_CB_ROW1, m_bounds.left + 340, m_bounds.top + Y_CB_ROW1 + 22), txtBrush.Get());
     }
 
     // Icon Path Label

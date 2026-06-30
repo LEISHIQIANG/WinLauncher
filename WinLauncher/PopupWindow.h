@@ -24,7 +24,7 @@ public:
     static void Hide();
     static void Release();
     static bool IsVisible();
-    static bool ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx);
+    static bool ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx, const std::vector<std::wstring>& selectedFiles = {});
     static HWND GetRestoreForegroundWindow();
 
     int CellWidth() const;
@@ -153,4 +153,6 @@ private:
     std::mutex m_selectedFilesMutex;
     Services::SelectionContext m_selectedFilesCtx;
     void StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter);
+
+    friend std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, AppContext* ctx, bool& cancelled);
 };

@@ -389,7 +389,7 @@ void ConfigWindow::Hide()
     }
 }
 
-void ConfigWindow::Release()
+void ConfigWindow::Release(bool forceImmediate)
 {
     if (s_instance)
     {
@@ -397,7 +397,7 @@ void ConfigWindow::Release()
         ConfigWindow* inst = s_instance;
         s_instance = nullptr;
         HWND h = inst->GetHWND();
-        if (h && UIStyle::Animation::IsEnabled())
+        if (h && UIStyle::Animation::IsEnabled() && !forceImmediate)
         {
             inst->StartCloseTransition([h, inst]() {
                 DestroyWindow(h);

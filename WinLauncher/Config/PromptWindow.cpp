@@ -100,6 +100,11 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
         DispatchMessageW(&msg);
     }
 
+    if (IsWindow(hWnd))
+    {
+        DestroyWindow(hWnd);
+    }
+
     if (msg.message == WM_QUIT)
     {
         PostQuitMessage((int)msg.wParam);

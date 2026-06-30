@@ -63,6 +63,9 @@
     <ClCompile Include="Config\ConfirmWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\CommandPanelWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\WaitWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -115,6 +118,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Services\BatchLaunchService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Services\CommandVariableService.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Services\UpdateService.cpp">
@@ -197,6 +203,9 @@
     <ClInclude Include="Config\ConfirmWindow.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Config\CommandPanelWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Config\WaitWindow.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -222,6 +231,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\FileSelectionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\CommandVariableService.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\UpdateService.h">

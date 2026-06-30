@@ -96,6 +96,11 @@ bool ConfirmWindow::Show(HWND parent, const wchar_t* title, const wchar_t* promp
         DispatchMessageW(&msg);
     }
 
+    if (IsWindow(hWnd))
+    {
+        DestroyWindow(hWnd);
+    }
+
     if (msg.message == WM_QUIT)
     {
         PostQuitMessage((int)msg.wParam);

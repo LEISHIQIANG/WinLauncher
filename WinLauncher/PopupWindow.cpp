@@ -1,4 +1,14 @@
 #define NOMINMAX
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <regex>
+#include <thread>
 #include "PopupWindow.h"
 #include "DpiHelper.h"
 #include "UI/Controls/IconRenderer.h"
@@ -7,6 +17,7 @@
 #include "Config/UIStyle.h"
 #include "Config/PromptWindow.h"
 #include "Config/ConfirmWindow.h"
+#include "Config/CommandPanelWindow.h"
 #include "App/Logger.h"
 #include "App/AppMessages.h"
 #include <windowsx.h>
@@ -18,6 +29,7 @@
 #pragma comment(lib, "imm32.lib")
 #include "Services/MacroService.h"
 #include "Services/BatchLaunchService.h"
+#include "Services/CommandVariableService.h"
 
 PopupWindow* PopupWindow::s_instance = nullptr;
 std::vector<PopupWindow*> PopupWindow::s_extraWindows;
@@ -2361,11 +2373,11 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             PressedShortcutKind pressedKind = m_pressedShortcutKind;
             int pressedIndex = m_pressedShortcutIndex;
             int pressedPage = m_pressedShortcutPage;
-            ResetPressedShortcut();
             if (GetCapture() == hWnd)
             {
                 ReleaseCapture();
             }
+            ResetPressedShortcut();
 
             if (pressedKind == PressedShortcutKind::SearchResult && m_searchActive && !m_searchQuery.empty())
             {
@@ -2451,10 +2463,9 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_CAPTURECHANGED:
-        ResetPressedShortcut();
         m_trackMouse = false;
         m_hovered = -1;
-        if (!m_pinned)
+        if (!m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)
         {
             POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
@@ -2465,6 +2476,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (m_viewModel) m_viewModel->NotifyPopupHidden();
             }
         }
+        ResetPressedShortcut();
         return 0;
 
     case WM_KEYDOWN:
@@ -2634,7 +2646,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
-        break;
+        return 0;
 
     case WM_DESTROY:
         KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
@@ -2735,62 +2747,27 @@ static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose)
 static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, AppContext* ctx, bool& cancelled)
 {
     cancelled = false;
-    std::wstring s = inputStr;
     
-    size_t pos = 0;
-    while ((pos = s.find(L"{{clipboard}}")) != std::wstring::npos)
+    std::vector<std::wstring> files;
+    if (PopupWindow::s_instance)
     {
-        std::wstring clipText;
-        if (OpenClipboard(nullptr))
+        double now = GetTimeInSeconds();
+        if (!PopupWindow::s_instance->m_selectedFilesCtx.isPending && 
+            !PopupWindow::s_instance->m_selectedFilesCtx.filePaths.empty() && 
+            (now - PopupWindow::s_instance->m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
         {
-            HANDLE hData = GetClipboardData(CF_UNICODETEXT);
-            if (hData)
-            {
-                wchar_t* pText = static_cast<wchar_t*>(GlobalLock(hData));
-                if (pText)
-                {
-                    clipText = pText;
-                    GlobalUnlock(hData);
-                }
-            }
-            CloseClipboard();
-        }
-        s.replace(pos, 13, clipText);
-    }
-    
-    while ((pos = s.find(L"{{date}}")) != std::wstring::npos)
-    {
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        wchar_t buf[64];
-        swprintf_s(buf, L"%04d-%02d-%02d", st.wYear, st.wMonth, st.wDay);
-        s.replace(pos, 8, buf);
-    }
-    
-    while ((pos = s.find(L"{{time}}")) != std::wstring::npos)
-    {
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        wchar_t buf[64];
-        swprintf_s(buf, L"%02d-%02d-%02d", st.wHour, st.wMinute, st.wSecond);
-        s.replace(pos, 8, buf);
-    }
-    
-    while ((pos = s.find(L"{{input}}")) != std::wstring::npos)
-    {
-        std::wstring outResult;
-        if (PromptWindow::Show(parent, L"输入参数", L"请输入 {{input}} 的内容:", outResult, L"", ctx))
-        {
-            s.replace(pos, 9, outResult);
-        }
-        else
-        {
-            cancelled = true;
-            return L"";
+            files = PopupWindow::s_instance->m_selectedFilesCtx.filePaths;
         }
     }
-    
-    return s;
+
+    std::map<std::wstring, std::wstring> inputValues;
+    if (!Services::CommandVariableService::ResolveInputs(parent, inputStr, inputValues))
+    {
+        cancelled = true;
+        return L"";
+    }
+
+    return Services::CommandVariableService::ResolveVariables(inputStr, L"cmd", files, inputValues);
 }
 
 static bool LaunchUrl(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
@@ -2934,7 +2911,275 @@ static std::wstring CreateTempCommandScript(const std::wstring& script, const wc
     return scriptPath;
 }
 
-static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
+static bool ExecuteProcessHelper(
+    const std::wstring& targetPath,
+    const std::wstring& arguments,
+    const std::wstring& stdinContent,
+    bool showWindow,
+    bool captureOutput,
+    int timeoutSeconds,
+    int maxChars,
+    std::wstring& outOutput
+)
+{
+    HANDLE hStdinRead = nullptr;
+    HANDLE hStdinWrite = nullptr;
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
+
+    if (!stdinContent.empty())
+    {
+        if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0))
+        {
+            LOG_G_ERRA(L"ExecuteProcessHelper: CreatePipe for stdin failed, error=%lu", GetLastError());
+            return false;
+        }
+        SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    HANDLE hStdoutRead = nullptr;
+    HANDLE hStdoutWrite = nullptr;
+    if (captureOutput)
+    {
+        if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0))
+        {
+            LOG_G_ERRA(L"ExecuteProcessHelper: CreatePipe for stdout failed, error=%lu", GetLastError());
+            if (hStdinRead) { CloseHandle(hStdinRead); CloseHandle(hStdinWrite); }
+            return false;
+        }
+        SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = hStdinRead ? hStdinRead : GetStdHandle(STD_INPUT_HANDLE);
+    
+    if (captureOutput)
+    {
+        si.hStdOutput = hStdoutWrite;
+        si.hStdError = hStdoutWrite;
+    }
+    else
+    {
+        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    }
+
+    std::wstring cmdLine = L"\"" + targetPath + L"\"";
+    if (!arguments.empty())
+        cmdLine += L" " + arguments;
+
+    DWORD flags = CREATE_UNICODE_ENVIRONMENT;
+    if (!showWindow)
+    {
+        flags |= CREATE_NO_WINDOW;
+    }
+
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = CreateProcessW(
+        nullptr,
+        const_cast<LPWSTR>(cmdLine.c_str()),
+        nullptr, nullptr,
+        TRUE, 
+        flags,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
+    );
+
+    if (hStdinRead) CloseHandle(hStdinRead);
+    if (hStdoutWrite) CloseHandle(hStdoutWrite);
+
+    if (!ok)
+    {
+        LOG_G_ERRA(L"ExecuteProcessHelper: CreateProcessW failed, error=%lu", GetLastError());
+        if (hStdinWrite) CloseHandle(hStdinWrite);
+        if (hStdoutRead) CloseHandle(hStdoutRead);
+        return false;
+    }
+
+    if (pi.hThread) CloseHandle(pi.hThread);
+
+    if (hStdinWrite)
+    {
+        if (!stdinContent.empty())
+        {
+            int len = WideCharToMultiByte(CP_UTF8, 0, stdinContent.c_str(), (int)stdinContent.size(), nullptr, 0, nullptr, nullptr);
+            if (len > 0)
+            {
+                std::string utf8Content(len, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, stdinContent.c_str(), (int)stdinContent.size(), &utf8Content[0], len, nullptr, nullptr);
+                
+                DWORD written = 0;
+                WriteFile(hStdinWrite, utf8Content.data(), (DWORD)utf8Content.size(), &written, nullptr);
+            }
+        }
+        CloseHandle(hStdinWrite);
+    }
+
+    if (captureOutput)
+    {
+        std::string capturedBytes;
+        DWORD startTime = GetTickCount();
+        
+        while (true)
+        {
+            if (timeoutSeconds > 0 && (GetTickCount() - startTime) > (DWORD)(timeoutSeconds * 1000))
+            {
+                TerminateProcess(pi.hProcess, 1);
+                capturedBytes += "\r\n[Command timed out]";
+                break;
+            }
+
+            DWORD avail = 0;
+            if (PeekNamedPipe(hStdoutRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+            {
+                std::vector<char> buffer(avail);
+                DWORD read = 0;
+                if (ReadFile(hStdoutRead, buffer.data(), avail, &read, nullptr) && read > 0)
+                {
+                    capturedBytes.append(buffer.data(), read);
+                    if (maxChars > 0 && capturedBytes.size() >= (size_t)maxChars * 3)
+                    {
+                        capturedBytes.resize(maxChars * 3);
+                        capturedBytes += "\r\n[Output truncated]";
+                        TerminateProcess(pi.hProcess, 1);
+                        break;
+                    }
+                }
+            }
+
+            DWORD exitCode = 0;
+            if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
+            {
+                while (PeekNamedPipe(hStdoutRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+                {
+                    std::vector<char> buffer(avail);
+                    DWORD read = 0;
+                    if (ReadFile(hStdoutRead, buffer.data(), avail, &read, nullptr) && read > 0)
+                    {
+                        capturedBytes.append(buffer.data(), read);
+                    }
+                }
+                break;
+            }
+
+            Sleep(10);
+        }
+
+        CloseHandle(hStdoutRead);
+        CloseHandle(pi.hProcess);
+
+        if (!capturedBytes.empty())
+        {
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, capturedBytes.data(), (int)capturedBytes.size(), nullptr, 0);
+            if (wlen > 0)
+            {
+                outOutput.resize(wlen);
+                MultiByteToWideChar(CP_UTF8, 0, capturedBytes.data(), (int)capturedBytes.size(), &outOutput[0], wlen);
+            }
+            else
+            {
+                wlen = MultiByteToWideChar(CP_ACP, 0, capturedBytes.data(), (int)capturedBytes.size(), nullptr, 0);
+                if (wlen > 0)
+                {
+                    outOutput.resize(wlen);
+                    MultiByteToWideChar(CP_ACP, 0, capturedBytes.data(), (int)capturedBytes.size(), &outOutput[0], wlen);
+                }
+            }
+        }
+    }
+    else
+    {
+        CloseHandle(pi.hProcess);
+    }
+
+    return true;
+}
+
+static bool ConfirmHighRiskCommand(HWND parent, const std::wstring& commandText, const std::wstring& commandName, AppContext* ctx)
+{
+    static const std::wregex riskPatterns[] = {
+        std::wregex(L"\\b(rmdir|rd)\\b.*\\s/s", std::regex_constants::icase),
+        std::wregex(L"\\b(del|erase)\\b.*\\s/s", std::regex_constants::icase),
+        std::wregex(L"\\brm\\b.*-[a-zA-Z]*r", std::regex_constants::icase),
+        std::wregex(L"\\b(remove-item|rm)\\b.*-recurse", std::regex_constants::icase),
+        std::wregex(L"\\bformat\\s+[a-zA-Z]:", std::regex_constants::icase),
+        std::wregex(L"\\b(diskpart|bcdedit|bootrec)\\b", std::regex_constants::icase),
+        std::wregex(L"\\breg\\s+delete\\b", std::regex_constants::icase),
+        std::wregex(L"\\bshutdown\\s+/[sr]", std::regex_constants::icase)
+    };
+
+    for (const auto& pattern : riskPatterns)
+    {
+        if (std::regex_search(commandText, pattern))
+        {
+            std::wstring prompt = L"检测到命令 [" + commandName + L"] 包含可能危及系统安全或删除数据的危险操作，例如目录删除、磁盘格式化或注册表修改等。\n\n确定要运行该高风险命令吗？";
+            return ConfirmWindow::Show(parent, L"高风险命令提示", prompt.c_str(), ctx, true);
+        }
+    }
+    return true; 
+}
+
+static bool ExecuteScriptViaTempFile(
+    const std::wstring& interpreter,
+    const std::wstring& extension,
+    const std::wstring& extraArgsBefore,
+    const std::wstring& scriptContent,
+    bool showWindow,
+    bool captureOutput,
+    int timeoutSeconds,
+    int maxChars,
+    std::wstring& output
+)
+{
+    wchar_t tempPath[MAX_PATH];
+    wchar_t tempFile[MAX_PATH];
+    if (!GetTempPathW(MAX_PATH, tempPath) || !GetTempFileNameW(tempPath, L"wl_", 0, tempFile))
+    {
+        return false;
+    }
+
+    std::wstring scriptFile = tempFile;
+    DeleteFileW(tempFile);
+    scriptFile += extension;
+
+    HANDLE hFile = CreateFileW(scriptFile.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        return false;
+    }
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, scriptContent.c_str(), (int)scriptContent.size(), nullptr, 0, nullptr, nullptr);
+    if (len > 0)
+    {
+        std::string utf8(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, scriptContent.c_str(), (int)scriptContent.size(), &utf8[0], len, nullptr, nullptr);
+        DWORD written = 0;
+        WriteFile(hFile, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    }
+    CloseHandle(hFile);
+
+    std::wstring args = extraArgsBefore;
+    if (!args.empty()) args += L" ";
+    args += L"\"" + scriptFile + L"\"";
+
+    if (!captureOutput)
+    {
+        std::thread([interpreter, args, scriptFile, showWindow, timeoutSeconds, maxChars]() {
+            std::wstring dummyOutput;
+            ExecuteProcessHelper(interpreter, args, L"", showWindow, false, timeoutSeconds, maxChars, dummyOutput);
+            DeleteFileW(scriptFile.c_str());
+        }).detach();
+        return true;
+    }
+
+    bool ok = ExecuteProcessHelper(interpreter, args, L"", showWindow, true, timeoutSeconds, maxChars, output);
+    DeleteFileW(scriptFile.c_str());
+    return ok;
+}
+
+static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* ctx, const std::vector<std::wstring>& selectedFiles)
 {
     std::vector<std::wstring> segments;
     std::wstring s = sc.arguments;
@@ -2947,47 +3192,45 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     segments.push_back(s);
     
     std::wstring type = L"cmd";
-    // Note: segments[1] was builtinCmd — now deprecated
-    
+    bool showWindow = false;
+    bool captureOutput = false;
+    int timeoutSeconds = 300;
+    int maxChars = 2000;
+
     if (segments.size() > 0) type = segments[0];
+    if (segments.size() > 2) showWindow = (segments[2] == L"1");
+    if (segments.size() > 3) captureOutput = (segments[3] == L"1");
+    if (segments.size() > 4) { try { timeoutSeconds = std::stoi(segments[4]); } catch(...) {} }
+    if (segments.size() > 5) { try { maxChars = std::stoi(segments[5]); } catch(...) {} }
     
+    std::map<std::wstring, std::wstring> inputValues;
+    if (!Services::CommandVariableService::ResolveInputs(parent, sc.targetPath, inputValues))
+    {
+        return false;
+    }
+
+    std::wstring resolvedCmd = Services::CommandVariableService::ResolveVariables(sc.targetPath, type, selectedFiles, inputValues);
+
+    if (!ConfirmHighRiskCommand(parent, resolvedCmd, sc.name, ctx))
+    {
+        return false;
+    }
+
+    std::wstring output;
+    bool ok = false;
+
     if (type == L"cmd")
     {
-        std::wstring cmdArgs = L"/c " + sc.targetPath;
-        return PrivilegeLaunchService::Launch(L"cmd.exe", cmdArgs, sc.runAsAdmin);
+        std::wstring cmdArgs = L"/c " + resolvedCmd;
+        ok = ExecuteProcessHelper(L"cmd.exe", cmdArgs, L"", showWindow, captureOutput, timeoutSeconds, maxChars, output);
     }
     else if (type == L"powershell")
     {
-        if (sc.runAsAdmin)
-        {
-            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".ps1");
-            if (scriptPath.empty()) return false;
-            return PrivilegeLaunchService::Launch(
-                L"powershell.exe",
-                L"-NoProfile -ExecutionPolicy Bypass -File " + QuoteArg(scriptPath),
-                true);
-        }
-
-        // Pipe script via stdin instead of -Command "..." to avoid quoting issues
-        return PrivilegeLaunchService::LaunchWithStdin(
-            L"powershell.exe", sc.targetPath,
-            L"-NoProfile -NonInteractive -Command -",
-            sc.runAsAdmin);
+        ok = ExecuteScriptViaTempFile(L"powershell.exe", L".ps1", L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
     }
     else if (type == L"python")
     {
-        if (sc.runAsAdmin)
-        {
-            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".py");
-            if (scriptPath.empty()) return false;
-            return PrivilegeLaunchService::Launch(L"python.exe", QuoteArg(scriptPath), true);
-        }
-
-        // Pipe script via stdin instead of -c "..." to avoid quoting issues
-        return PrivilegeLaunchService::LaunchWithStdin(
-            L"python.exe", sc.targetPath,
-            L"-",
-            sc.runAsAdmin);
+        ok = ExecuteScriptViaTempFile(L"python.exe", L".py", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
     }
     else if (type == L"gitbash")
     {
@@ -2997,20 +3240,15 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
             LOG_G_ERRA(L"LaunchCommand: gitbash — bash.exe not found (git.exe not in PATH or Git not installed?)");
             return false;
         }
-        if (sc.runAsAdmin)
-        {
-            std::wstring scriptPath = CreateTempCommandScript(sc.targetPath, L".sh");
-            if (scriptPath.empty()) return false;
-            return PrivilegeLaunchService::Launch(bashPath, QuoteArg(scriptPath), true);
-        }
-
-        // Pipe script via stdin instead of -c "..." to avoid quoting issues
-        return PrivilegeLaunchService::LaunchWithStdin(
-            bashPath, sc.targetPath,
-            L"-s",
-            sc.runAsAdmin);
+        ok = ExecuteScriptViaTempFile(bashPath, L".sh", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
     }
-    return false;
+
+    if (ok && captureOutput)
+    {
+        CommandPanelWindow::Show(parent, sc.name.c_str(), output.c_str(), ctx);
+    }
+
+    return ok;
 }
 
 void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
@@ -3053,11 +3291,11 @@ void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
     }
     else
     {
-        ExecuteShortcut(sc, hWnd, m_appCtx);
+        ExecuteShortcut(sc, hWnd, m_appCtx, files);
     }
 }
 
-bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx)
+bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx, const std::vector<std::wstring>& selectedFiles)
 {
     if (sc.type == Model::ShortcutType::Hotkey)
     {
@@ -3071,7 +3309,7 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
     }
     else if (sc.type == Model::ShortcutType::Command)
     {
-        return LaunchCommand(sc, parent, ctx);
+        return LaunchCommand(sc, parent, ctx, selectedFiles);
     }
     else if (sc.type == Model::ShortcutType::System)
     {

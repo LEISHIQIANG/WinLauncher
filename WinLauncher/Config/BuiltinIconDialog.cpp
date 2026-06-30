@@ -174,6 +174,11 @@ bool BuiltinIconDialog::Show(HWND parent, std::vector<RendShortcutInfo>& selecte
         DispatchMessageW(&msg);
     }
 
+    if (IsWindow(hWnd))
+    {
+        DestroyWindow(hWnd);
+    }
+
     if (msg.message == WM_QUIT)
     {
         PostQuitMessage((int)msg.wParam);

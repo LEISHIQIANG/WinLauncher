@@ -152,6 +152,7 @@
     <ClCompile Include="Config\DropDownMenu.cpp" />
     <ClCompile Include="Config\PromptWindow.cpp" />
     <ClCompile Include="Config\ConfirmWindow.cpp" />
+    <ClCompile Include="Config\CommandPanelWindow.cpp" />
     <ClCompile Include="Config\WaitWindow.cpp" />
     <ClCompile Include="Config\ShortcutDialog.cpp" />
     <ClCompile Include="Config\ShortcutEditForm.cpp" />
@@ -173,6 +174,7 @@
     <ClCompile Include="Services\FileSelectionService.cpp" />
     <ClCompile Include="Services\MacroService.cpp" />
     <ClCompile Include="Services\BatchLaunchService.cpp" />
+    <ClCompile Include="Services\CommandVariableService.cpp" />
     <ClCompile Include="Services\UpdateService.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
     <ClCompile Include="Config\MacroEditForm.cpp" />
@@ -216,6 +218,7 @@
     <ClInclude Include="Services\PrivilegeLaunchService.h" />
     <ClInclude Include="Services\EnvironmentDetector.h" />
     <ClInclude Include="Services\FileSelectionService.h" />
+    <ClInclude Include="Services\CommandVariableService.h" />
     <ClInclude Include="Services\UpdateService.h" />
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />
@@ -240,6 +243,7 @@
     <ClInclude Include="Config\IConfigWindow.h" />
     <ClInclude Include="Config\PromptWindow.h" />
     <ClInclude Include="Config\ConfirmWindow.h" />
+    <ClInclude Include="Config\CommandPanelWindow.h" />
     <ClInclude Include="Config\WaitWindow.h" />
     <ClInclude Include="Config\ShortcutDialog.h" />
     <ClInclude Include="Config\ShortcutEditForm.h" />

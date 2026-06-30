@@ -128,6 +128,11 @@ bool UrlDialog::Show(HWND parent, const wchar_t* title,
         DispatchMessageW(&msg);
     }
 
+    if (IsWindow(hWnd))
+    {
+        DestroyWindow(hWnd);
+    }
+
     if (msg.message == WM_QUIT)
     {
         PostQuitMessage((int)msg.wParam);

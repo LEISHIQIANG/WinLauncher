@@ -4,6 +4,7 @@
 #include "../App/Logger.h"
 #include <commoncontrols.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <shlwapi.h>
 #include <unordered_map>
 #include "../UI/Controls/IconRenderer.h"

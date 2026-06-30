@@ -186,6 +186,31 @@ void TextBox::Paint(ID2D1HwndRenderTarget* rt, float scale)
 
     if (m_textLayout)
     {
+        size_t safeCaret = std::min(m_caretIndex, m_text.size());
+        std::wstring displayText = m_text.substr(0, safeCaret) + m_compText + m_text.substr(safeCaret);
+
+        m_textLayout->SetDrawingEffect(nullptr, DWRITE_TEXT_RANGE{ 0, (UINT32)displayText.size() });
+
+        size_t pos = 0;
+        ComPtr<ID2D1SolidColorBrush> accentBrush;
+        rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
+
+        while (accentBrush)
+        {
+            size_t start = displayText.find(L"{{", pos);
+            if (start == std::wstring::npos)
+                break;
+            size_t end = displayText.find(L"}}", start);
+            if (end == std::wstring::npos)
+                break;
+
+            UINT32 rangeStart = (UINT32)start;
+            UINT32 rangeLength = (UINT32)(end + 2 - start);
+            m_textLayout->SetDrawingEffect(accentBrush.Get(), DWRITE_TEXT_RANGE{ rangeStart, rangeLength });
+            
+            pos = end + 2;
+        }
+
         ComPtr<ID2D1SolidColorBrush> textBrush;
         rt->CreateSolidColorBrush(m_style.textNormal.d2d, &textBrush);
         if (textBrush) rt->DrawTextLayout(textOrigin, m_textLayout.Get(), textBrush.Get());

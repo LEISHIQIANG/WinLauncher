@@ -1575,6 +1575,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                             auto cb = m_animOnComplete;
                             m_animOnComplete = nullptr;
                             cb();
+                            if (!IsWindow(hWnd))
+                            {
+                                return 0;
+                            }
                         }
                     }
                 }

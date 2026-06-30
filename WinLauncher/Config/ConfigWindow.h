@@ -26,7 +26,7 @@ public:
     static void ShowConfig(HWND parent, AppContext* ctx = nullptr);
     static void ShowSettings(HWND parent, AppContext* ctx = nullptr);
     static void Hide();
-    static void Release();
+    static void Release(bool forceImmediate = false);
     static bool IsVisible();
     static HWND GetHWNDStatic();
 
