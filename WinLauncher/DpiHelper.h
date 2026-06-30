@@ -4,26 +4,33 @@
 
 static void SetWindowDisplayAffinitySafe(HWND hwnd)
 {
-    wchar_t className[128]{};
-    if (GetClassNameW(hwnd, className, 128) > 0)
+    int windowMode = UIStyle::GetWindowMode();
+    if (windowMode != 2) // If it's not the new Glass material, bypass the display affinity for these windows
     {
-        if (wcscmp(className, L"WinLauncherConfig") == 0 ||
-            wcscmp(className, L"WinLauncherBatchDialog") == 0 ||
-            wcscmp(className, L"WinLauncherBuiltinIconDialog") == 0 ||
-            wcscmp(className, L"WinLauncherCommandDialog") == 0 ||
-            wcscmp(className, L"WinLauncherConfirm") == 0 ||
-            wcscmp(className, L"WinLauncherContextMenu") == 0 ||
-            wcscmp(className, L"WinLauncherDropDown") == 0 ||
-            wcscmp(className, L"WinLauncherHotkeyDialog") == 0 ||
-            wcscmp(className, L"WinLauncherMacroDialog") == 0 ||
-            wcscmp(className, L"WinLauncherPrompt") == 0 ||
-            wcscmp(className, L"WinLauncherShortcutDialog") == 0 ||
-            wcscmp(className, L"WinLauncherSystemIconDialog") == 0 ||
-            wcscmp(className, L"WinLauncherUrlDialog") == 0 ||
-            wcscmp(className, L"WinLauncherWait") == 0 ||
-            wcscmp(className, L"WinLauncherPopup") == 0)
+        wchar_t className[128]{};
+        if (GetClassNameW(hwnd, className, 128) > 0)
         {
-            return;
+            if (wcscmp(className, L"WinLauncherConfig") == 0 ||
+                wcscmp(className, L"WinLauncherBatchDialog") == 0 ||
+                wcscmp(className, L"WinLauncherBuiltinIconDialog") == 0 ||
+                wcscmp(className, L"WinLauncherCommandDialog") == 0 ||
+                wcscmp(className, L"WinLauncherConfirm") == 0 ||
+                wcscmp(className, L"WinLauncherContextMenu") == 0 ||
+                wcscmp(className, L"WinLauncherDropDown") == 0 ||
+                wcscmp(className, L"WinLauncherHotkeyDialog") == 0 ||
+                wcscmp(className, L"WinLauncherMacroDialog") == 0 ||
+                wcscmp(className, L"WinLauncherPrompt") == 0 ||
+                wcscmp(className, L"WinLauncherShortcutDialog") == 0 ||
+                wcscmp(className, L"WinLauncherSystemIconDialog") == 0 ||
+                wcscmp(className, L"WinLauncherUrlDialog") == 0 ||
+                wcscmp(className, L"WinLauncherWait") == 0 ||
+                wcscmp(className, L"WinLauncherPopup") == 0 ||
+                wcscmp(className, L"WinLauncherShadow") == 0)
+            {
+                // Clear any display affinity previously set when switching from glass to other modes
+                SetWindowDisplayAffinity(hwnd, 0);
+                return;
+            }
         }
     }
 

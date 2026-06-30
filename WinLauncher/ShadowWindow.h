@@ -21,6 +21,7 @@ public:
     void UpdateShadow(int mainWidth, int mainHeight, float physicalCornerRadius, float scale);
     void SetOpacity(float factor);
     void Destroy();
+    HWND GetHWND() const { return m_hShadowWnd; }
 
 private:
     void RegisterClass();

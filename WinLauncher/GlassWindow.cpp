@@ -7,6 +7,7 @@
 #include <dwmapi.h>
 #include <d2d1helper.h>
 #include <d2d1effects.h>
+#include <algorithm>
 #include <cmath>
 
 #pragma comment(lib, "dwmapi.lib")
@@ -22,6 +23,7 @@ static bool IsWindows11OrLater();
 static float EaseOutCubic(float t);
 static float EaseInCubic(float t);
 static double PerfNowMs();
+static float ClampCornerRadius(float radius, float width, float height);
 
 using SWCAFn = BOOL(WINAPI*)(HWND, void*);
 struct AccentPolicy { int s, f; unsigned int g; int a; };
@@ -154,6 +156,19 @@ static bool ShouldLogPerf(ULONGLONG& lastLogTick, double elapsedMs, double thres
     return true;
 }
 
+static float ClampCornerRadius(float radius, float width, float height)
+{
+    if (radius < 0.0f)
+        return 0.0f;
+    if (width > 0.0f && height > 0.0f)
+    {
+        float maxRadius = (std::min)(width, height) * 0.5f;
+        if (radius > maxRadius)
+            return maxRadius;
+    }
+    return radius;
+}
+
 ShadowSettings GlassWindow::GetShadowSettings() const
 {
     ShadowSettings s;
@@ -169,6 +184,21 @@ ShadowSettings GlassWindow::GetShadowSettings() const
 void GlassWindow::UpdateWindowCornerRadius()
 {
     m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
+}
+
+float GlassWindow::GetDrawCornerRadius(float renderScale, float width, float height) const
+{
+    float systemScale = GetSystemWindowScale(m_hWnd);
+    if (renderScale <= 0.0f)
+        renderScale = systemScale > 0.0f ? systemScale : 1.0f;
+
+    float radius = m_cornerRadius * (systemScale / renderScale);
+    return ClampCornerRadius(radius, width, height);
+}
+
+float GlassWindow::GetPhysicalCornerRadius() const
+{
+    return ClampCornerRadius(m_cornerRadius * GetSystemWindowScale(m_hWnd), 0.0f, 0.0f);
 }
 
 void GlassWindow::UpdateWindowRoundRegion()
@@ -191,8 +221,13 @@ void GlassWindow::UpdateWindowRoundRegion()
         return;
     }
 
-    float systemScale = GetSystemWindowScale(m_hWnd);
-    int radiusPx = (int)std::round(m_cornerRadius * systemScale);
+    if (IsWindows11OrLater())
+    {
+        SetWindowRgn(m_hWnd, nullptr, TRUE);
+        return;
+    }
+
+    int radiusPx = (int)std::round(GetPhysicalCornerRadius());
     if (radiusPx < 1) radiusPx = 1;
 
     HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radiusPx * 2, radiusPx * 2);
@@ -214,6 +249,13 @@ void GlassWindow::ApplySystemBackdrop()
         DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     }
     UpdateWindowRoundRegion();
+
+    // Dynamically update the display affinity for the window and its shadow window
+    SetWindowDisplayAffinitySafe(m_hWnd);
+    if (m_shadowWindow)
+    {
+        SetWindowDisplayAffinitySafe(m_shadowWindow->GetHWND());
+    }
 
     DWORD border = 0xFFFFFFFE;
     DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
@@ -336,7 +378,10 @@ void GlassWindow::ReleaseD2D()
     m_sheenBrush.Reset();
     m_sheenLayerRt.Reset();
     m_sheenLayerBitmap.Reset();
+    m_roundedClipLayer.Reset();
+    m_roundedClipGeometry.Reset();
     m_effectWinSize = {};
+    m_effectCornerRadius = -1.0f;
     m_tf.Reset();
     m_dw.Reset();
     m_rt.Reset();
@@ -471,7 +516,7 @@ void GlassWindow::CompositeBackgroundToCache()
 
     float scale = GetWindowScale(m_hWnd);
     float systemScale = GetSystemWindowScale(m_hWnd);
-    float drawCornerRadius = m_cornerRadius * (systemScale / scale);
+    float drawCornerRadius = GetDrawCornerRadius(scale, w, h);
     float borderOffset = (0.5f * systemScale) / scale;
     float borderWidth = (1.0f * systemScale) / scale;
 
@@ -497,17 +542,53 @@ void GlassWindow::CompositeBackgroundToCache()
     }
 
     // If window size changed, rebuild cached effects
-    if (sizeChanged || m_effectWinSize.width != w || m_effectWinSize.height != h)
+    if (sizeChanged ||
+        m_effectWinSize.width != w ||
+        m_effectWinSize.height != h ||
+        fabsf(m_effectCornerRadius - drawCornerRadius) > 0.01f)
     {
         m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
         m_sheenGsc.Reset(); m_sheenBrush.Reset();
         m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
+        m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
         m_effectWinSize = { w, h };
+        m_effectCornerRadius = drawCornerRadius;
     }
 
     ComPtr<ID2D1BitmapRenderTarget> bmpRt = m_compositeRt;
     bmpRt->BeginDraw();
     bmpRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    D2D1_ANTIALIAS_MODE originalAntialiasMode = bmpRt->GetAntialiasMode();
+    bmpRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    bool roundedLayerPushed = false;
+    if (drawCornerRadius > 0.0f)
+    {
+        if (!m_roundedClipGeometry)
+        {
+            ComPtr<ID2D1Factory> roundedFactory;
+            bmpRt->GetFactory(&roundedFactory);
+            if (roundedFactory)
+            {
+                roundedFactory->CreateRoundedRectangleGeometry(
+                    D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+                    &m_roundedClipGeometry);
+            }
+        }
+        if (!m_roundedClipLayer)
+            bmpRt->CreateLayer(D2D1::SizeF(w, h), &m_roundedClipLayer);
+
+        if (m_roundedClipGeometry && m_roundedClipLayer)
+        {
+            bmpRt->PushLayer(
+                D2D1::LayerParameters(
+                    D2D1::RectF(0.0f, 0.0f, w, h),
+                    m_roundedClipGeometry.Get(),
+                    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE),
+                m_roundedClipLayer.Get());
+            roundedLayerPushed = true;
+        }
+    }
 
     // A. Draw Blurred Desktop Screenshot (Layer 0)
     ID2D1DeviceContext* dc = nullptr;
@@ -601,7 +682,9 @@ void GlassWindow::CompositeBackgroundToCache()
     );
     if (bgBrush)
     {
-        bmpRt->FillRectangle(D2D1::RectF(0.0f, 0.0f, w, h), bgBrush);
+        bmpRt->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+            bgBrush);
         bgBrush->Release();
     }
 
@@ -652,6 +735,12 @@ void GlassWindow::CompositeBackgroundToCache()
             stopsInner->Release();
         }
     }
+
+    if (roundedLayerPushed)
+    {
+        bmpRt->PopLayer();
+    }
+    bmpRt->SetAntialiasMode(originalAntialiasMode);
 
     HRESULT hr = bmpRt->EndDraw();
     if (SUCCEEDED(hr))
@@ -723,7 +812,9 @@ void GlassWindow::DoPaint()
             m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
             m_sheenGsc.Reset(); m_sheenBrush.Reset();
             m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
+            m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
             m_effectWinSize = {};
+            m_effectCornerRadius = -1.0f;
             m_rt.Reset();
             m_brushCache.clear();
             m_themeTransitionStopCollection.Reset();
@@ -754,7 +845,7 @@ void GlassWindow::DoPaint()
             if (bo)
             {
                 float systemScale = GetSystemWindowScale(m_hWnd);
-                float drawCornerRadius = m_cornerRadius * (systemScale / scale);
+                float drawCornerRadius = GetDrawCornerRadius(scale, w, h);
                 float borderOffset = (0.5f * systemScale) / scale;
                 float borderWidth = (1.0f * systemScale) / scale;
                 m_rt->DrawRoundedRectangle(
@@ -813,7 +904,9 @@ void GlassWindow::DoPaint()
         m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
         m_sheenGsc.Reset(); m_sheenBrush.Reset();
         m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
+        m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
         m_effectWinSize = {};
+        m_effectCornerRadius = -1.0f;
         m_rt.Reset();
         m_brushCache.clear();
         m_themeTransitionStopCollection.Reset();
@@ -904,7 +997,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                         m_sheenBrush.Reset();
                         m_sheenLayerRt.Reset();
                         m_sheenLayerBitmap.Reset();
+                        m_roundedClipLayer.Reset();
+                        m_roundedClipGeometry.Reset();
                         m_effectWinSize = {};
+                        m_effectCornerRadius = -1.0f;
                         if (m_compositor)
                             m_compositor->MarkAllDirty();
                     }
@@ -927,8 +1023,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int mainW = wr.right - wr.left;
                 int mainH = wr.bottom - wr.top;
                 float scale = GetWindowScale(hWnd);
-                float systemScale = GetSystemWindowScale(hWnd);
-                float physicalRadius = m_cornerRadius * systemScale;
+                float physicalRadius = GetPhysicalCornerRadius();
 
                 if (sizeChanged)
                 {
@@ -987,8 +1082,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             UpdateWindowCornerRadius();
             UpdateWindowRoundRegion();
             float scale = GetWindowScale(hWnd);
-            float systemScale = GetSystemWindowScale(hWnd);
-            float physicalRadius = m_cornerRadius * systemScale;
+            float physicalRadius = GetPhysicalCornerRadius();
             m_shadowWindow->UpdateShadow(wr.right - wr.left, wr.bottom - wr.top, physicalRadius, scale);
 
             if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
@@ -1152,7 +1246,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             m_sheenBrush.Reset();
             m_sheenLayerRt.Reset();
             m_sheenLayerBitmap.Reset();
+            m_roundedClipLayer.Reset();
+            m_roundedClipGeometry.Reset();
             m_effectWinSize = {};
+            m_effectCornerRadius = -1.0f;
             if (m_compositor)
                 m_compositor->MarkAllDirty();
             m_bgCaptureDirty = true;

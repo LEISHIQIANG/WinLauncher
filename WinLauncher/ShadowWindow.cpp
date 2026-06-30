@@ -99,6 +99,11 @@ void ShadowWindow::CreateShadowWindow()
         GetModuleHandle(nullptr),
         nullptr
     );
+
+    if (m_hShadowWnd)
+    {
+        SetWindowDisplayAffinitySafe(m_hShadowWnd);
+    }
 }
 
 void ShadowWindow::SyncPosition(bool mainVisible)

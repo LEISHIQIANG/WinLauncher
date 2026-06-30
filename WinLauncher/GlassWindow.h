@@ -57,6 +57,8 @@ protected:
     void DoPaint();
     void UpdateWindowCornerRadius();
     void UpdateWindowRoundRegion();
+    float GetDrawCornerRadius(float renderScale, float width = 0.0f, float height = 0.0f) const;
+    float GetPhysicalCornerRadius() const;
     void SetAnimationCenter(bool fromWindowCenter);
 
     // Compositor-based rendering (long-term)
@@ -95,7 +97,10 @@ protected:
     ComPtr<ID2D1RadialGradientBrush>    m_sheenBrush;
     ComPtr<ID2D1BitmapRenderTarget>     m_sheenLayerRt;
     ComPtr<ID2D1Bitmap>                 m_sheenLayerBitmap;
+    ComPtr<ID2D1Layer>                  m_roundedClipLayer;
+    ComPtr<ID2D1RoundedRectangleGeometry> m_roundedClipGeometry;
     D2D1_SIZE_F               m_effectWinSize = {};
+    float                     m_effectCornerRadius = -1.0f;
 
     // Corner radius for window decoration; 0 = no DWM rounded corners (Win10)
     float m_cornerRadius = 8.0f;
