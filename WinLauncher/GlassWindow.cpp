@@ -353,9 +353,6 @@ bool GlassWindow::EnsureD2D()
                 DWRITE_FONT_WEIGHT_NORMAL,
                 DWRITE_TEXT_ALIGNMENT_CENTER,
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            if (m_tf)
-            {
-            }
         }
     }
     if (!m_d2d) return false;

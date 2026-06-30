@@ -38,7 +38,6 @@ struct RendPopupPage
 class ShortcutManager
 {
 public:
-    static std::vector<RendShortcutInfo> LoadShortcuts(const std::wstring& configDir);
     static void FreeShortcuts(std::vector<RendShortcutInfo>& shortcuts);
     static std::wstring FindConfigDir();
     static HICON GetShortcutIcon(const std::wstring& targetPath);
@@ -50,7 +49,5 @@ public:
     static std::vector<RendPopupPage> LoadConfig(const std::wstring& configDir);
     static void SaveConfig(const std::wstring& configDir, const std::vector<RendPopupPage>& pages);
 
-    // Re-extract icons for all shortcuts (destroys existing HICONs and reloads)
-    static void RefreshShortcutIcons(std::vector<RendPopupPage>& pages);
     static void RefreshShortcutIcon(RendShortcutInfo& shortcut);
 };

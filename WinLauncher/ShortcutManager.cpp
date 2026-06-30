@@ -41,69 +41,6 @@ static std::wstring GenerateShortcutId()
     return L"{" + std::to_wstring(GetTickCount64()) + L"-" + std::to_wstring(rand()) + L"}";
 }
 
-std::vector<RendShortcutInfo> ShortcutManager::LoadShortcuts(const std::wstring& configDir)
-{
-    std::vector<RendShortcutInfo> result;
-
-    std::wstring searchPath = configDir + L"\\*.lnk";
-    WIN32_FIND_DATAW ffd;
-    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &ffd);
-
-    if (hFind == INVALID_HANDLE_VALUE)
-        return result;
-
-    do
-    {
-        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-            continue;
-
-        std::wstring fullPath = configDir + L"\\" + ffd.cFileName;
-
-        RendShortcutInfo info;
-        info.id = GenerateShortcutId();
-        info.name = ffd.cFileName;
-        size_t dot = info.name.rfind(L'.');
-        if (dot != std::wstring::npos)
-            info.name = info.name.substr(0, dot);
-
-        IShellLinkW* psl = nullptr;
-        HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr,
-                                      CLSCTX_INPROC_SERVER,
-                                      IID_IShellLinkW, (void**)&psl);
-        if (SUCCEEDED(hr) && psl)
-        {
-            IPersistFile* ppf = nullptr;
-            hr = psl->QueryInterface(IID_IPersistFile, (void**)&ppf);
-            if (SUCCEEDED(hr) && ppf)
-            {
-                hr = ppf->Load(fullPath.c_str(), STGM_READ);
-                if (SUCCEEDED(hr))
-                {
-                    wchar_t buf[MAX_PATH]{};
-                    if (SUCCEEDED(psl->GetPath(buf, MAX_PATH, nullptr, SLGP_RAWPATH)))
-                        info.targetPath = buf;
-                    wchar_t args[4096]{};
-                    if (SUCCEEDED(psl->GetArguments(args, 4096)))
-                        info.arguments = args;
-                }
-                ppf->Release();
-            }
-            psl->Release();
-        }
-
-        info.type = Model::ShortcutType::File;
-        info.targetKind = InferTargetKind(fullPath);
-        info.iconSource = Model::IconSource::Auto;
-        info.hIcon = GetShortcutIcon(info);
-
-        result.push_back(info);
-    } while (FindNextFileW(hFind, &ffd));
-
-
-    FindClose(hFind);
-    return result;
-}
-
 void ShortcutManager::FreeShortcuts(std::vector<RendShortcutInfo>& shortcuts)
 {
     for (auto& s : shortcuts)
@@ -762,17 +699,6 @@ void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut)
         shortcut.hIcon = nullptr;
     }
     shortcut.hIcon = GetShortcutIcon(shortcut);
-}
-
-void ShortcutManager::RefreshShortcutIcons(std::vector<RendPopupPage>& pages)
-{
-    for (auto& page : pages)
-    {
-        for (auto& sc : page.shortcuts)
-        {
-            RefreshShortcutIcon(sc);
-        }
-    }
 }
 
 HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)

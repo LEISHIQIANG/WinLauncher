@@ -29,13 +29,6 @@ public:
     {
     }
 
-    void RegisterPlugin(std::unique_ptr<IPlugin> plugin)
-    {
-        if (!plugin) return;
-        plugin->OnLoad(m_eventBus);
-        m_plugins.push_back(std::move(plugin));
-    }
-
     void UnloadAll()
     {
         for (auto& p : m_plugins)
@@ -44,8 +37,6 @@ public:
         }
         m_plugins.clear();
     }
-
-    size_t GetPluginCount() const { return m_plugins.size(); }
 
     void NotifyShortcutLaunched(const Model::ShortcutInfo& shortcut)
     {
