@@ -3655,7 +3655,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     if (segments.size() > 3) captureOutput = (segments[3] == L"1");
     if (captureOutput) showWindow = false;
     if (segments.size() > 4) { try { timeoutSeconds = std::stoi(segments[4]); } catch(...) {} }
-    if (segments.size() > 5) { try { maxChars = std::stoi(segments[5]); } catch(...) {} }
+    if (segments.size() > 5) { try { int v = std::stoi(segments[5]); if (v > 2000) maxChars = v; } catch(...) {} }
     
     std::map<std::wstring, std::wstring> inputValues;
     if (!Services::CommandVariableService::ResolveInputs(parent, sc.targetPath, inputValues))

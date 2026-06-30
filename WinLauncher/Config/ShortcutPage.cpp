@@ -1546,7 +1546,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
         
         std::wstring type = L"cmd";
         bool showWindow = false, captureOutput = false;
-        int timeout = 300, maxChars = 2000;
+        int timeout = 300, maxChars = 50000;
         
         if (segments.size() > 0) type = segments[0];
         // segments[1] was builtinCmd — now unused, kept for backward compat
