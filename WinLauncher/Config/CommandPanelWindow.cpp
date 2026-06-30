@@ -160,27 +160,6 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             worker(workerHwnd);
         }).detach();
     }
-
-    MSG msg;
-    HWND hWnd = win->GetHWND();
-    while (IsWindow(hWnd) && GetMessageW(&msg, nullptr, 0, 0))
-    {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-
-    if (IsWindow(hWnd))
-    {
-        DestroyWindow(hWnd);
-    }
-
-    if (msg.message == WM_QUIT)
-    {
-        PostQuitMessage((int)msg.wParam);
-    }
-
-    g_cmdPanelInstance = nullptr;
-    delete win;
 }
 
 LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -372,10 +351,12 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         return 0;
     }
     case WM_DESTROY:
-    {
-        PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
         break;
-    }
+
+    case WM_NCDESTROY:
+        g_cmdPanelInstance = nullptr;
+        delete this;
+        return 0;
     }
     return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
 }

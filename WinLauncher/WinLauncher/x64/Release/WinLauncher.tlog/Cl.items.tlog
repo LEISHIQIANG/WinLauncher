@@ -17,6 +17,7 @@ C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\SettingsPage.cpp;C
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\DropDownMenu.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\DropDownMenu.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\PromptWindow.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\PromptWindow.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ConfirmWindow.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\ConfirmWindow.obj
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\CommandPanelWindow.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\CommandPanelWindow.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\WaitWindow.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\WaitWindow.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ShortcutDialog.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\ShortcutDialog.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\ShortcutEditForm.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\ShortcutEditForm.obj
@@ -38,6 +39,8 @@ C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\EnvironmentDetec
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\FileSelectionService.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\FileSelectionService.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\MacroService.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\MacroService.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\BatchLaunchService.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\BatchLaunchService.obj
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\CommandVariableService.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\CommandVariableService.obj
+C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Services\UpdateService.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\UpdateService.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\MacroDialog.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\MacroDialog.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\MacroEditForm.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\MacroEditForm.obj
 C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\Config\BatchLaunchDialog.cpp;C:\Users\Administrator\Desktop\WinLauncher\WinLauncher\WinLauncher\x64\Release\BatchLaunchDialog.obj

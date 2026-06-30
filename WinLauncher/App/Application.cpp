@@ -86,6 +86,28 @@ int Application::Run()
         return 1;
     }
 
+    // Check GPU crash recovery marker from previous session
+    {
+        wchar_t markerPath[MAX_PATH]{};
+        if (GetEnvironmentVariableW(L"APPDATA", markerPath, MAX_PATH))
+        {
+            wcscat_s(markerPath, L"\\WinLauncher\\config\\gpu_crash_recovery.marker");
+            HANDLE hMarker = CreateFileW(markerPath, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (hMarker != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(hMarker);
+                DeleteFileW(markerPath);
+                LOG_INFO(m_appCtx->logger, L"Application::Run: GPU crash recovery marker found — disabling hardware acceleration");
+                if (m_appCtx->configService)
+                {
+                    m_appCtx->configService->SetHardwareAccelerationEnabled(false);
+                }
+                UIStyle::Performance::SetHardwareAccelerationEnabled(false);
+            }
+        }
+    }
+
     // Start background environment detection (executors like python, git bash)
     EnvironmentDetector::StartDetection();
 

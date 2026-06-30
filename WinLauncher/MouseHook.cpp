@@ -243,6 +243,16 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
+            // Debounce: ignore triggers within 300ms of the last one
+            static DWORD s_lastTriggerTick = 0;
+            DWORD now = GetTickCount();
+            if (now - s_lastTriggerTick < 300)
+            {
+                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger debounced (type=%d), %lums since last", trigger, now - s_lastTriggerTick);
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
+            s_lastTriggerTick = now;
+
             LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger detected (type=%d), posting ShowPopup message", trigger);
             PostMessage(s_hTargetWnd, AppMessages::ShowPopup, 0, 0);
             if (suppressUpMask != 0)

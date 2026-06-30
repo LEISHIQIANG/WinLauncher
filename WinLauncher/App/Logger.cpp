@@ -283,6 +283,52 @@ LONG WINAPI Logger::UnhandledCrashHandler(EXCEPTION_POINTERS* exceptionInfo)
             }
             logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"  [%d] %s (0x%p)", i, modPath, stack[i]);
         }
+
+        // Auto-detect GPU driver crashes and write recovery marker
+        {
+            void* gpuStack[32];
+            USHORT gpuFrames = CaptureStackBackTrace(0, 32, gpuStack, nullptr);
+            bool gpuCrash = false;
+            for (USHORT i = 0; i < gpuFrames && !gpuCrash; i++)
+            {
+                HMODULE hMod = nullptr;
+                wchar_t modName[MAX_PATH] = L"";
+                if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    (LPCWSTR)gpuStack[i], &hMod))
+                {
+                    GetModuleFileNameW(hMod, modName, MAX_PATH);
+                    wchar_t* lastSlash = wcsrchr(modName, L'\\');
+                    if (lastSlash) wcscpy_s(modName, lastSlash + 1);
+                    _wcslwr_s(modName);
+                    if (wcsstr(modName, L"nvwgf2umx") || wcsstr(modName, L"nvldumd") ||
+                        wcsstr(modName, L"atidxx64") || wcsstr(modName, L"atiumd") ||
+                        wcsstr(modName, L"igdumd")  || wcsstr(modName, L"dxgkrnl"))
+                    {
+                        gpuCrash = true;
+                    }
+                }
+            }
+            if (gpuCrash)
+            {
+                logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"GPU driver detected in crash stack — writing recovery marker");
+                wchar_t markerPath[MAX_PATH]{};
+                if (GetEnvironmentVariableW(L"APPDATA", markerPath, MAX_PATH))
+                {
+                    wcscat_s(markerPath, L"\\WinLauncher\\config\\gpu_crash_recovery.marker");
+                    HANDLE hMarker = CreateFileW(markerPath, GENERIC_WRITE, 0, nullptr,
+                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hMarker != INVALID_HANDLE_VALUE)
+                    {
+                        const char* content = "GPU_CRASH";
+                        DWORD written = 0;
+                        WriteFile(hMarker, content, (DWORD)strlen(content), &written, nullptr);
+                        CloseHandle(hMarker);
+                        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Wrote GPU crash recovery marker to %s", markerPath);
+                    }
+                }
+            }
+        }
+
         logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"==================================================");
     }
     return EXCEPTION_CONTINUE_SEARCH;
