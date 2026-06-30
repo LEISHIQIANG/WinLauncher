@@ -3672,6 +3672,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
 
     if (captureOutput)
     {
+        maxChars = 0;
         std::wstring panelTitle = L"命令输出 - " + sc.name;
         std::wstring initialText = L"状态: 正在运行...\r\n\r\n输出:\r\n";
         CommandPanelWindow::ShowLive(parent, panelTitle.c_str(), initialText.c_str(),
@@ -3706,10 +3707,13 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
                     }
                     else
                     {
+                        std::wstring pyArgs = python.argsBeforeScript;
+                        if (!pyArgs.empty()) pyArgs += L" ";
+                        pyArgs += L"-u";
                         ExecuteScriptViaTempFileStreaming(
                             python.path,
                             L".py",
-                            python.argsBeforeScript,
+                            pyArgs,
                             resolvedCmd,
                             false,
                             timeoutSeconds,
@@ -3770,7 +3774,10 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
         }
         else
         {
-            ok = ExecuteScriptViaTempFile(python.path, L".py", python.argsBeforeScript, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+            std::wstring pyArgs = python.argsBeforeScript;
+            if (!pyArgs.empty()) pyArgs += L" ";
+            pyArgs += L"-u";
+            ok = ExecuteScriptViaTempFile(python.path, L".py", pyArgs, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
         }
     }
     else if (type == L"gitbash")
