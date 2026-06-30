@@ -184,7 +184,7 @@ PopupWindow::PopupWindow(AppContext* ctx)
             UpdateTheme();
         });
         m_bgStyleChangedToken = m_appCtx->eventBus->Subscribe(EventType::BackgroundStyleChanged, [this]() {
-            UpdateTheme();
+            UpdateBackgroundStyle();
         });
         m_uiScaleChangedToken = m_appCtx->eventBus->Subscribe(EventType::UiScaleChanged, [this]() {
             UpdateWindowSize();

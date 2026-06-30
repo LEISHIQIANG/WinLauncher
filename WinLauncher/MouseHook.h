@@ -15,6 +15,7 @@ private:
     static std::atomic<HHOOK>  s_hHook;
     static std::atomic<HWND>   s_hTargetWnd;
     static HANDLE              s_hThread;
+    static std::atomic<DWORD>  s_hookThreadId;
     static HANDLE              s_hReadyEvent;
     static std::atomic<bool>   s_running;
     static std::atomic<DWORD>  s_suppressButtonUpMask;

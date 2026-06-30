@@ -24,6 +24,10 @@
 static const int ICON_SIZE = 24;
 static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
 static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 8;
+static constexpr UINT_PTR CONFIG_SAVE_TIMER_ID = 101;
+static constexpr UINT_PTR CONFIG_BACKGROUND_STYLE_TIMER_ID = 102;
+static constexpr UINT CONFIG_SAVE_DEBOUNCE_MS = 500;
+static constexpr UINT CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS = 120;
 
 ConfigWindow* ConfigWindow::s_instance = nullptr;
 AppContext* ConfigWindow::s_ctx = nullptr;
@@ -54,7 +58,7 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
             UpdateTheme();
         });
         m_bgStyleChangedToken = ctx->eventBus->Subscribe(EventType::BackgroundStyleChanged, [this]() {
-            UpdateTheme();
+            UpdateBackgroundStyle();
         });
         m_configChangedToken = ctx->eventBus->Subscribe(EventType::ConfigChanged, [this]() {
             if (m_ignoreConfigChangedCount > 0)
@@ -166,7 +170,7 @@ void ConfigWindow::SaveConfig()
 {
     if (HWND hwnd = GetHWND())
     {
-        KillTimer(hwnd, 101);
+        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
     }
     m_ignoreConfigChangedCount++;
     if (m_viewModel)
@@ -395,10 +399,11 @@ void ConfigWindow::NotifyConfigChanged(bool onlyBackgroundStyle)
         m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
     }
     
-    // Debounce SaveConfig by 500ms
+    // Coalesce disk writes and expensive background refreshes during rapid tuning.
     if (HWND hwnd = GetHWND())
     {
-        SetTimer(hwnd, 101, 500, nullptr);
+        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
+        SetTimer(hwnd, CONFIG_SAVE_TIMER_ID, CONFIG_SAVE_DEBOUNCE_MS, nullptr);
     }
     else
     {
@@ -411,7 +416,8 @@ void ConfigWindow::NotifyConfigChanged(bool onlyBackgroundStyle)
         {
             if (HWND hwnd = GetHWND())
             {
-                SetTimer(hwnd, 102, 50, nullptr);
+                KillTimer(hwnd, CONFIG_BACKGROUND_STYLE_TIMER_ID);
+                SetTimer(hwnd, CONFIG_BACKGROUND_STYLE_TIMER_ID, CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS, nullptr);
             }
             else
             {
@@ -925,6 +931,7 @@ void ConfigWindow::SetWindowMode(int mode, POINT clickPt)
 
         m_appCtx->configService->SetWindowMode(mode);
         UIStyle::SetWindowMode(mode);
+        RefreshAllWinLauncherDisplayAffinity();
         NotifyConfigChanged();
     }
 }
@@ -1584,15 +1591,15 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
 
     case WM_TIMER:
-        if (wParam == 101)
+        if (wParam == CONFIG_SAVE_TIMER_ID)
         {
-            KillTimer(hWnd, 101);
+            KillTimer(hWnd, CONFIG_SAVE_TIMER_ID);
             SaveConfig();
             return 0;
         }
-        if (wParam == 102)
+        if (wParam == CONFIG_BACKGROUND_STYLE_TIMER_ID)
         {
-            KillTimer(hWnd, 102);
+            KillTimer(hWnd, CONFIG_BACKGROUND_STYLE_TIMER_ID);
             if (m_appCtx && m_appCtx->eventBus)
             {
                 m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);

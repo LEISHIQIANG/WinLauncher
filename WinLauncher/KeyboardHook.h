@@ -20,6 +20,7 @@
 #include <windows.h>
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <string>
 #include "App/AppMessages.h"
 
@@ -98,6 +99,7 @@ private:
 
     static std::atomic<HHOOK>  s_hHook;
     static std::atomic<HANDLE> s_hThread;
+    static std::atomic<DWORD>  s_hookThreadId;
     static HANDLE              s_hReadyEvent;
     static std::atomic<bool>   s_running;
     static HMODULE             s_hModule;
@@ -107,6 +109,7 @@ private:
     static std::atomic<HWND>   s_hRecordWnd;
     static std::atomic<DWORD>  s_timeoutMs;
     static UINT_PTR            s_timerId;          // hook-thread-local timer ID
+    static std::mutex          s_recordMutex;
 
     // Key state tracking for chord detection (hook thread only)
     static DWORD               s_recordModifiers;  // accumulated mods
@@ -116,6 +119,6 @@ private:
     // Double-Alt detection state (hook thread only)
     static std::atomic<HWND>   s_hDoubleAltWnd;    // target window (nullptr = disabled)
     static std::atomic<DWORD>  s_doubleAltMs;      // max interval in ms
-    static ULONGLONG           s_lastAltUpTime;    // tick of last Alt key-up
-    static bool                s_altDown;          // is Alt currently pressed
+    static std::atomic<ULONGLONG> s_lastAltUpTime; // tick of last Alt key-up
+    static std::atomic<bool>   s_altDown;          // is Alt currently pressed
 };

@@ -421,7 +421,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         }
 
         // Draw Window Mode Buttons side-by-side
-        std::wstring modeLabels[] = { L"毛玻璃材质", L"亚克力材质", L"玻璃材质" };
+        std::wstring modeLabels[] = { L"发光材质", L"亚克力材质", L"玻璃材质" };
         for (int i = 0; i < 3; i++)
         {
             bool isSelected = (i == currentWindowMode);
@@ -1411,45 +1411,77 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                         ((currentTheme == 1) ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig) :
                                         ((currentTheme == 1) ? UIStyle::g_LightConfig : UIStyle::g_DarkConfig));
 
+                                bool changed = false;
                                 if (settingIdx == 0) // Hue
                                 {
                                     float val = cfg.hue + step * 5.0f;
                                     if (val < 0.0f) val += 360.0f;
                                     if (val >= 360.0f) val -= 360.0f;
-                                    cfg.hue = val;
+                                    if (fabsf(val - cfg.hue) > 0.001f)
+                                    {
+                                        cfg.hue = val;
+                                        changed = true;
+                                    }
                                 }
                                 else if (settingIdx == 1) // Blur
                                 {
                                     float val = cfg.blur + step;
-                                    if (val >= 0.0f && val <= 30.0f) cfg.blur = val;
+                                    if (val < 0.0f) val = 0.0f;
+                                    if (val > 30.0f) val = 30.0f;
+                                    if (fabsf(val - cfg.blur) > 0.001f)
+                                    {
+                                        cfg.blur = val;
+                                        changed = true;
+                                    }
                                 }
                                 else if (settingIdx == 2) // Opacity
                                 {
-                                     float val = cfg.opacity - step * 0.05f;
-                                     if (val < 0.0f) val = 0.0f;
-                                     if (val > 1.0f) val = 1.0f;
-                                     cfg.opacity = val;
+                                     float val = UIStyle::ClampMaterialOpacity(currentWindowMode, cfg.opacity - step * 0.05f);
+                                     if (fabsf(val - cfg.opacity) > 0.001f)
+                                     {
+                                         cfg.opacity = val;
+                                         changed = true;
+                                     }
                                 }
                                 else if (settingIdx == 3) // Highlight
                                 {
                                     float val = cfg.highlight + step * 0.05f;
-                                    if (val >= 0.0f && val <= 1.0f) cfg.highlight = val;
+                                    if (val < 0.0f) val = 0.0f;
+                                    if (val > 1.0f) val = 1.0f;
+                                    if (fabsf(val - cfg.highlight) > 0.001f)
+                                    {
+                                        cfg.highlight = val;
+                                        changed = true;
+                                    }
                                 }
                                 else if (settingIdx == 4) // Brightness
                                 {
                                     float val = cfg.brightness + step * 0.05f;
                                     if (val < 0.0f) val = 0.0f;
                                     if (val > 1.0f) val = 1.0f;
-                                    cfg.brightness = val;
+                                    if (fabsf(val - cfg.brightness) > 0.001f)
+                                    {
+                                        cfg.brightness = val;
+                                        changed = true;
+                                    }
                                 }
                                 else if (settingIdx == 5) // Saturation
                                 {
                                     float val = cfg.saturation + step * 0.1f;
-                                    if (val >= 0.5f && val <= 3.0f) cfg.saturation = val;
+                                    if (val < 0.5f) val = 0.5f;
+                                    if (val > 3.0f) val = 3.0f;
+                                    if (fabsf(val - cfg.saturation) > 0.001f)
+                                    {
+                                        cfg.saturation = val;
+                                        changed = true;
+                                    }
                                 }
 
-                                m_owner->NotifyConfigChanged(true);
-                                repaint = true;
+                                if (changed)
+                                {
+                                    m_owner->NotifyConfigChanged(true);
+                                    repaint = true;
+                                }
                             }
                         }
                     }

@@ -426,6 +426,36 @@ void GlassWindow::UpdateTheme()
     }
 }
 
+void GlassWindow::UpdateBackgroundStyle()
+{
+    if (m_d2d && m_d2dHardwareAccelerationEnabled != UIStyle::Performance::IsHardwareAccelerationEnabled())
+    {
+        ReleaseD2D();
+    }
+    m_brushCache.clear();
+    m_sheenBlurEffect.Reset();
+    m_sheenGsc.Reset();
+    m_sheenBrush.Reset();
+    m_sheenLayerRt.Reset();
+    m_sheenLayerBitmap.Reset();
+
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        windowMode = m_appCtx->configService->GetWindowMode();
+    }
+    if (windowMode == 1)
+    {
+        ApplySystemBackdrop();
+    }
+
+    m_bgCompositeDirty = true;
+    if (m_hWnd)
+    {
+        InvalidateRect(m_hWnd, nullptr, TRUE);
+    }
+}
+
 void GlassWindow::CaptureBackground()
 {
     if (!m_rt) return;
@@ -667,6 +697,42 @@ void GlassWindow::CompositeBackgroundToCache()
                 sheenBrush->Release();
             }
             stopsSheen->Release();
+        }
+    }
+
+    if (windowMode == 0 && cfg.highlight > 0.0f)
+    {
+        D2D1_COLOR_F accent = UIStyle::ThemeColor::Accent().d2d;
+        ID2D1RadialGradientBrush* glowBrush = nullptr;
+        ID2D1GradientStopCollection* stopsGlow = nullptr;
+        D2D1_GRADIENT_STOP stopDataGlow[2];
+        stopDataGlow[0].position = 0.0f;
+        stopDataGlow[0].color = D2D1::ColorF(accent.r, accent.g, accent.b, cfg.highlight * 0.20f);
+        stopDataGlow[1].position = 1.0f;
+        stopDataGlow[1].color = D2D1::ColorF(accent.r, accent.g, accent.b, 0.0f);
+
+        bmpRt->CreateGradientStopCollection(stopDataGlow, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsGlow);
+        if (stopsGlow)
+        {
+            bmpRt->CreateRadialGradientBrush(
+                D2D1::RadialGradientBrushProperties(
+                    D2D1::Point2F(w * 0.80f, h * 0.25f),
+                    D2D1::Point2F(0.0f, 0.0f),
+                    w * 0.70f,
+                    h * 0.85f
+                ),
+                D2D1::BrushProperties(),
+                stopsGlow,
+                &glowBrush
+            );
+            if (glowBrush)
+            {
+                bmpRt->FillRoundedRectangle(
+                    D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+                    glowBrush);
+                glowBrush->Release();
+            }
+            stopsGlow->Release();
         }
     }
 

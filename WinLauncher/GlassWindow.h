@@ -36,6 +36,7 @@ public:
     ID2D1Factory* GetD2DFactory() const { return m_d2d.Get(); }
     IDWriteFactory* GetDWFactory() const { return m_dw.Get(); }
     void UpdateTheme();
+    void UpdateBackgroundStyle();
 
     // Returns D2D render target for subclasses that need custom rendering
     ID2D1HwndRenderTarget* GetRenderTarget() const { return m_rt.Get(); }

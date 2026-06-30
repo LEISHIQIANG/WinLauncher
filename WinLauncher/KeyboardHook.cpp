@@ -16,6 +16,7 @@
 
 std::atomic<HHOOK>  KeyboardHook::s_hHook         = nullptr;
 std::atomic<HANDLE> KeyboardHook::s_hThread        = nullptr;
+std::atomic<DWORD>  KeyboardHook::s_hookThreadId   = 0;
 HANDLE              KeyboardHook::s_hReadyEvent     = nullptr;
 std::atomic<bool>   KeyboardHook::s_running(false);
 HMODULE             KeyboardHook::s_hModule         = nullptr;
@@ -24,6 +25,7 @@ std::atomic<bool>   KeyboardHook::s_recording(false);
 std::atomic<HWND>   KeyboardHook::s_hRecordWnd      = nullptr;
 std::atomic<DWORD>  KeyboardHook::s_timeoutMs(10000);
 UINT_PTR            KeyboardHook::s_timerId         = 0;
+std::mutex          KeyboardHook::s_recordMutex;
 
 DWORD               KeyboardHook::s_recordModifiers = 0;
 bool                KeyboardHook::s_hadNonModifier  = false;
@@ -32,8 +34,8 @@ int                 KeyboardHook::s_pressedCount    = 0;
 // Double-Alt detection (hook thread only)
 std::atomic<HWND>   KeyboardHook::s_hDoubleAltWnd   = nullptr;
 std::atomic<DWORD>  KeyboardHook::s_doubleAltMs(400);
-ULONGLONG           KeyboardHook::s_lastAltUpTime   = 0;
-bool                KeyboardHook::s_altDown         = false;
+std::atomic<ULONGLONG> KeyboardHook::s_lastAltUpTime = 0;
+std::atomic<bool>   KeyboardHook::s_altDown         = false;
 
 // ============================================================
 // Helpers
@@ -73,8 +75,9 @@ static DWORD CurrentModifiers()
 bool KeyboardHook::Install()
 {
     LOG_G_INFO(L"KeyboardHook::Install called");
-    if (s_running.load()) return true;
+    if (s_running.load()) return IsInstalled();
 
+    s_hookThreadId.store(0);
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!s_hReadyEvent)
     {
@@ -102,12 +105,37 @@ bool KeyboardHook::Install()
     s_hThread.store(hThread);
 
     DWORD wait = WaitForSingleObject(s_hReadyEvent, 3000);
-    if (wait == WAIT_OBJECT_0)
+    if (wait == WAIT_OBJECT_0 && IsInstalled())
     {
         LOG_G_INFO(L"KeyboardHook::Install: low-level keyboard hook installed");
         return true;
     }
-    LOG_G_ERRA(L"KeyboardHook::Install: hook-thread ready event timed out");
+
+    if (wait == WAIT_OBJECT_0)
+    {
+        LOG_G_ERRA(L"KeyboardHook::Install: hook thread reported ready but hook is not installed");
+    }
+    else
+    {
+        LOG_G_ERRA(L"KeyboardHook::Install: hook-thread ready event timed out");
+    }
+
+    s_running.store(false);
+    DWORD tid = s_hookThreadId.load();
+    if (tid != 0)
+        PostThreadMessageW(tid, WM_QUIT, 0, 0);
+    if (hThread)
+    {
+        if (WaitForSingleObject(hThread, 1000) == WAIT_TIMEOUT)
+        {
+            LOG_G_WORNING(L"KeyboardHook::Install: hook thread did not exit after failed install, terminating");
+            TerminateThread(hThread, 0);
+        }
+        CloseHandle(hThread);
+        s_hThread.store(nullptr);
+    }
+    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    s_hookThreadId.store(0);
     return false;
 }
 
@@ -117,13 +145,17 @@ void KeyboardHook::Uninstall()
     if (!s_running.load()) return;
 
     s_running.store(false);
-    s_recording.store(false);
+    StopRecording();
 
     HANDLE hThread = s_hThread.load();
     if (hThread)
     {
         // Wake the hook thread's message loop
-        PostThreadMessageW(GetThreadId(hThread), WM_QUIT, 0, 0);
+        DWORD tid = s_hookThreadId.load();
+        if (tid == 0)
+            tid = GetThreadId(hThread);
+        if (tid != 0)
+            PostThreadMessageW(tid, WM_QUIT, 0, 0);
         if (WaitForSingleObject(hThread, 2000) == WAIT_TIMEOUT)
         {
             LOG_G_WORNING(L"KeyboardHook::Uninstall: thread did not exit in time, terminating");
@@ -135,6 +167,7 @@ void KeyboardHook::Uninstall()
 
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hHook.store(nullptr);
+    s_hookThreadId.store(0);
     LOG_G_INFO(L"KeyboardHook::Uninstall: done");
 }
 
@@ -150,22 +183,28 @@ bool KeyboardHook::StartRecording(HWND hTargetWnd, DWORD timeoutMs)
         LOG_G_WORNING(L"KeyboardHook::StartRecording: hook not installed");
         return false;
     }
-    s_hRecordWnd.store(hTargetWnd);
-    s_timeoutMs.store(timeoutMs);
-    s_recordModifiers = CurrentModifiers();
-    s_hadNonModifier  = false;
-    s_pressedCount    = 0;
-    s_recording.store(true);
+    {
+        std::lock_guard<std::mutex> lock(s_recordMutex);
+        s_hRecordWnd.store(hTargetWnd);
+        s_timeoutMs.store(timeoutMs);
+        s_recordModifiers = CurrentModifiers();
+        s_hadNonModifier  = false;
+        s_pressedCount    = 0;
+        s_timerId         = 0;
+        s_recording.store(true);
+    }
     LOG_G_INFO(L"KeyboardHook::StartRecording: recording started");
     return true;
 }
 
 void KeyboardHook::StopRecording()
 {
+    std::lock_guard<std::mutex> lock(s_recordMutex);
     s_recording.store(false);
     s_hadNonModifier  = false;
     s_pressedCount    = 0;
     s_recordModifiers = 0;
+    s_timerId         = 0;
     LOG_G_INFO(L"KeyboardHook::StopRecording: recording stopped");
 }
 
@@ -181,16 +220,16 @@ void KeyboardHook::SetDoubleAltTarget(HWND hTargetWnd, DWORD doubleClickMs)
 {
     s_hDoubleAltWnd.store(hTargetWnd);
     s_doubleAltMs.store(doubleClickMs);
-    s_lastAltUpTime = 0;
-    s_altDown       = false;
+    s_lastAltUpTime.store(0);
+    s_altDown.store(false);
     LOG_G_INFO(L"KeyboardHook::SetDoubleAltTarget: hWnd=%p, interval=%dms", hTargetWnd, doubleClickMs);
 }
 
 void KeyboardHook::ClearDoubleAltTarget()
 {
     s_hDoubleAltWnd.store(nullptr);
-    s_lastAltUpTime = 0;
-    s_altDown       = false;
+    s_lastAltUpTime.store(0);
+    s_altDown.store(false);
     LOG_G_INFO(L"KeyboardHook::ClearDoubleAltTarget");
 }
 
@@ -200,6 +239,8 @@ void KeyboardHook::ClearDoubleAltTarget()
 
 DWORD WINAPI KeyboardHook::ThreadProc(LPVOID)
 {
+    s_hookThreadId.store(GetCurrentThreadId());
+
     // Trigger a message-queue creation before installing the hook
     MSG dummy{};
     PeekMessageW(&dummy, nullptr, 0, 0, PM_NOREMOVE);
@@ -213,6 +254,7 @@ DWORD WINAPI KeyboardHook::ThreadProc(LPVOID)
     {
         LOG_G_ERRA(L"KeyboardHook::ThreadProc: SetWindowsHookExW failed (error=%d)", GetLastError());
         s_running.store(false);
+        s_hookThreadId.store(0);
         return 1;
     }
     LOG_G_INFO(L"KeyboardHook::ThreadProc: WH_KEYBOARD_LL hook installed");
@@ -233,6 +275,7 @@ DWORD WINAPI KeyboardHook::ThreadProc(LPVOID)
     }
 
     s_running.store(false);
+    s_hookThreadId.store(0);
     return 0;
 }
 
@@ -242,6 +285,10 @@ DWORD WINAPI KeyboardHook::ThreadProc(LPVOID)
 void CALLBACK KeyboardHook::TimerCallback(HWND, UINT, UINT_PTR id, DWORD)
 {
     KillTimer(nullptr, id);
+    std::lock_guard<std::mutex> lock(s_recordMutex);
+    if (id != s_timerId)
+        return;
+
     s_timerId = 0;
     if (s_recording.load())
     {
@@ -268,6 +315,10 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
     bool suppressKeyEvent = false;
     if (nCode == HC_ACTION && s_recording.load())
     {
+        std::lock_guard<std::mutex> lock(s_recordMutex);
+        if (!s_recording.load())
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
         suppressKeyEvent = true;
         auto* kbdll  = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
         DWORD vk     = kbdll->vkCode;
@@ -361,38 +412,39 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 
             if (isAlt && (isDown || isUp) && InputFocusGuard::IsTextInputContextActive())
             {
-                s_altDown = false;
-                s_lastAltUpTime = 0;
+                s_altDown.store(false);
+                s_lastAltUpTime.store(0);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
-            if (isAlt && isDown && !s_altDown)
+            if (isAlt && isDown && !s_altDown.load())
             {
-                s_altDown = true;
+                s_altDown.store(true);
             }
-            else if (isAlt && isUp && s_altDown)
+            else if (isAlt && isUp && s_altDown.load())
             {
-                s_altDown = false;
+                s_altDown.store(false);
                 ULONGLONG now = GetTickCount64();
                 DWORD interval = s_doubleAltMs.load();
+                ULONGLONG lastAltUpTime = s_lastAltUpTime.load();
 
-                if (s_lastAltUpTime != 0 && (now - s_lastAltUpTime) <= interval)
+                if (lastAltUpTime != 0 && (now - lastAltUpTime) <= interval)
                 {
                     // Double-Alt triggered
-                    s_lastAltUpTime = 0;
+                    s_lastAltUpTime.store(0);
                     PostMessageW(hDoubleAltWnd, AppMessages::DoubleAltPressed, 0, 0);
                     LOG_G_INFO(L"KeyboardHook: double-Alt detected, posting DoubleAltPressed");
                 }
                 else
                 {
-                    s_lastAltUpTime = now;
+                    s_lastAltUpTime.store(now);
                 }
             }
-            else if (!isAlt && isDown && s_altDown)
+            else if (!isAlt && isDown && s_altDown.load())
             {
                 // Another key pressed while Alt is down – cancel the double-Alt sequence
-                s_altDown       = false;
-                s_lastAltUpTime = 0;
+                s_altDown.store(false);
+                s_lastAltUpTime.store(0);
             }
         }
     }

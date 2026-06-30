@@ -68,6 +68,41 @@ public:
             }
         }
 
+        if (windowMode == 0 && cfg.highlight > 0.0f) {
+            D2D1_COLOR_F accent = UIStyle::ThemeColor::Accent().d2d;
+            ID2D1RadialGradientBrush* glowBrush = nullptr;
+            ID2D1GradientStopCollection* stopsGlow = nullptr;
+            D2D1_GRADIENT_STOP stopDataGlow[2];
+            stopDataGlow[0].position = 0.0f;
+            stopDataGlow[0].color = D2D1::ColorF(accent.r, accent.g, accent.b, cfg.highlight * 0.20f);
+            stopDataGlow[1].position = 1.0f;
+            stopDataGlow[1].color = D2D1::ColorF(accent.r, accent.g, accent.b, 0.0f);
+
+            rt->CreateGradientStopCollection(stopDataGlow, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsGlow);
+            if (stopsGlow) {
+                rt->CreateRadialGradientBrush(
+                    D2D1::RadialGradientBrushProperties(
+                        D2D1::Point2F(w * 0.80f, h * 0.25f),
+                        D2D1::Point2F(0.0f, 0.0f),
+                        w * 0.70f,
+                        h * 0.85f
+                    ),
+                    D2D1::BrushProperties(),
+                    stopsGlow,
+                    &glowBrush
+                );
+                if (glowBrush) {
+                    D2D1_ROUNDED_RECT glowRR = D2D1::RoundedRect(
+                        D2D1::RectF(0.0f, 0.0f, w, h),
+                        drawCornerRadius, drawCornerRadius
+                    );
+                    rt->FillRoundedRectangle(glowRR, glowBrush);
+                    glowBrush->Release();
+                }
+                stopsGlow->Release();
+            }
+        }
+
         // 2. Base Tint Layer (combining Opacity & Brightness)
         BYTE base_r = static_cast<BYTE>(20.0f + cfg.brightness * 235.0f);
         BYTE base_g = static_cast<BYTE>(20.0f + cfg.brightness * 235.0f);

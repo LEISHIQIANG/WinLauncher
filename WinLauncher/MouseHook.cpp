@@ -8,6 +8,7 @@ std::atomic<int>    MouseHook::s_triggerType(0);
 std::atomic<HHOOK>  MouseHook::s_hHook       = nullptr;
 std::atomic<HWND>   MouseHook::s_hTargetWnd  = nullptr;
 HANDLE              MouseHook::s_hThread     = nullptr;
+std::atomic<DWORD>  MouseHook::s_hookThreadId = 0;
 HANDLE              MouseHook::s_hReadyEvent = nullptr;
 std::atomic<bool>   MouseHook::s_running(false);
 std::atomic<DWORD>  MouseHook::s_suppressButtonUpMask(0);
@@ -28,10 +29,11 @@ void MouseHook::SetTriggerType(int type)
 bool MouseHook::Install(HWND hTargetWnd)
 {
     LOG_G_INFO(L"MouseHook::Install called");
-    if (s_running.load()) return true;
+    if (s_running.load()) return IsInstalled();
 
     s_hTargetWnd = hTargetWnd;
     s_suppressButtonUpMask.store(0);
+    s_hookThreadId.store(0);
 
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!s_hReadyEvent)
@@ -58,12 +60,38 @@ bool MouseHook::Install(HWND hTargetWnd)
     }
 
     DWORD wait = WaitForSingleObject(s_hReadyEvent, 3000);
-    if (wait == WAIT_OBJECT_0)
+    if (wait == WAIT_OBJECT_0 && IsInstalled())
     {
         LOG_G_INFO(L"MouseHook::Install: installation completed successfully");
         return true;
     }
-    LOG_G_ERRA(L"MouseHook::Install: wait for ready event timed out");
+
+    if (wait == WAIT_OBJECT_0)
+    {
+        LOG_G_ERRA(L"MouseHook::Install: hook thread reported ready but hook is not installed");
+    }
+    else
+    {
+        LOG_G_ERRA(L"MouseHook::Install: wait for ready event timed out");
+    }
+
+    s_running.store(false);
+    DWORD tid = s_hookThreadId.load();
+    if (tid != 0)
+        PostThreadMessageW(tid, WM_QUIT, 0, 0);
+    if (s_hThread)
+    {
+        if (WaitForSingleObject(s_hThread, 1000) == WAIT_TIMEOUT)
+        {
+            LOG_G_WORNING(L"MouseHook::Install: hook thread did not exit after failed install, terminating");
+            TerminateThread(s_hThread, 0);
+        }
+        CloseHandle(s_hThread);
+        s_hThread = nullptr;
+    }
+    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    s_hTargetWnd = nullptr;
+    s_hookThreadId.store(0);
     return false;
 }
 
@@ -76,8 +104,11 @@ void MouseHook::Uninstall()
 
     if (s_hThread)
     {
-        if (s_hHook)
-            PostThreadMessageW(GetThreadId(s_hThread), WM_QUIT, 0, 0);
+        DWORD tid = s_hookThreadId.load();
+        if (tid == 0)
+            tid = GetThreadId(s_hThread);
+        if (tid != 0)
+            PostThreadMessageW(tid, WM_QUIT, 0, 0);
 
         if (WaitForSingleObject(s_hThread, 2000) == WAIT_TIMEOUT)
         {
@@ -93,6 +124,7 @@ void MouseHook::Uninstall()
 
     s_hHook      = nullptr;
     s_hTargetWnd = nullptr;
+    s_hookThreadId.store(0);
     s_suppressButtonUpMask.store(0);
     LOG_G_INFO(L"MouseHook::Uninstall: uninstalled successfully");
 }
@@ -104,14 +136,21 @@ bool MouseHook::IsInstalled()
 
 DWORD WINAPI MouseHook::ThreadProc(LPVOID)
 {
-    s_hHook = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, s_hModule, 0);
+    s_hookThreadId.store(GetCurrentThreadId());
+
+    MSG dummy{};
+    PeekMessageW(&dummy, nullptr, 0, 0, PM_NOREMOVE);
+
+    HHOOK hHook = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, s_hModule, 0);
+    s_hHook.store(hHook);
 
     if (s_hReadyEvent) SetEvent(s_hReadyEvent);
 
-    if (!s_hHook)
+    if (!hHook)
     {
         LOG_G_ERRA(L"MouseHook::ThreadProc: SetWindowsHookExW failed (error=%d)", GetLastError());
         s_running.store(false);
+        s_hookThreadId.store(0);
         return 1;
     }
     LOG_G_INFO(L"MouseHook::ThreadProc: Low-level mouse hook installed");
@@ -123,14 +162,15 @@ DWORD WINAPI MouseHook::ThreadProc(LPVOID)
         DispatchMessage(&msg);
     }
 
-    if (s_hHook)
+    if (hHook)
     {
-        UnhookWindowsHookEx(s_hHook);
-        s_hHook = nullptr;
+        UnhookWindowsHookEx(hHook);
+        s_hHook.store(nullptr);
         LOG_G_INFO(L"MouseHook::ThreadProc: Low-level mouse hook unhooked");
     }
 
     s_running.store(false);
+    s_hookThreadId.store(0);
     return 0;
 }
 

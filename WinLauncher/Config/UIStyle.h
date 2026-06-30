@@ -52,9 +52,10 @@ namespace UIStyle
     }
     inline int GetThemeColorIndex() { return g_ThemeColorIndex; }
 
-    inline int g_WindowMode = 0; // 0 = Glass, 1 = Acrylic
+    inline int g_WindowMode = 0; // 0 = Glow, 1 = Acrylic, 2 = Glass
     inline void SetWindowMode(int mode) { g_WindowMode = mode; }
     inline int GetWindowMode() { return g_WindowMode; }
+    inline constexpr float GlowMaterialMinOpacity = 0.50f;
 
     namespace Scaling
     {
@@ -155,7 +156,7 @@ namespace UIStyle
     };
 
     inline ThemeConfig g_DarkConfig = { 32.0f, 20.0f, 0.50f, 0.90f, 0.11f, 2.5f };
-    inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
+    inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.50f, 0.90f, 0.90f, 2.5f };
     inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 2.5f };
     inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 2.5f };
     inline ThemeConfig g_GlassDarkConfig = { 32.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
@@ -164,6 +165,20 @@ namespace UIStyle
     inline ThemeConfig ToThemeConfig(const Model::ThemeEffectConfig& config)
     {
         return { config.hue, config.blur, config.opacity, config.highlight, config.brightness, config.saturation };
+    }
+
+    inline void ClampGlowMaterialConfig(ThemeConfig& config)
+    {
+        if (config.opacity < GlowMaterialMinOpacity) config.opacity = GlowMaterialMinOpacity;
+        if (config.opacity > 1.0f) config.opacity = 1.0f;
+    }
+
+    inline float ClampMaterialOpacity(int windowMode, float opacity)
+    {
+        if (windowMode == 0 && opacity < GlowMaterialMinOpacity) opacity = GlowMaterialMinOpacity;
+        if (opacity < 0.0f) opacity = 0.0f;
+        if (opacity > 1.0f) opacity = 1.0f;
+        return opacity;
     }
 
     inline Model::ThemeEffectConfig ToModelConfig(const ThemeConfig& config)
@@ -175,6 +190,8 @@ namespace UIStyle
     {
         g_DarkConfig = ToThemeConfig(settings.dark);
         g_LightConfig = ToThemeConfig(settings.light);
+        ClampGlowMaterialConfig(g_DarkConfig);
+        ClampGlowMaterialConfig(g_LightConfig);
         g_AcrylicDarkConfig = ToThemeConfig(settings.acrylicDark);
         g_AcrylicLightConfig = ToThemeConfig(settings.acrylicLight);
         g_GlassDarkConfig = ToThemeConfig(settings.glassDark);
@@ -184,6 +201,8 @@ namespace UIStyle
     inline Model::AppearanceSettings CaptureAppearanceSettings()
     {
         Model::AppearanceSettings settings;
+        ClampGlowMaterialConfig(g_DarkConfig);
+        ClampGlowMaterialConfig(g_LightConfig);
         settings.dark = ToModelConfig(g_DarkConfig);
         settings.light = ToModelConfig(g_LightConfig);
         settings.acrylicDark = ToModelConfig(g_AcrylicDarkConfig);

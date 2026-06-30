@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include "DpiHelper.h"
 
 class BaseWindow
 {
@@ -62,6 +63,11 @@ protected:
             dwExStyle, ClassName(), lpWindowName, dwStyle, x, y,
             nWidth, nHeight, hWndParent, hMenu, GetModuleHandle(nullptr), this
         );
+
+        if (m_hWnd)
+        {
+            SetWindowDisplayAffinitySafe(m_hWnd);
+        }
 
         return (m_hWnd != nullptr);
     }

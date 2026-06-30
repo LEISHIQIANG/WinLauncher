@@ -55,10 +55,12 @@ private:
     static HHOOK s_hKeyHook;
     static HHOOK s_hMouseHook;
     static HANDLE s_hThread;
+    static std::atomic<DWORD> s_hookThreadId;
     static std::atomic<uint64_t> s_lastTimeUs;
-    static HANDLE s_hReadyEvent;
     static std::atomic<bool> s_hooksInstalled;
     static std::atomic<bool> s_ignoreMouseUntilReleased;
+    static std::atomic<int32_t> s_lastMouseMoveX;
+    static std::atomic<int32_t> s_lastMouseMoveY;
 };
 
 class MacroPlayer
@@ -83,4 +85,5 @@ private:
 
     static std::atomic<bool> s_playing;
     static HANDLE s_hPlayThread;
+    static std::mutex s_playMutex;
 };

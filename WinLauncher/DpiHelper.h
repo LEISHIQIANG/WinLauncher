@@ -1,43 +1,63 @@
 #pragma once
 #include "Config/UIStyle.h"
+#include "App/Logger.h"
 #include <Windows.h>
+
+static bool IsWinLauncherWindowClassName(const wchar_t* className)
+{
+    return className && wcsncmp(className, L"WinLauncher", 11) == 0;
+}
 
 static void SetWindowDisplayAffinitySafe(HWND hwnd)
 {
+    if (!hwnd || !IsWindow(hwnd))
+        return;
+
     int windowMode = UIStyle::GetWindowMode();
-    if (windowMode != 2) // If it's not the new Glass material, bypass the display affinity for these windows
+    wchar_t className[128]{};
+    GetClassNameW(hwnd, className, 128);
+
+    if (!IsWinLauncherWindowClassName(className))
+        return;
+
+    if (windowMode != 2)
     {
-        wchar_t className[128]{};
-        if (GetClassNameW(hwnd, className, 128) > 0)
-        {
-            if (wcscmp(className, L"WinLauncherConfig") == 0 ||
-                wcscmp(className, L"WinLauncherBatchDialog") == 0 ||
-                wcscmp(className, L"WinLauncherBuiltinIconDialog") == 0 ||
-                wcscmp(className, L"WinLauncherCommandDialog") == 0 ||
-                wcscmp(className, L"WinLauncherConfirm") == 0 ||
-                wcscmp(className, L"WinLauncherContextMenu") == 0 ||
-                wcscmp(className, L"WinLauncherDropDown") == 0 ||
-                wcscmp(className, L"WinLauncherHotkeyDialog") == 0 ||
-                wcscmp(className, L"WinLauncherMacroDialog") == 0 ||
-                wcscmp(className, L"WinLauncherPrompt") == 0 ||
-                wcscmp(className, L"WinLauncherShortcutDialog") == 0 ||
-                wcscmp(className, L"WinLauncherSystemIconDialog") == 0 ||
-                wcscmp(className, L"WinLauncherUrlDialog") == 0 ||
-                wcscmp(className, L"WinLauncherWait") == 0 ||
-                wcscmp(className, L"WinLauncherPopup") == 0 ||
-                wcscmp(className, L"WinLauncherShadow") == 0)
-            {
-                // Clear any display affinity previously set when switching from glass to other modes
-                SetWindowDisplayAffinity(hwnd, 0);
-                return;
-            }
-        }
+        // Clear any display affinity previously set when switching from glass to other modes.
+        BOOL res = SetWindowDisplayAffinity(hwnd, 0);
+        LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Cleared): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+            hwnd, className, windowMode, res, GetLastError());
+        return;
     }
 
-    if (!SetWindowDisplayAffinity(hwnd, WDA_MONITOR | 0x10))
+    BOOL res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR | 0x10);
+    LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Set 0x11): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+        hwnd, className, windowMode, res, GetLastError());
+    if (!res)
     {
-        SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+        res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+        LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Fallback 0x01): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+            hwnd, className, windowMode, res, GetLastError());
     }
+}
+
+static BOOL CALLBACK RefreshWinLauncherDisplayAffinityProc(HWND hwnd, LPARAM processIdParam)
+{
+    DWORD windowProcessId = 0;
+    GetWindowThreadProcessId(hwnd, &windowProcessId);
+    if (windowProcessId != static_cast<DWORD>(processIdParam))
+        return TRUE;
+
+    wchar_t className[128]{};
+    GetClassNameW(hwnd, className, 128);
+    if (IsWinLauncherWindowClassName(className))
+        SetWindowDisplayAffinitySafe(hwnd);
+
+    return TRUE;
+}
+
+static void RefreshAllWinLauncherDisplayAffinity()
+{
+    EnumWindows(RefreshWinLauncherDisplayAffinityProc, static_cast<LPARAM>(GetCurrentProcessId()));
 }
 
 class DpiHelper
