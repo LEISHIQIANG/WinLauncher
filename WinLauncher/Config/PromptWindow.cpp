@@ -9,12 +9,17 @@
 
 PromptWindow* g_promptInstance = nullptr;
 
-PromptWindow::PromptWindow(const wchar_t* title, const wchar_t* prompt, const wchar_t* defaultText, AppContext* ctx)
+PromptWindow::PromptWindow(Mode mode, const wchar_t* title, const wchar_t* prompt,
+                           const std::vector<std::wstring>& chooseOptions,
+                           const wchar_t* defaultText, AppContext* ctx)
     : GlassWindow()
+    , m_mode(mode)
     , m_title(title)
     , m_prompt(prompt)
     , m_defaultText(defaultText ? defaultText : L"")
     , m_okPressed(false)
+    , m_chooseOptions(chooseOptions)
+    , m_selectedOption(-1)
     , m_hoveredOk(false)
     , m_hoveredCancel(false)
     , m_hoveredClose(false)
@@ -27,25 +32,56 @@ PromptWindow::~PromptWindow()
 {
 }
 
+// ──── Public static helpers ─────────────────────────────────────────────
+
 bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt,
                         std::wstring& outResult, const wchar_t* defaultText, AppContext* ctx)
 {
+    return ShowInternal(parent, Mode::Input, title, prompt, outResult, {},
+                        defaultText, ctx, 240, 135);
+}
+
+bool PromptWindow::ShowPassword(HWND parent, const wchar_t* title, const wchar_t* prompt,
+                                std::wstring& outResult, AppContext* ctx)
+{
+    return ShowInternal(parent, Mode::Password, title, prompt, outResult, {},
+                        L"", ctx, 240, 135);
+}
+
+bool PromptWindow::ShowChoose(HWND parent, const wchar_t* title, const wchar_t* prompt,
+                              const std::vector<std::wstring>& options,
+                              std::wstring& outResult, AppContext* ctx)
+{
+    int h = 80 + std::max(2, (int)options.size()) * 28;
+    return ShowInternal(parent, Mode::Choose, title, prompt, outResult, options,
+                        L"", ctx, 260, h);
+}
+
+bool PromptWindow::ShowConfirm(HWND parent, const wchar_t* title, const wchar_t* message,
+                               AppContext* ctx)
+{
+    std::wstring dummy;
+    return ShowInternal(parent, Mode::Confirm, title, message, dummy, {},
+                        L"", ctx, 280, 110);
+}
+
+// ──── Internal runner ───────────────────────────────────────────────────
+
+bool PromptWindow::ShowInternal(HWND parent, Mode mode, const wchar_t* title, const wchar_t* prompt,
+                                std::wstring& outResult, const std::vector<std::wstring>& chooseOptions,
+                                const wchar_t* defaultText, AppContext* ctx,
+                                int w, int h)
+{
     if (g_promptInstance) return false;
 
-    PromptWindow* win = new PromptWindow(title, prompt, defaultText, ctx);
-
-    int w = 240;
-    int h = 135;
+    PromptWindow* win = new PromptWindow(mode, title, prompt, chooseOptions, defaultText, ctx);
 
     HMONITOR hm = nullptr;
     if (parent)
-    {
         hm = MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST);
-    }
     else
     {
-        POINT pt;
-        GetCursorPos(&pt);
+        POINT pt; GetCursorPos(&pt);
         hm = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     }
 
@@ -56,8 +92,7 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
     int x = 0, y = 0;
     if (parent && IsWindowVisible(parent))
     {
-        RECT pr;
-        GetWindowRect(parent, &pr);
+        RECT pr; GetWindowRect(parent, &pr);
         x = pr.left + (pr.right - pr.left - w_px) / 2;
         y = pr.top + (pr.bottom - pr.top - h_px) / 2;
     }
@@ -81,7 +116,6 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
     }
 
     SetWindowDisplayAffinitySafe(win->GetHWND());
-
     win->ApplySystemBackdrop();
     win->EnsureD2D();
 
@@ -101,20 +135,14 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
     }
 
     if (IsWindow(hWnd))
-    {
         DestroyWindow(hWnd);
-    }
 
     if (msg.message == WM_QUIT)
-    {
         PostQuitMessage((int)msg.wParam);
-    }
 
     bool ok = win->m_okPressed;
     if (ok)
-    {
         outResult = win->m_result;
-    }
 
     g_promptInstance = nullptr;
     delete win;
@@ -128,6 +156,8 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
     return ok;
 }
 
+// ──── WM handler ────────────────────────────────────────────────────────
+
 LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
@@ -135,22 +165,37 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     case WM_CREATE:
     {
         EnsureD2D();
-        UIStyle::TextBoxStyle style;
-        style.fontSize = 11;
-        style.paddingTop = 4.0f;
-        style.paddingBottom = 4.0f;
-        m_textBox.SetStyle(style);
-        m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20, 58, 220, 84), m_defaultText);
-        m_textBox.SetFocus(true);
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+        {
+            UIStyle::TextBoxStyle style;
+            style.fontSize = 11;
+            style.paddingTop = 4.0f;
+            style.paddingBottom = 4.0f;
+            m_textBox.SetStyle(style);
+            m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20, 58, 220, 84), m_defaultText);
+            if (m_mode == Mode::Password)
+                m_textBox.SetPasswordMode(true);
+            m_textBox.SetFocus(true);
+        }
         SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
         return 0;
     }
+
     case WM_COMMAND:
     {
         int id = LOWORD(wParam);
         if (id == IDOK)
         {
-            m_result = m_textBox.GetText();
+            if (m_mode == Mode::Choose)
+            {
+                if (m_selectedOption >= 0 && m_selectedOption < (int)m_chooseOptions.size())
+                    m_result = m_chooseOptions[m_selectedOption];
+            }
+            else if (m_mode == Mode::Input || m_mode == Mode::Password)
+            {
+                m_result = m_textBox.GetText();
+            }
+            // Confirm mode: m_result stays empty
             m_okPressed = true;
             PostMessageW(hWnd, WM_CLOSE, 0, 0);
         }
@@ -161,68 +206,95 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         }
         return 0;
     }
+
     case WM_ACTIVATE:
-    {
-        if (LOWORD(wParam) != WA_INACTIVE)
-        {
-            SetFocus(hWnd);
-        }
+        if (LOWORD(wParam) != WA_INACTIVE) SetFocus(hWnd);
         return 0;
-    }
+
     case WM_SETFOCUS:
-    {
-        m_textBox.SetFocus(true);
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+            m_textBox.SetFocus(true);
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
-    }
+
     case WM_KILLFOCUS:
-    {
-        m_textBox.SetFocus(false);
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+            m_textBox.SetFocus(false);
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
-    }
+
     case WM_KEYDOWN:
-    {
-        if (m_textBox.HasFocus())
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
         {
-            bool repaint = false;
-            m_textBox.OnKeyDown(hWnd, wParam, lParam, repaint);
-            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            if (m_textBox.HasFocus())
+            {
+                bool repaint = false;
+                m_textBox.OnKeyDown(hWnd, wParam, lParam, repaint);
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            }
+        }
+        else if (m_mode == Mode::Choose)
+        {
+            // Keyboard navigation for choose mode
+            if (wParam == VK_UP && m_selectedOption > 0)
+            {
+                m_selectedOption--;
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
+            else if (wParam == VK_DOWN && m_selectedOption < (int)m_chooseOptions.size() - 1)
+            {
+                m_selectedOption++;
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
+            else if (wParam == VK_RETURN)
+                PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDOK, 0), 0);
+            else if (wParam == VK_ESCAPE)
+                PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDCANCEL, 0), 0);
+        }
+        else if (m_mode == Mode::Confirm)
+        {
+            if (wParam == VK_RETURN || wParam == VK_SPACE)
+                PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDOK, 0), 0);
+            else if (wParam == VK_ESCAPE)
+                PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDCANCEL, 0), 0);
         }
         return 0;
-    }
+
     case WM_CHAR:
-    {
-        if (m_textBox.HasFocus())
+        if ((m_mode == Mode::Input || m_mode == Mode::Password) && m_textBox.HasFocus())
         {
             bool repaint = false;
             m_textBox.OnChar(hWnd, wParam, repaint);
             if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
         }
         return 0;
-    }
+
     case WM_IME_STARTCOMPOSITION:
     case WM_IME_COMPOSITION:
     case WM_IME_ENDCOMPOSITION:
-    {
-        bool repaint = false;
-        if (m_textBox.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
         {
-            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
-            return 0;
+            bool repaint = false;
+            if (m_textBox.HandleImeMessage(hWnd, uMsg, wParam, lParam, repaint))
+            {
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
         }
         break;
-    }
+
     case WM_TIMER:
-    {
         if (wParam == 0x999)
         {
-            m_textBox.BlinkCaret();
-            InvalidateRect(hWnd, nullptr, FALSE);
+            if (m_mode == Mode::Input || m_mode == Mode::Password)
+            {
+                m_textBox.BlinkCaret();
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
             return 0;
         }
         break;
-    }
+
     case WM_MOUSEMOVE:
     {
         if (!m_trackMouse)
@@ -239,41 +311,43 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
         bool repaint = false;
 
-        m_textBox.OnMouseMove(hWnd, rawPt, scale, repaint);
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+        {
+            m_textBox.OnMouseMove(hWnd, rawPt, scale, repaint);
+        }
 
         bool ho = HitTestOkButton(pt);
-        if (ho != m_hoveredOk)
-        {
-            m_hoveredOk = ho;
-            repaint = true;
-        }
+        if (ho != m_hoveredOk) { m_hoveredOk = ho; repaint = true; }
 
         bool hc = HitTestCancelButton(pt);
-        if (hc != m_hoveredCancel)
-        {
-            m_hoveredCancel = hc;
-            repaint = true;
-        }
+        if (hc != m_hoveredCancel) { m_hoveredCancel = hc; repaint = true; }
 
         bool hcl = HitTestCloseButton(pt);
-        if (hcl != m_hoveredClose)
+        if (hcl != m_hoveredClose) { m_hoveredClose = hcl; repaint = true; }
+
+        // Hover for choose options
+        if (m_mode == Mode::Choose)
         {
-            m_hoveredClose = hcl;
-            repaint = true;
+            int ho2 = HitTestChooseOption(pt);
+            if (ho2 != m_selectedOption && !m_hoveredOk && !m_hoveredCancel)
+            {
+                m_selectedOption = ho2;
+                repaint = true;
+            }
         }
 
         if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
     }
+
     case WM_MOUSELEAVE:
-    {
         m_hoveredOk = false;
         m_hoveredCancel = false;
         m_hoveredClose = false;
         m_trackMouse = false;
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
-    }
+
     case WM_LBUTTONDOWN:
     {
         float scale = GetWindowScale(hWnd);
@@ -295,123 +369,151 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
             PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDCANCEL, 0), 0);
             return 0;
         }
-        if (m_textBox.HitTest(pt))
+        if (m_mode == Mode::Choose)
         {
-            SetFocus(hWnd);
-            m_textBox.SetFocus(true);
-            bool repaint = false;
-            m_textBox.OnLButtonDown(hWnd, rawPt, scale, repaint);
-            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
-            return 0;
+            int opt = HitTestChooseOption(pt);
+            if (opt >= 0)
+            {
+                m_selectedOption = opt;
+                InvalidateRect(hWnd, nullptr, FALSE);
+                // Double-click on option = OK
+                return 0;
+            }
         }
-        else
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
         {
-            m_textBox.SetFocus(false);
-            InvalidateRect(hWnd, nullptr, FALSE);
+            if (m_textBox.HitTest(pt))
+            {
+                SetFocus(hWnd);
+                m_textBox.SetFocus(true);
+                bool repaint = false;
+                m_textBox.OnLButtonDown(hWnd, rawPt, scale, repaint);
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+                return 0;
+            }
+            else
+            {
+                m_textBox.SetFocus(false);
+                InvalidateRect(hWnd, nullptr, FALSE);
+            }
         }
-
         SetFocus(hWnd);
         ReleaseCapture();
         SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         return 0;
     }
+
     case WM_LBUTTONDBLCLK:
-    {
-        float scale = GetWindowScale(hWnd);
-        POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        POINT pt{ (int)(rawPt.x / scale), (int)(rawPt.y / scale) };
-        if (m_textBox.HitTest(pt))
+        if (m_mode == Mode::Choose)
         {
-            m_textBox.SetFocus(true);
+            float scale = GetWindowScale(hWnd);
+            POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+            int opt = HitTestChooseOption(pt);
+            if (opt >= 0)
+            {
+                m_selectedOption = opt;
+                PostMessageW(hWnd, WM_COMMAND, MAKEWPARAM(IDOK, 0), 0);
+                return 0;
+            }
+        }
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+        {
+            float scale = GetWindowScale(hWnd);
+            POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            POINT pt{ (int)(rawPt.x / scale), (int)(rawPt.y / scale) };
+            if (m_textBox.HitTest(pt))
+            {
+                m_textBox.SetFocus(true);
+                bool repaint = false;
+                m_textBox.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+                if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+            }
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+        {
+            float scale = GetWindowScale(hWnd);
+            POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             bool repaint = false;
-            m_textBox.OnLButtonDblClk(hWnd, rawPt, scale, repaint);
+            m_textBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
             if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
         }
         return 0;
-    }
 
-    case WM_LBUTTONUP:
-    {
-        float scale = GetWindowScale(hWnd);
-        POINT rawPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        bool repaint = false;
-        m_textBox.OnLButtonUp(hWnd, rawPt, scale, repaint);
-        if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
-        return 0;
-    }
     case WM_WINDOWPOSCHANGED:
     {
         LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         UpdateChildLayout();
         return res;
     }
+
     case WM_DPICHANGED:
     {
         LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         UpdateChildLayout();
         return res;
     }
+
     case WM_SHOWWINDOW:
-    {
         return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
-    }
+
     case WM_DESTROY:
-    {
         KillTimer(hWnd, 0x999);
         m_textBox.Destroy();
         PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
         break;
     }
-    }
     return GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
 }
+
+// ──── Layout ────────────────────────────────────────────────────────────
 
 void PromptWindow::UpdateChildLayout()
 {
     float scale = GetWindowScale(GetHWND());
-    m_textBox.UpdateLayout(scale);
+    if (m_mode == Mode::Input || m_mode == Mode::Password)
+        m_textBox.UpdateLayout(scale);
 }
+
+// ──── Fonts ─────────────────────────────────────────────────────────────
 
 void PromptWindow::EnsureFonts()
 {
     if (m_dw && !m_tfTitle)
     {
         UIStyle::Typography::CreateTextFormat(
-            m_dw.Get(),
-            &m_tfTitle,
-            12.0f,
-            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            m_dw.Get(), &m_tfTitle,
+            12.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_TEXT_ALIGNMENT_LEADING,
             DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
     if (m_dw && !m_tfPrompt)
     {
         UIStyle::Typography::CreateTextFormat(
-            m_dw.Get(),
-            &m_tfPrompt,
-            10.0f,
-            DWRITE_FONT_WEIGHT_NORMAL,
+            m_dw.Get(), &m_tfPrompt,
+            10.0f, DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_TEXT_ALIGNMENT_LEADING,
             DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
     if (m_dw && !m_tfBtn)
     {
         UIStyle::Typography::CreateTextFormat(
-            m_dw.Get(),
-            &m_tfBtn,
-            10.0f,
-            DWRITE_FONT_WEIGHT_NORMAL,
+            m_dw.Get(), &m_tfBtn,
+            10.0f, DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_TEXT_ALIGNMENT_CENTER,
             DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
 }
 
+// ──── Paint ─────────────────────────────────────────────────────────────
+
 void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
 {
     EnsureFonts();
 
-    RECT cr;
-    GetClientRect(GetHWND(), &cr);
+    RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
@@ -423,11 +525,11 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         if (titleBrush)
         {
             rt->DrawTextW(m_title.c_str(), (UINT32)m_title.size(), m_tfTitle.Get(),
-                D2D1::RectF(15, 8, 200, 28), titleBrush.Get());
+                          D2D1::RectF(15, 8, w - 30, 28), titleBrush.Get());
         }
     }
 
-    // 2. Custom Close Button "X"
+    // 2. Close Button "X"
     {
         D2D1_RECT_F closeRect = D2D1::RectF(w - 25, 8, w - 9, 24);
         D2D1_ROUNDED_RECT roundedClose = D2D1::RoundedRect(closeRect, 4.0f, 4.0f);
@@ -436,12 +538,8 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
             D2D1_COLOR_F clr = UIStyle::ThemeColor::DangerRed().d2d;
             clr.a = 0.4f;
             auto closeBg = GetOrCreateBrush(clr);
-            if (closeBg)
-            {
-                rt->FillRoundedRectangle(roundedClose, closeBg.Get());
-            }
+            if (closeBg) rt->FillRoundedRectangle(roundedClose, closeBg.Get());
         }
-
         D2D1_COLOR_F xColor = UIStyle::ThemeColor::TextNormal().d2d;
         xColor.a = 0.8f;
         auto xBrush = GetOrCreateBrush(xColor);
@@ -452,7 +550,7 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         }
     }
 
-    // 3. Prompt Message
+    // 3. Prompt message
     if (m_tfPrompt)
     {
         D2D1_COLOR_F promptColor = UIStyle::ThemeColor::TextNormal().d2d;
@@ -460,71 +558,125 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         auto promptBrush = GetOrCreateBrush(promptColor);
         if (promptBrush)
         {
+            float promptTop = 36.0f;
+            float promptH = (m_mode == Mode::Confirm) ? 42.0f : 20.0f;
             rt->DrawTextW(m_prompt.c_str(), (UINT32)m_prompt.size(), m_tfPrompt.Get(),
-                D2D1::RectF(20, 36, w - 20, 52), promptBrush.Get());
+                          D2D1::RectF(20, promptTop, w - 20, promptTop + promptH), promptBrush.Get());
         }
     }
 
-    // 4. Edit control container
-    m_textBox.Paint(rt, scale);
+    // 4. Content area
+    if (m_mode == Mode::Input || m_mode == Mode::Password)
+    {
+        m_textBox.Paint(rt, scale);
+    }
+    else if (m_mode == Mode::Choose)
+    {
+        // Render option list
+        float optX = 20.0f;
+        float optW = w - 40.0f;
+        float optYBase = 56.0f;
+        float optH = 26.0f;
+
+        for (size_t i = 0; i < m_chooseOptions.size(); i++)
+        {
+            float optY = optYBase + i * optH;
+            D2D1_RECT_F optRect = D2D1::RectF(optX, optY, optX + optW, optY + optH);
+            D2D1_ROUNDED_RECT roundedOpt = D2D1::RoundedRect(optRect, 4.0f, 4.0f);
+
+            bool isHovered = ((int)i == m_selectedOption);
+
+            // Background
+            if (isHovered)
+            {
+                D2D1_COLOR_F selBg = UIStyle::ThemeColor::Accent().d2d;
+                selBg.a = 0.18f;
+                auto selBrush = GetOrCreateBrush(selBg);
+                if (selBrush) rt->FillRoundedRectangle(roundedOpt, selBrush.Get());
+            }
+            else
+            {
+                D2D1_COLOR_F bg = UIStyle::ThemeColor::ThemeBase().d2d;
+                bg.a = (i % 2 == 0) ? 0.03f : 0.0f;
+                auto bgBrush = GetOrCreateBrush(bg);
+                if (bgBrush) rt->FillRoundedRectangle(roundedOpt, bgBrush.Get());
+            }
+
+            // Border
+            if (isHovered)
+            {
+                D2D1_COLOR_F bd = UIStyle::ThemeColor::Accent().d2d;
+                bd.a = 0.35f;
+                auto bdBrush = GetOrCreateBrush(bd);
+                if (bdBrush) rt->DrawRoundedRectangle(roundedOpt, bdBrush.Get(), UIStyle::Metrics::ControlStroke());
+            }
+
+            // Text
+            if (m_tfPrompt)
+            {
+                D2D1_COLOR_F tc = isHovered ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::TextNormal().d2d;
+                auto txtBrush = GetOrCreateBrush(tc);
+                if (txtBrush)
+                {
+                    rt->DrawTextW(m_chooseOptions[i].c_str(), (UINT32)m_chooseOptions[i].size(),
+                                  m_tfPrompt.Get(), D2D1::RectF(optX + 8, optY, optX + optW - 8, optY + optH), txtBrush.Get());
+                }
+            }
+        }
+    }
+    // Confirm mode: just prompt text, no extra content
 
     // 5. OK and Cancel Buttons
     {
-        // OK Button: warm accent style
-        D2D1_RECT_F okRect = D2D1::RectF(w - 165, 98, w - 95, 122);
+        float btnBaseY = h - 32.0f;
+        float btnH = 24.0f;
+
+        // OK Button
+        float okLeft = w - 155.0f;
+        float okRight = w - 90.0f;
+        D2D1_RECT_F okRect = D2D1::RectF(okLeft, btnBaseY, okRight, btnBaseY + btnH);
         D2D1_ROUNDED_RECT roundedOk = D2D1::RoundedRect(okRect, 5.0f, 5.0f);
 
         float okAlpha = m_hoveredOk ? 0.80f : 0.64f;
         D2D1_COLOR_F okBg = UIStyle::ThemeColor::Accent().d2d;
         okBg.a = okAlpha;
         auto okBgBrush = GetOrCreateBrush(okBg);
-        if (okBgBrush)
-        {
-            rt->FillRoundedRectangle(roundedOk, okBgBrush.Get());
-        }
+        if (okBgBrush) rt->FillRoundedRectangle(roundedOk, okBgBrush.Get());
 
         auto okBorderBrush = GetOrCreateBrush(UIStyle::ThemeColor::Accent().d2d);
         if (okBorderBrush)
-        {
             rt->DrawRoundedRectangle(roundedOk, okBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
-        }
 
-        // Cancel Button: Flat translucent gray style
-        D2D1_RECT_F cancelRect = D2D1::RectF(w - 90, 98, w - 20, 122);
+        // Cancel Button
+        float cancelLeft = w - 85.0f;
+        float cancelRight = w - 20.0f;
+        D2D1_RECT_F cancelRect = D2D1::RectF(cancelLeft, btnBaseY, cancelRight, btnBaseY + btnH);
         D2D1_ROUNDED_RECT roundedCancel = D2D1::RoundedRect(cancelRect, 5.0f, 5.0f);
 
         float cancelAlphaBg = m_hoveredCancel ? 0.09f : 0.04f;
         float cancelAlphaBorder = m_hoveredCancel ? 0.16f : 0.075f;
-
         D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
         auto cancelBgBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBg));
-        if (cancelBgBrush)
-        {
-            rt->FillRoundedRectangle(roundedCancel, cancelBgBrush.Get());
-        }
+        if (cancelBgBrush) rt->FillRoundedRectangle(roundedCancel, cancelBgBrush.Get());
 
         auto cancelBorderBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, cancelAlphaBorder));
         if (cancelBorderBrush)
-        {
             rt->DrawRoundedRectangle(roundedCancel, cancelBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
-        }
 
-        // Text on buttons
         if (m_tfBtn)
         {
             auto okTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextOnAccent().d2d);
             if (okTextBrush)
-            {
-                rt->DrawTextW(L"确定", 2, m_tfBtn.Get(), okRect, okTextBrush.Get());
-            }
+                rt->DrawTextW(L"\u786E\u5B9A", 2, m_tfBtn.Get(), okRect, okTextBrush.Get());
+
             auto cancelTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
             if (cancelTextBrush)
-            {
-                rt->DrawTextW(L"取消", 2, m_tfBtn.Get(), cancelRect, cancelTextBrush.Get());
-            }
+                rt->DrawTextW(L"\u53D6\u6D88", 2, m_tfBtn.Get(), cancelRect, cancelTextBrush.Get());
         }
     }
 }
+
+// ──── Hit testing ───────────────────────────────────────────────────────
 
 bool PromptWindow::HitTestRect(POINT pt, const D2D1_RECT_F& rect)
 {
@@ -544,7 +696,9 @@ bool PromptWindow::HitTestOkButton(POINT pt)
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 165, 98, w - 95, 122));
+    float h = (float)cr.bottom / scale;
+    float btnBaseY = h - 32.0f;
+    return HitTestRect(pt, D2D1::RectF(w - 155.0f, btnBaseY, w - 90.0f, btnBaseY + 24.0f));
 }
 
 bool PromptWindow::HitTestCancelButton(POINT pt)
@@ -552,5 +706,27 @@ bool PromptWindow::HitTestCancelButton(POINT pt)
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 90, 98, w - 20, 122));
+    float h = (float)cr.bottom / scale;
+    float btnBaseY = h - 32.0f;
+    return HitTestRect(pt, D2D1::RectF(w - 85.0f, btnBaseY, w - 20.0f, btnBaseY + 24.0f));
+}
+
+int PromptWindow::HitTestChooseOption(POINT pt)
+{
+    if (m_mode != Mode::Choose) return -1;
+    RECT cr; GetClientRect(GetHWND(), &cr);
+    float scale = GetWindowScale(GetHWND());
+    float w = (float)cr.right / scale;
+    float optX = 20.0f;
+    float optW = w - 40.0f;
+    float optYBase = 56.0f;
+    float optH = 26.0f;
+
+    for (int i = 0; i < (int)m_chooseOptions.size(); i++)
+    {
+        float optY = optYBase + i * optH;
+        if (HitTestRect(pt, D2D1::RectF(optX, optY, optX + optW, optY + optH)))
+            return i;
+    }
+    return -1;
 }

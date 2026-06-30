@@ -112,7 +112,17 @@ void TextBox::RecreateTextLayout()
         float maxH = m_multiline ? 1e6f : (m_bounds.bottom - m_bounds.top - (m_style.paddingTop + m_style.paddingBottom));
 
         size_t safeCaret = std::min(m_caretIndex, m_text.size());
-        std::wstring displayText = m_text.substr(0, safeCaret) + m_compText + m_text.substr(safeCaret);
+        std::wstring displayText;
+        if (m_passwordMode)
+        {
+            displayText = std::wstring(m_text.substr(0, safeCaret).size(), L'\u25CF')
+                        + m_compText
+                        + std::wstring(m_text.substr(safeCaret).size(), L'\u25CF');
+        }
+        else
+        {
+            displayText = m_text.substr(0, safeCaret) + m_compText + m_text.substr(safeCaret);
+        }
 
         m_dwFactory->CreateTextLayout(
             displayText.c_str(),
@@ -921,6 +931,15 @@ void TextBox::SetStyle(const UIStyle::TextBoxStyle& style)
 {
     m_style = style;
     RecreateTextLayout();
+}
+
+void TextBox::SetPasswordMode(bool pm)
+{
+    if (m_passwordMode != pm)
+    {
+        m_passwordMode = pm;
+        RecreateTextLayout();
+    }
 }
 
 bool TextBox::DeleteSelection(bool& repaint)

@@ -188,11 +188,46 @@ namespace Services
         }
     }
 
+    // Parse options from a pipe-delimited string like "A|B|C"
+    static std::vector<std::wstring> ParseChooseOptions(const std::wstring& optionsStr)
+    {
+        std::vector<std::wstring> options;
+        size_t start = 0;
+        while (start <= optionsStr.size())
+        {
+            size_t end = optionsStr.find(L'|', start);
+            if (end == std::wstring::npos)
+            {
+                std::wstring opt = optionsStr.substr(start);
+                while (!opt.empty() && opt.front() == L' ') opt.erase(opt.begin());
+                while (!opt.empty() && opt.back() == L' ') opt.pop_back();
+                if (!opt.empty()) options.push_back(opt);
+                break;
+            }
+            std::wstring opt = optionsStr.substr(start, end - start);
+            while (!opt.empty() && opt.front() == L' ') opt.erase(opt.begin());
+            while (!opt.empty() && opt.back() == L' ') opt.pop_back();
+            if (!opt.empty()) options.push_back(opt);
+            start = end + 1;
+        }
+        return options;
+    }
+
+    // ──── ResolveInputs ────────────────────────────────────────────────
+
     bool CommandVariableService::ResolveInputs(HWND parent, const std::wstring& commandText, std::map<std::wstring, std::wstring>& outInputs)
     {
         std::wstring text = commandText;
         size_t pos = 0;
-        std::vector<std::wstring> prompts;
+
+        // We collect prompts deduplicated per variable type, but store per prompt key.
+        struct VarPrompt {
+            std::wstring type;   // "input", "password", "choose", "confirm"
+            std::wstring key;    // dedup key (prompt text or options string)
+            std::wstring prompt; // display prompt text
+            std::vector<std::wstring> options; // for choose mode
+        };
+        std::vector<VarPrompt> varPrompts;
 
         while (true)
         {
@@ -212,39 +247,136 @@ namespace Services
             std::wstring specLower = spec;
             for (auto& c : specLower) c = towlower(c);
 
+            // --- input ---
             if (specLower == L"input" || specLower.rfind(L"input:", 0) == 0)
             {
                 std::wstring baseKey = spec;
                 if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
                     baseKey = baseKey.substr(0, baseKey.size() - 2);
 
-                std::wstring prompt = L"";
+                std::wstring promptText = L"";
                 if (baseKey.size() > 6 && baseKey.substr(0, 6) == L"input:")
-                    prompt = baseKey.substr(6);
+                    promptText = baseKey.substr(6);
 
-                while (!prompt.empty() && prompt.front() == L' ') prompt.erase(prompt.begin());
-                while (!prompt.empty() && prompt.back() == L' ') prompt.pop_back();
+                while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());
+                while (!promptText.empty() && promptText.back() == L' ') promptText.pop_back();
 
-                if (std::find(prompts.begin(), prompts.end(), prompt) == prompts.end())
+                // Dedup by type + promptText
+                bool found = false;
+                for (auto& vp : varPrompts)
                 {
-                    prompts.push_back(prompt);
+                    if (vp.type == L"input" && vp.key == promptText) { found = true; break; }
                 }
+                if (!found)
+                    varPrompts.push_back({ L"input", promptText, promptText, {} });
+            }
+            // --- password ---
+            else if (specLower == L"password" || specLower.rfind(L"password:", 0) == 0)
+            {
+                std::wstring baseKey = spec;
+                if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
+                    baseKey = baseKey.substr(0, baseKey.size() - 2);
+
+                std::wstring promptText = L"";
+                if (baseKey.size() > 9 && baseKey.substr(0, 9) == L"password:")
+                    promptText = baseKey.substr(9);
+
+                while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());
+                while (!promptText.empty() && promptText.back() == L' ') promptText.pop_back();
+
+                bool found = false;
+                for (auto& vp : varPrompts)
+                {
+                    if (vp.type == L"password" && vp.key == promptText) { found = true; break; }
+                }
+                if (!found)
+                    varPrompts.push_back({ L"password", promptText, promptText, {} });
+            }
+            // --- choose ---
+            else if (specLower.rfind(L"choose:", 0) == 0)
+            {
+                std::wstring optionsStr = spec.substr(7); // after "choose:"
+                // strip :q suffix if present (handled by quote flag in ResolveVariables)
+                if (optionsStr.size() >= 2 && optionsStr.substr(optionsStr.size() - 2) == L":q")
+                    optionsStr = optionsStr.substr(0, optionsStr.size() - 2);
+                while (!optionsStr.empty() && optionsStr.front() == L' ') optionsStr.erase(optionsStr.begin());
+
+                std::vector<std::wstring> opts = ParseChooseOptions(optionsStr);
+                if (opts.size() < 2) continue; // need at least 2 options
+
+                // key is the full options string (for dedup)
+                bool found = false;
+                for (auto& vp : varPrompts)
+                {
+                    if (vp.type == L"choose" && vp.key == optionsStr) { found = true; break; }
+                }
+                if (!found)
+                    varPrompts.push_back({ L"choose", optionsStr, L"\u8BF7\u9009\u62E9\u4E00\u9879", opts }); // "请选择一项"
+            }
+            // --- confirm ---
+            else if (specLower == L"confirm" || specLower.rfind(L"confirm:", 0) == 0)
+            {
+                std::wstring baseKey = spec;
+                if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
+                    baseKey = baseKey.substr(0, baseKey.size() - 2);
+
+                std::wstring promptText = L"";
+                if (baseKey.size() > 8 && baseKey.substr(0, 8) == L"confirm:")
+                    promptText = baseKey.substr(8);
+
+                while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());
+                while (!promptText.empty() && promptText.back() == L' ') promptText.pop_back();
+
+                bool found = false;
+                for (auto& vp : varPrompts)
+                {
+                    if (vp.type == L"confirm" && vp.key == promptText) { found = true; break; }
+                }
+                if (!found)
+                    varPrompts.push_back({ L"confirm", promptText, promptText, {} });
             }
         }
 
-        for (const auto& prompt : prompts)
+        // Process each unique prompt
+        for (const auto& vp : varPrompts)
         {
-            std::wstring result;
-            std::wstring displayPrompt = prompt.empty() ? L"请输入运行时输入内容:" : prompt;
-            if (!PromptWindow::Show(parent, L"运行时输入", displayPrompt.c_str(), result, L"", nullptr))
+            if (vp.type == L"input")
             {
-                return false; 
+                std::wstring result;
+                std::wstring displayPrompt = vp.prompt.empty() ? L"\u8BF7\u8F93\u5165\u8FD0\u884C\u65F6\u8F93\u5165\u5185\u5BB9:" : vp.prompt;
+                if (!PromptWindow::Show(parent, L"\u8FD0\u884C\u65F6\u8F93\u5165", displayPrompt.c_str(), result, L"", nullptr))
+                    return false;
+                outInputs[L"input:" + vp.key] = result;
             }
-            outInputs[prompt] = result;
+            else if (vp.type == L"password")
+            {
+                std::wstring result;
+                std::wstring displayPrompt = vp.prompt.empty() ? L"\u8BF7\u8F93\u5165\u5BC6\u7801:" : vp.prompt;
+                if (!PromptWindow::ShowPassword(parent, L"\u5BC6\u7801\u8F93\u5165", displayPrompt.c_str(), result, nullptr))
+                    return false;
+                outInputs[L"password:" + vp.key] = result;
+            }
+            else if (vp.type == L"choose")
+            {
+                std::wstring result;
+                if (!PromptWindow::ShowChoose(parent, L"\u8BF7\u9009\u62E9", L"\u8BF7\u9009\u62E9\u4E00\u9879:", vp.options, result, nullptr))
+                    return false;
+                outInputs[L"choose:" + vp.key] = result;
+            }
+            else if (vp.type == L"confirm")
+            {
+                std::wstring msg = vp.prompt.empty() ? L"\u786E\u5B9A\u7EE7\u7EED\u6267\u884C\u5417\uFF1F" : vp.prompt;
+                if (!PromptWindow::ShowConfirm(parent, L"\u64CD\u4F5C\u786E\u8BA4", msg.c_str(), nullptr))
+                    return false;
+                // No value stored; existence in outInputs just signals "confirmed"
+                outInputs[L"confirm:" + vp.key] = L"1";
+            }
         }
 
         return true;
     }
+
+    // ──── ResolveVariables ─────────────────────────────────────────────
 
     std::wstring CommandVariableService::ResolveVariables(
         const std::wstring& commandText,
@@ -336,7 +468,7 @@ namespace Services
                         filesStr += QuoteArgument(selectedFiles[i], shellType);
                     }
                     result += filesStr;
-                    continue; 
+                    continue;
                 }
                 else
                 {
@@ -394,15 +526,50 @@ namespace Services
                 if (prompt.size() >= 2 && prompt.substr(prompt.size() - 2) == L":q")
                     prompt = prompt.substr(0, prompt.size() - 2);
 
-                auto it = inputValues.find(prompt);
+                std::wstring lookupKey = L"input:" + prompt;
+                auto it = inputValues.find(lookupKey);
                 if (it != inputValues.end())
-                {
                     value = it->second;
-                }
-                else if (prompt.empty() && (it = inputValues.find(L"")) != inputValues.end())
+                else if (prompt.empty())
                 {
-                    value = it->second;
+                    it = inputValues.find(L"input:");
+                    if (it != inputValues.end()) value = it->second;
                 }
+            }
+            else if (baseKey == L"password" || baseKey.rfind(L"password:", 0) == 0)
+            {
+                std::wstring prompt = L"";
+                if (baseKey.size() > 9 && baseKey.substr(0, 9) == L"password:")
+                    prompt = spec.substr(9);
+
+                while (!prompt.empty() && prompt.front() == L' ') prompt.erase(prompt.begin());
+                while (!prompt.empty() && prompt.back() == L' ') prompt.pop_back();
+                if (prompt.size() >= 2 && prompt.substr(prompt.size() - 2) == L":q")
+                    prompt = prompt.substr(0, prompt.size() - 2);
+
+                std::wstring lookupKey = L"password:" + prompt;
+                auto it = inputValues.find(lookupKey);
+                if (it != inputValues.end())
+                    value = it->second;
+            }
+            else if (baseKey.rfind(L"choose:", 0) == 0)
+            {
+                // Build the key the same way ResolveInputs stored it
+                std::wstring optionsStr = spec.substr(7); // after "choose:"
+                // strip :q suffix (mirrors ResolveInputs)
+                if (optionsStr.size() >= 2 && optionsStr.substr(optionsStr.size() - 2) == L":q")
+                    optionsStr = optionsStr.substr(0, optionsStr.size() - 2);
+                while (!optionsStr.empty() && optionsStr.front() == L' ') optionsStr.erase(optionsStr.begin());
+
+                std::wstring lookupKey = L"choose:" + optionsStr;
+                auto it = inputValues.find(lookupKey);
+                if (it != inputValues.end())
+                    value = it->second;
+            }
+            else if (baseKey == L"confirm" || baseKey.rfind(L"confirm:", 0) == 0)
+            {
+                // confirm: always replaced with empty string (already confirmed in ResolveInputs)
+                value = L"";
             }
             else
             {

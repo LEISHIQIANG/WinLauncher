@@ -114,10 +114,19 @@
 | :--- | :--- | :--- | :--- |
 | `{{input}}` | 行 386–405 | 运行时显示输入框，标题为 "运行时输入"，提示文字默认为 `"请输入运行时输入内容:"`。 | 用户确认 → 替换为用户输入值；用户取消 → **终止启动流程** |
 | `{{input:提示文字}}` | 行 388–395 | 运行时显示输入框，标题为 "运行时输入"，提示文字为自定义内容（"提示文字" 部分）。支持 `:q` 后缀 (`{{input:提示文字:q}}`)，`:q` 被自动剥离后仅作为变量替换阶段的引号修饰符。 | 同上；同一 prompt 文字（含空提示）的多个 `{{input}}` 变量**共用一次输入**（去重） |
+| `{{password}}` | 新增 | 密码输入框。字符以实心圆点 `●` 显示，输入文字不暴露。对话框标题 "密码输入"。 | 用户确认 → 替换为用户输入的密码原文（不落盘、不缓存）；用户取消 → 终止 |
+| `{{password:提示文字}}` | 新增 | 带自定义提示文字的密码输入。提示默认为 `"请输入密码:"`。支持 `:q` 后缀。 | 同上；同一 prompt 的多个 `{{password}}` 共用一次输入（去重） |
+| `{{choose:选项A\|选项B\|...}}` | 新增 | 下拉选项列表。选项以 `\|` 分隔，至少需要 2 个选项。对话框标题 "请选择"，提示文字 "请选择一项:"。用户点击 OR 键盘上下键选择，双击 OR 回车确认。支持 `:q` 后缀。 | 用户选择并确认 → 替换为选中项的文本；用户取消 → 终止 |
+| `{{confirm}}` | 新增 | 确认关卡对话框。弹出 "确定继续执行吗？" 警告框，用户点确定则继续，点取消则终止。**始终替换为空字符串**，不污染命令文本。 | 用户确定 → 继续执行；用户取消 → 终止 |
+| `{{confirm:提示信息}}` | 新增 | 带自定义信息的确认关卡。提示文字显示在对话框中（如 `"即将重启服务, 确定继续？"`）。 | 同上 |
 
-> **输入去重规则：**  
-> `ResolveInputs()` (行 191–246) 在阶段 1 中提取所有 `{{input}}` 和 `{{input:xxx}}`，按 prompt 文字去重 (`std::find(prompts.begin(), prompts.end(), prompt) == prompts.end()`)。  
-> 因此命令文本中 `{{input:请输入用户名}}` 出现多次时，用户只需输入一次。
+> **交互去重规则：**  
+> `ResolveInputs()` 阶段 1 对 `input`、`password`、`choose`、`confirm` 四类变量分别按 prompt/options 去重。  
+> - 多个 `{{input:请输入用户名}}` → 只弹一次输入框  
+> - 多个 `{{password:请输入数据库密码}}` → 只弹一次密码框  
+> - 多个 `{{choose:生产\|测试\|开发}}` → 只弹一次选择框  
+> - 多个 `{{confirm:危险操作确认}}` → 只弹一次确认框  
+> 不同 prompt 或不同 options 组合的变量各自独立去重。
 
 ---
 
@@ -488,6 +497,56 @@ print(f"Script location: {{app_dir}}")
 rem 归档当前选中文件到配置目录，以剪贴板内容命名
 mkdir "{{config_dir}}\{{clipboard}}"
 xcopy {{selected_files:q}} "{{config_dir}}\{{clipboard}}\" /Y
+```
+
+#### 环境切换 — `{{choose}}`
+
+```cmd
+rem 选择部署环境，一键 SSH 连接
+ssh admin@{{choose:生产服务器192.168.1.10|测试服务器10.0.0.50|开发机localhost}}
+```
+
+```powershell
+# 选择后端服务地址
+$backend = {{choose:http://api.prod.com|http://api.staging.com:q}}
+Invoke-RestMethod -Uri "$backend/health"
+```
+
+#### 密码场景 — `{{password}}`
+
+```cmd
+rem SSH 登录（密码不显示在屏幕上）
+ssh admin@{{input:请输入服务器IP}} -p {{password:请输入SSH密码}}
+
+rem MySQL 连接
+mysql -u root -p{{password:请输入数据库密码:q}} -h {{lan_ip}}
+```
+
+```powershell
+# 带密码的 API 调用
+$pwd = {{password:请输入API密钥:q}}
+$headers = @{ "Authorization" = "Bearer $pwd" }
+Invoke-RestMethod -Uri "https://api.example.com/data" -Headers $headers
+```
+
+#### 安全确认 — `{{confirm}}`
+
+```cmd
+rem 重启服务前加确认关卡（{{confirm}} 替换为空，不污染命令）
+{{confirm:即将重启 Nginx，确定继续？}}
+net stop nginx && net start nginx
+```
+
+```bash
+# 批量删除前确认
+{{confirm:即将删除所有日志文件，确定继续？}}
+rm -rf /var/log/app/*.log
+```
+
+```powershell
+# 磁盘清理前确认
+{{confirm:即将清空临时目录，确定继续？}}
+Remove-Item -Path "$env:TEMP\*" -Recurse -Force
 ```
 
 ### 7.2 访问链接（URL）

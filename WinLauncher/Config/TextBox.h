@@ -65,6 +65,9 @@ public:
     void SetMultiline(bool ml) { m_multiline = ml; }
     bool IsMultiline() const { return m_multiline; }
 
+    void SetPasswordMode(bool pm);
+    bool IsPasswordMode() const { return m_passwordMode; }
+
 private:
     void RecreateTextLayout();
     void UpdateScrollRange();
@@ -89,6 +92,7 @@ private:
     bool m_caretVisible = false;
     bool m_dragSelecting = false;
     bool m_multiline = false;
+    bool m_passwordMode = false;
     bool m_draggingScrollbar = false;
     UIStyle::TextBoxStyle m_style;
     std::wstring m_compText;
