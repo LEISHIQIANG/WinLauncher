@@ -14,6 +14,7 @@
 #include "BuiltinIconDialog.h"
 #include "SystemIconDialog.h"
 #include "../DpiHelper.h"
+#include "../resource.h"
 #include "../Services/SyncFolderService.h"
 #include "../UI/Controls/IconRenderer.h"
 #include <windowsx.h>
@@ -23,6 +24,7 @@
 #include <commdlg.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #pragma comment(lib, "comdlg32.lib")
 
@@ -39,6 +41,9 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
     , m_animating(false)
     , m_dragIndex(-1)
     , m_dragCurrentInsertIndex(-1)
+    , m_dragActive(false)
+    , m_dragDeleteCursorShown(false)
+    , m_deleteCursor(nullptr)
     , m_grabOffsetX(0.0f)
     , m_grabOffsetY(0.0f)
     , m_selectionAnchorIndex(-1)
@@ -51,6 +56,11 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
 ShortcutPage::~ShortcutPage()
 {
     m_bmpBrushCache.clear();
+    if (m_deleteCursor)
+    {
+        DestroyCursor(m_deleteCursor);
+        m_deleteCursor = nullptr;
+    }
 }
 
 void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
@@ -67,6 +77,10 @@ void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
     m_selectionAnchorIndex = -1;
     m_dragIndex = -1;
     m_dragCurrentInsertIndex = -1;
+    m_dragActive = false;
+    m_dragDeleteCursorShown = false;
+    m_pendingDeleteIndices.clear();
+    m_addCardInitialized = false;
     m_hoveredShortcut = -1;
     m_hoveredAddShortcut = false;
     m_lastRt = nullptr;
@@ -327,7 +341,7 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     int n = (int)m_pageData->shortcuts.size();
 
     // 1. Draw placeholder outlines at the target insert slots if dragging
-    if (m_dragIndex >= 0 && m_dragCurrentInsertIndex >= 0 && m_dragCurrentInsertIndex < n)
+    if (m_dragActive && m_dragIndex >= 0 && m_dragCurrentInsertIndex >= 0 && m_dragCurrentInsertIndex < n)
     {
         std::vector<int> selectedIndices;
         int leaderSelIdx = -1;
@@ -368,13 +382,14 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     // 2. Draw all non-dragged shortcut cards
     for (int i = 0; i < n; i++)
     {
-        if (m_dragIndex >= 0 && m_shortcutStates[i].selected) continue;
+        if (m_dragActive && m_shortcutStates[i].selected) continue;
+        if (IsShortcutPendingDelete(i)) continue;
         if (i >= (int)m_shortcutStates.size()) continue;
 
         float X = std::roundf(m_shortcutStates[i].currentX);
         float Y = std::roundf(m_shortcutStates[i].currentY - m_scrollY);
 
-        bool isHovered = (i == m_hoveredShortcut) && (m_dragIndex == -1);
+        bool isHovered = (i == m_hoveredShortcut) && !m_dragActive;
         D2D1_RECT_F cardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
         D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 8.0f, 8.0f);
 
@@ -433,9 +448,9 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     // 3. Draw "+ 添加" Card
     if (!m_pageData->isSyncFolder)
     {
-        int col = n % 5, row = n / 5;
-        float X = (float)(160 + col * 72);
-        float Y = std::roundf(72.0f + row * 72.0f - m_scrollY);
+        UpdateAddShortcutTarget(!m_pendingDeleteIndices.empty(), !m_addCardInitialized);
+        float X = std::roundf(m_addCardCurrentX);
+        float Y = std::roundf(m_addCardCurrentY - m_scrollY);
 
         D2D1_RECT_F addCardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
         D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addCardRect, 8.0f, 8.0f);
@@ -478,11 +493,12 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     rt->PopAxisAlignedClip();
 
     // 4. Draw the dragged items on top of everything (drawn after PopAxisAlignedClip to avoid clipping when dragging to the left panel)
-    if (m_dragIndex >= 0)
+    if (m_dragActive && m_dragIndex >= 0)
     {
         for (int i = 0; i < n; i++)
         {
             if (!m_shortcutStates[i].selected) continue;
+            if (IsShortcutPendingDelete(i)) continue;
             if (i >= (int)m_shortcutStates.size()) continue;
 
             float X = std::roundf(m_shortcutStates[i].currentX);
@@ -543,7 +559,19 @@ void ShortcutPage::OnMouseMove(POINT pt, bool& repaint)
 
     if (m_dragIndex >= 0)
     {
-        UpdateDragAndSortState(pt);
+        if (!m_dragActive)
+        {
+            if (HasDragExceededThreshold(pt))
+            {
+                StartShortcutDrag(pt);
+                UpdateDragDeleteCursor(pt);
+            }
+        }
+        else
+        {
+            UpdateDragAndSortState(pt);
+            UpdateDragDeleteCursor(pt);
+        }
         repaint = true;
         return;
     }
@@ -576,12 +604,6 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
     int hs = HitTestShortcut(pt);
     if (hs >= 0)
     {
-
-
-        m_dragIndex = hs;
-        m_dragCurrentInsertIndex = hs;
-        m_dragStartPt = pt;
-
         EnsureShortcutStates();
 
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -629,29 +651,14 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
             m_selectionAnchorIndex = hs;
         }
 
-        // Calculate grab offset for the leader
-        int col = hs % 5, row = hs / 5;
-        float origX = (float)(160 + col * 72);
-        float origY = (float)(72 + row * 72);
-        m_grabOffsetX = pt.x - origX;
-        m_grabOffsetY = (pt.y + m_scrollY) - origY;
-
-        // Calculate relative drag offsets for all selected items from the leader's current position
-        float leaderCurrentX = m_shortcutStates[hs].currentX;
-        float leaderCurrentY = m_shortcutStates[hs].currentY;
-        for (auto& s : m_shortcutStates)
+        if (m_shortcutStates[hs].selected)
         {
-            if (s.selected)
-            {
-                s.dragOffsetX = s.currentX - leaderCurrentX;
-                s.dragOffsetY = s.currentY - leaderCurrentY;
-            }
+            m_dragIndex = hs;
+            m_dragCurrentInsertIndex = hs;
+            m_dragActive = false;
+            m_dragStartPt = pt;
+            SetCapture(hWnd);
         }
-
-        SetCapture(hWnd);
-
-        m_animating = true;
-        m_owner->StartAnimation();
 
         repaint = true;
         return;
@@ -687,6 +694,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
     if (m_dragIndex >= 0)
     {
         ReleaseCapture();
+        UpdateDragDeleteCursor(POINT{ 0, 0 });
 
         POINT mousePt = pt;
         int dx = mousePt.x - m_dragStartPt.x;
@@ -694,14 +702,40 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
-        if (std::abs(dx) <= 3 && std::abs(dy) <= 3 && !ctrlPressed && !shiftPressed)
+        if (!m_dragActive && HasDragExceededThreshold(pt))
         {
-            // Simple click without modifiers.
-            // Clear all selections except the one that was clicked.
-            for (int i = 0; i < (int)m_shortcutStates.size(); i++)
+            StartShortcutDrag(pt);
+        }
+
+        if (!m_dragActive)
+        {
+            if (std::abs(dx) <= 3 && std::abs(dy) <= 3 && !ctrlPressed && !shiftPressed)
             {
-                m_shortcutStates[i].selected = (i == m_dragIndex);
+                // Simple click without modifiers.
+                // Clear all selections except the one that was clicked.
+                for (int i = 0; i < (int)m_shortcutStates.size(); i++)
+                {
+                    m_shortcutStates[i].selected = (i == m_dragIndex);
+                }
             }
+
+            m_dragIndex = -1;
+            m_dragCurrentInsertIndex = -1;
+            m_dragActive = false;
+            repaint = true;
+            return;
+        }
+
+        if (IsPointOutsideWindow(pt))
+        {
+            std::vector<int> selectedIndices = GetSelectedShortcutIndices();
+            if (selectedIndices.empty())
+            {
+                selectedIndices.push_back(m_dragIndex);
+            }
+
+            ConfirmPendingDeleteShortcuts(selectedIndices, repaint);
+            return;
         }
 
         // Check if dropped on the category list area on the left
@@ -773,6 +807,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 
             m_dragIndex = -1;
             m_dragCurrentInsertIndex = -1;
+            m_dragActive = false;
             repaint = true;
             return;
         }
@@ -857,6 +892,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 
         m_dragIndex = -1;
         m_dragCurrentInsertIndex = -1;
+        m_dragActive = false;
         repaint = true;
     }
 }
@@ -896,35 +932,9 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
             HWND hWnd = m_owner->GetWindowHWND();
             if (hs < (int)m_pageData->shortcuts.size())
             {
-                if (ConfirmWindow::Show(hWnd, L"确认删除", L"确定要删除该快捷方式吗？", m_owner->GetAppContext()))
+                bool repaint = false;
+                if (ConfirmAndDeleteShortcuts(std::vector<int>{ hs }, repaint))
                 {
-                    if (hs < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[hs])
-                        m_pageData->iconBitmaps[hs]->Release();
-
-                    m_pageData->shortcuts.erase(m_pageData->shortcuts.begin() + hs);
-                    if (hs < (int)m_pageData->iconBitmaps.size())
-                        m_pageData->iconBitmaps.erase(m_pageData->iconBitmaps.begin() + hs);
-
-                    if (hs < (int)m_shortcutStates.size())
-                        m_shortcutStates.erase(m_shortcutStates.begin() + hs);
-
-                    if (m_selectionAnchorIndex == hs)
-                        m_selectionAnchorIndex = -1;
-                    else if (m_selectionAnchorIndex > hs)
-                        m_selectionAnchorIndex--;
-
-                    // Update targets of remaining items to fill the gap
-                    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-                    {
-                        m_shortcutStates[i].targetX = (float)(160 + (i % 5) * 72);
-                        m_shortcutStates[i].targetY = (float)(72 + (i / 5) * 72);
-                    }
-
-                    // Start timer to animate gap filling
-                    m_animating = true;
-                    m_owner->StartAnimation();
-
-                    m_owner->NotifyConfigChanged();
                     InvalidateRect(hWnd, nullptr, FALSE);
                 }
             }
@@ -1011,7 +1021,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         m_scrollVelocity = 0.0f;
 
         // If dragging, we still need to update drag position and sort state
-        if (m_dragIndex >= 0)
+        if (m_dragActive && m_dragIndex >= 0)
         {
             POINT mousePt;
             GetCursorPos(&mousePt);
@@ -1027,9 +1037,11 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
             state.currentX = state.targetX;
             state.currentY = state.targetY;
         }
+        m_addCardCurrentX = m_addCardTargetX;
+        m_addCardCurrentY = m_addCardTargetY;
 
         bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
-        bool dragging = (m_dragIndex >= 0);
+        bool dragging = m_dragActive;
         if (!scrollAnimating && !dragging)
         {
             m_animating = false;
@@ -1039,7 +1051,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     }
 
     // 1. Drag auto-scroll logic
-    if (m_dragIndex >= 0 && m_pageData)
+    if (m_dragActive && m_dragIndex >= 0 && m_pageData)
     {
         POINT mousePt;
         GetCursorPos(&mousePt);
@@ -1076,7 +1088,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     m_scrollY += m_scrollVelocity * dt;
 
     // 3. Update dragged item position after scroll has changed
-    if (m_dragIndex >= 0)
+    if (m_dragActive && m_dragIndex >= 0)
     {
         POINT mousePt;
         GetCursorPos(&mousePt);
@@ -1105,10 +1117,26 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
             state.currentY = state.targetY;
         }
     }
+    if (m_addCardInitialized)
+    {
+        float dx = m_addCardTargetX - m_addCardCurrentX;
+        float dy = m_addCardTargetY - m_addCardCurrentY;
+        if (std::abs(dx) > 0.1f || std::abs(dy) > 0.1f)
+        {
+            m_addCardCurrentX += dx * (1.0f - std::exp(-15.0f * dt));
+            m_addCardCurrentY += dy * (1.0f - std::exp(-15.0f * dt));
+            anyIconMoving = true;
+        }
+        else
+        {
+            m_addCardCurrentX = m_addCardTargetX;
+            m_addCardCurrentY = m_addCardTargetY;
+        }
+    }
 
     // 5. Determine whether we still need the animation loop
     bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
-    bool dragging = (m_dragIndex >= 0);
+    bool dragging = m_dragActive;
 
     if (scrollAnimating || dragging || anyIconMoving)
     {
@@ -1233,9 +1261,445 @@ void ShortcutPage::EnsureShortcutStates()
     }
 }
 
+std::vector<int> ShortcutPage::GetSelectedShortcutIndices() const
+{
+    std::vector<int> indices;
+    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
+    {
+        if (m_shortcutStates[i].selected)
+        {
+            indices.push_back(i);
+        }
+    }
+    return indices;
+}
+
+std::vector<int> ShortcutPage::NormalizeShortcutIndices(const std::vector<int>& indices) const
+{
+    std::vector<int> normalized = indices;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+
+    int shortcutCount = m_pageData ? (int)m_pageData->shortcuts.size() : 0;
+    normalized.erase(
+        std::remove_if(normalized.begin(), normalized.end(),
+            [shortcutCount](int index) { return index < 0 || index >= shortcutCount; }),
+        normalized.end());
+    return normalized;
+}
+
+bool ShortcutPage::IsShortcutPendingDelete(int index) const
+{
+    return std::binary_search(m_pendingDeleteIndices.begin(), m_pendingDeleteIndices.end(), index);
+}
+
+int ShortcutPage::CountVisibleShortcuts() const
+{
+    if (!m_pageData) return 0;
+    int count = 0;
+    for (int i = 0; i < (int)m_pageData->shortcuts.size(); i++)
+    {
+        if (!IsShortcutPendingDelete(i))
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+void ShortcutPage::UpdateAddShortcutTarget(bool compactPendingDelete, bool snap)
+{
+    int slot = compactPendingDelete ? CountVisibleShortcuts() : (m_pageData ? (int)m_pageData->shortcuts.size() : 0);
+    m_addCardTargetX = (float)(160 + (slot % 5) * 72);
+    m_addCardTargetY = (float)(72 + (slot / 5) * 72);
+
+    if (snap || !m_addCardInitialized)
+    {
+        m_addCardCurrentX = m_addCardTargetX;
+        m_addCardCurrentY = m_addCardTargetY;
+        m_addCardInitialized = true;
+    }
+}
+
+bool ShortcutPage::IsPointOutsideWindow(POINT pt) const
+{
+    HWND hWnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+    if (!hWnd) return false;
+
+    RECT cr{};
+    if (!GetClientRect(hWnd, &cr)) return false;
+
+    float scale = DpiHelper::GetWindowScale(hWnd);
+    float w = (float)(cr.right - cr.left) / scale;
+    float h = (float)(cr.bottom - cr.top) / scale;
+
+    return pt.x < 0 || pt.y < 0 || (float)pt.x >= w || (float)pt.y >= h;
+}
+
+void ShortcutPage::ResetShortcutTargets(bool compactPendingDelete)
+{
+    int visibleSlot = 0;
+    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
+    {
+        int slot = i;
+        if (compactPendingDelete && IsShortcutPendingDelete(i))
+        {
+            // Hidden pending-delete icons keep their current position; visible icons animate into the compacted gaps.
+            continue;
+        }
+        if (compactPendingDelete)
+        {
+            slot = visibleSlot++;
+        }
+        m_shortcutStates[i].targetX = (float)(160 + (slot % 5) * 72);
+        m_shortcutStates[i].targetY = (float)(72 + (slot / 5) * 72);
+    }
+    UpdateAddShortcutTarget(compactPendingDelete, false);
+}
+
+void ShortcutPage::DeleteShortcuts(const std::vector<int>& sortedIndices)
+{
+    if (!m_pageData) return;
+
+    for (auto it = sortedIndices.rbegin(); it != sortedIndices.rend(); ++it)
+    {
+        int index = *it;
+
+        if (index < (int)m_pageData->iconBitmaps.size())
+        {
+            if (m_pageData->iconBitmaps[index])
+            {
+                m_pageData->iconBitmaps[index]->Release();
+            }
+            m_pageData->iconBitmaps.erase(m_pageData->iconBitmaps.begin() + index);
+        }
+
+        if (index < (int)m_pageData->shortcuts.size())
+        {
+            if (m_pageData->shortcuts[index].hIcon)
+            {
+                DestroyIcon(m_pageData->shortcuts[index].hIcon);
+                m_pageData->shortcuts[index].hIcon = nullptr;
+            }
+            m_pageData->shortcuts.erase(m_pageData->shortcuts.begin() + index);
+        }
+
+        if (index < (int)m_shortcutStates.size())
+        {
+            m_shortcutStates.erase(m_shortcutStates.begin() + index);
+        }
+    }
+
+    m_selectionAnchorIndex = -1;
+    ResetShortcutTargets();
+}
+
+bool ShortcutPage::ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bool& repaint)
+{
+    if (!m_pageData || m_pageData->isSyncFolder) return false;
+
+    std::vector<int> normalized = NormalizeShortcutIndices(indices);
+    if (normalized.empty()) return false;
+
+    std::wstring prompt = normalized.size() == 1
+        ? L"确定要删除该快捷方式吗？"
+        : L"确定要删除选中的 " + std::to_wstring(normalized.size()) + L" 个快捷方式吗？";
+
+    HWND hWnd = m_owner->GetWindowHWND();
+    if (!ConfirmWindow::Show(hWnd, L"确认删除", prompt.c_str(), m_owner->GetAppContext()))
+    {
+        return false;
+    }
+
+    DeleteShortcuts(normalized);
+
+    m_animating = true;
+    m_owner->StartAnimation();
+    m_owner->NotifyConfigChanged();
+    repaint = true;
+    return true;
+}
+
+bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices, bool& repaint)
+{
+    if (!m_pageData || m_pageData->isSyncFolder)
+    {
+        m_dragIndex = -1;
+        m_dragCurrentInsertIndex = -1;
+        m_dragActive = false;
+        ResetShortcutTargets();
+        repaint = true;
+        return false;
+    }
+
+    std::vector<int> normalized = NormalizeShortcutIndices(indices);
+    if (normalized.empty())
+    {
+        m_dragIndex = -1;
+        m_dragCurrentInsertIndex = -1;
+        m_dragActive = false;
+        ResetShortcutTargets();
+        repaint = true;
+        return false;
+    }
+
+    HWND hWnd = m_owner->GetWindowHWND();
+    m_pendingDeleteIndices = normalized;
+    m_dragIndex = -1;
+    m_dragCurrentInsertIndex = -1;
+    m_dragActive = false;
+    m_dragDeleteCursorShown = false;
+    SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+    ResetShortcutTargets(true);
+
+    m_animating = true;
+    m_owner->StartAnimation();
+    repaint = true;
+    InvalidateRect(hWnd, nullptr, FALSE);
+    UpdateWindow(hWnd);
+
+    std::wstring prompt = normalized.size() == 1
+        ? L"确定要删除该快捷方式吗？"
+        : L"确定要删除选中的 " + std::to_wstring(normalized.size()) + L" 个快捷方式吗？";
+
+    bool confirmed = ConfirmWindow::Show(hWnd, L"确认删除", prompt.c_str(), m_owner->GetAppContext());
+    if (confirmed)
+    {
+        DeleteShortcuts(normalized);
+        m_owner->NotifyConfigChanged();
+    }
+    else
+    {
+        m_pendingDeleteIndices.clear();
+        ResetShortcutTargets();
+    }
+
+    m_pendingDeleteIndices.clear();
+    m_animating = true;
+    m_owner->StartAnimation();
+    repaint = true;
+    InvalidateRect(hWnd, nullptr, FALSE);
+    return confirmed;
+}
+
+bool ShortcutPage::HasDragExceededThreshold(POINT pt) const
+{
+    int dx = pt.x - m_dragStartPt.x;
+    int dy = pt.y - m_dragStartPt.y;
+    return std::abs(dx) > 4 || std::abs(dy) > 4;
+}
+
+void ShortcutPage::UpdateDragDeleteCursor(POINT pt)
+{
+    bool showDeleteCursor = m_dragActive && IsPointOutsideWindow(pt);
+    if (showDeleteCursor)
+    {
+        SetCursor(GetDeleteCursor());
+        m_dragDeleteCursorShown = true;
+    }
+    else if (m_dragDeleteCursorShown)
+    {
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        m_dragDeleteCursorShown = false;
+    }
+}
+
+HCURSOR ShortcutPage::GetDeleteCursor()
+{
+    if (m_deleteCursor) return m_deleteCursor;
+
+    constexpr int size = 32;
+    std::vector<DWORD> pixels(size * size, 0);
+
+    auto setPixel = [&pixels](int x, int y, BYTE a, BYTE r, BYTE g, BYTE b)
+    {
+        if (x < 0 || x >= size || y < 0 || y >= size) return;
+        pixels[y * size + x] = ((DWORD)a << 24) | ((DWORD)r << 16) | ((DWORD)g << 8) | (DWORD)b;
+    };
+
+    auto drawLine = [&setPixel](int x0, int y0, int x1, int y1, BYTE a, BYTE r, BYTE g, BYTE b)
+    {
+        int dx = std::abs(x1 - x0);
+        int sx = x0 < x1 ? 1 : -1;
+        int dy = -std::abs(y1 - y0);
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        while (true)
+        {
+            setPixel(x0, y0, a, r, g, b);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    };
+
+    const wchar_t* arrow[] = {
+        L"X...............",
+        L"XX..............",
+        L"XWX.............",
+        L"XWWX............",
+        L"XWWWX...........",
+        L"XWWWWX..........",
+        L"XWWWWWX.........",
+        L"XWWWWWWX........",
+        L"XWWWWWWWX.......",
+        L"XWWWWXXXXX......",
+        L"XWWXWXX.........",
+        L"XWX.XWX.........",
+        L"XX..XWX.........",
+        L"X....XWX........",
+        L".....XWX........",
+        L"......XX........",
+    };
+    for (int y = 0; y < 16; y++)
+    {
+        for (int x = 0; x < 16; x++)
+        {
+            wchar_t ch = arrow[y][x];
+            if (ch == L'X') setPixel(x + 1, y + 1, 255, 18, 18, 18);
+            else if (ch == L'W') setPixel(x + 1, y + 1, 255, 255, 255, 255);
+        }
+    }
+
+    constexpr int badgeSize = 14;
+    constexpr int badgeLeft = 17;
+    constexpr int badgeTop = 15;
+    HICON trashIcon = (HICON)LoadImageW(
+        GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(IDI_DELETE_TRASH_ICON),
+        IMAGE_ICON,
+        badgeSize,
+        badgeSize,
+        LR_DEFAULTCOLOR);
+
+    if (trashIcon)
+    {
+        BITMAPINFO badgeBmi{};
+        badgeBmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        badgeBmi.bmiHeader.biWidth = badgeSize;
+        badgeBmi.bmiHeader.biHeight = -badgeSize;
+        badgeBmi.bmiHeader.biPlanes = 1;
+        badgeBmi.bmiHeader.biBitCount = 32;
+        badgeBmi.bmiHeader.biCompression = BI_RGB;
+
+        void* badgeBitsRaw = nullptr;
+        HBITMAP badgeBitmap = CreateDIBSection(nullptr, &badgeBmi, DIB_RGB_COLORS, &badgeBitsRaw, nullptr, 0);
+        if (badgeBitmap && badgeBitsRaw)
+        {
+            HDC screenDc = GetDC(nullptr);
+            HDC memDc = CreateCompatibleDC(screenDc);
+            HGDIOBJ oldBitmap = SelectObject(memDc, badgeBitmap);
+            DrawIconEx(memDc, 0, 0, trashIcon, badgeSize, badgeSize, 0, nullptr, DI_NORMAL);
+            SelectObject(memDc, oldBitmap);
+            DeleteDC(memDc);
+            ReleaseDC(nullptr, screenDc);
+
+            DWORD* badgeBits = static_cast<DWORD*>(badgeBitsRaw);
+            for (int y = 0; y < badgeSize; y++)
+            {
+                for (int x = 0; x < badgeSize; x++)
+                {
+                    DWORD src = badgeBits[y * badgeSize + x];
+                    BYTE srcB = (BYTE)(src & 0xFF);
+                    BYTE srcG = (BYTE)((src >> 8) & 0xFF);
+                    BYTE srcR = (BYTE)((src >> 16) & 0xFF);
+                    BYTE srcA = (BYTE)((src >> 24) & 0xFF);
+                    int luminance = (srcR * 30 + srcG * 59 + srcB * 11) / 100;
+                    bool visible = srcA > 8 || luminance > 8;
+                    if (!visible) continue;
+
+                    BYTE alpha = srcA > 8 ? srcA : 255;
+                    setPixel(badgeLeft + x + 1, badgeTop + y + 1, (BYTE)(alpha / 3), 0, 0, 0);
+
+                    BYTE red = (BYTE)std::min(255, 150 + luminance / 2);
+                    BYTE green = (BYTE)std::min(90, 12 + luminance / 6);
+                    BYTE blue = (BYTE)std::min(90, 18 + luminance / 7);
+                    setPixel(badgeLeft + x, badgeTop + y, alpha, red, green, blue);
+                }
+            }
+        }
+        if (badgeBitmap) DeleteObject(badgeBitmap);
+        DestroyIcon(trashIcon);
+    }
+    else
+    {
+        drawLine(20, 17, 26, 17, 255, 220, 38, 38);
+        drawLine(18, 19, 28, 19, 255, 185, 28, 28);
+        drawLine(19, 20, 19, 28, 255, 239, 68, 68);
+        drawLine(27, 20, 27, 28, 255, 185, 28, 28);
+        drawLine(19, 28, 27, 28, 255, 185, 28, 28);
+    }
+
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = size;
+    bmi.bmiHeader.biHeight = -size;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* colorBits = nullptr;
+    HBITMAP colorBitmap = CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &colorBits, nullptr, 0);
+    if (!colorBitmap || !colorBits)
+    {
+        if (colorBitmap) DeleteObject(colorBitmap);
+        return LoadCursorW(nullptr, IDC_ARROW);
+    }
+    memcpy(colorBits, pixels.data(), pixels.size() * sizeof(DWORD));
+
+    std::vector<BYTE> maskBits((size * size + 7) / 8, 0);
+    HBITMAP maskBitmap = CreateBitmap(size, size, 1, 1, maskBits.data());
+    if (!maskBitmap)
+    {
+        DeleteObject(colorBitmap);
+        return LoadCursorW(nullptr, IDC_ARROW);
+    }
+
+    ICONINFO iconInfo{};
+    iconInfo.fIcon = FALSE;
+    iconInfo.xHotspot = 2;
+    iconInfo.yHotspot = 2;
+    iconInfo.hbmMask = maskBitmap;
+    iconInfo.hbmColor = colorBitmap;
+
+    m_deleteCursor = CreateIconIndirect(&iconInfo);
+    DeleteObject(maskBitmap);
+    DeleteObject(colorBitmap);
+
+    return m_deleteCursor ? m_deleteCursor : LoadCursorW(nullptr, IDC_ARROW);
+}
+
+void ShortcutPage::StartShortcutDrag(POINT pt)
+{
+    if (!m_pageData || m_dragIndex < 0 || m_dragIndex >= (int)m_shortcutStates.size()) return;
+    if (!m_shortcutStates[m_dragIndex].selected) return;
+
+    m_dragActive = true;
+    m_dragCurrentInsertIndex = m_dragIndex;
+
+    float leaderCurrentX = m_shortcutStates[m_dragIndex].currentX;
+    float leaderCurrentY = m_shortcutStates[m_dragIndex].currentY;
+    m_grabOffsetX = (float)m_dragStartPt.x - leaderCurrentX;
+    m_grabOffsetY = (float)(m_dragStartPt.y + m_scrollY) - leaderCurrentY;
+
+    for (auto& s : m_shortcutStates)
+    {
+        if (s.selected)
+        {
+            s.dragOffsetX = s.currentX - leaderCurrentX;
+            s.dragOffsetY = s.currentY - leaderCurrentY;
+        }
+    }
+
+    UpdateDragAndSortState(pt);
+    m_animating = true;
+    m_owner->StartAnimation();
+}
+
 void ShortcutPage::UpdateDragAndSortState(POINT clientPt)
 {
-    if (m_dragIndex < 0) return;
+    if (!m_dragActive || m_dragIndex < 0) return;
 
     // 1. Get list of selected indices in sorted order
     std::vector<int> selectedIndices;
@@ -1447,11 +1911,10 @@ bool ShortcutPage::HitTestAddShortcut(POINT pt)
     if (pt.x < 160 || pt.x > 510 || pt.y < 72 || pt.y > 440) return false;
 
     float scrolledY = pt.y - 72 + m_scrollY;
-    int n = (int)m_pageData->shortcuts.size();
-    int col = n % 5, row = n / 5;
-    float X = (float)(160 + col * 72);
-    float Y = (float)(row * 72);
-    return (pt.x >= X && pt.x <= X + 62 && scrolledY >= Y && scrolledY <= Y + 62);
+    UpdateAddShortcutTarget(!m_pendingDeleteIndices.empty(), !m_addCardInitialized);
+    float localAddY = m_addCardCurrentY - 72.0f;
+    return (pt.x >= m_addCardCurrentX && pt.x <= m_addCardCurrentX + 62 &&
+        scrolledY >= localAddY && scrolledY <= localAddY + 62);
 }
 
 void ShortcutPage::EditShortcut(int index, bool& repaint)
@@ -1597,6 +2060,11 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
             Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            if (result.iconPath.empty() && sc.targetPath == L":timezone_cn_la_toggle")
+            {
+                newIconSource = Model::IconSource::Builtin;
+                if (sc.builtinIconId != L"timezone_cn_la") { sc.builtinIconId = L"timezone_cn_la"; changed = true; }
+            }
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }

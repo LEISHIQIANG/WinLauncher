@@ -23,6 +23,7 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <imm.h>
 #include <string>
@@ -87,6 +88,130 @@ static double GetTimeInSeconds()
     LARGE_INTEGER li;
     QueryPerformanceCounter(&li);
     return (double)li.QuadPart / freq;
+}
+
+static bool TimeZoneKeyEquals(const wchar_t* left, const wchar_t* right)
+{
+    return left && right && _wcsicmp(left, right) == 0;
+}
+
+static std::wstring GetCurrentTimeZoneKey()
+{
+    DYNAMIC_TIME_ZONE_INFORMATION info{};
+    if (GetDynamicTimeZoneInformation(&info) == TIME_ZONE_ID_INVALID)
+        return L"";
+    return info.TimeZoneKeyName;
+}
+
+static std::wstring GetSystemToolPath(const wchar_t* fileName)
+{
+    wchar_t systemDir[MAX_PATH]{};
+    if (GetSystemDirectoryW(systemDir, MAX_PATH) == 0)
+        return fileName ? fileName : L"";
+
+    std::wstring path = systemDir;
+    path += L"\\";
+    path += fileName;
+    return path;
+}
+
+static bool RunHiddenProcessAndWait(const std::wstring& exePath, const std::wstring& arguments, DWORD timeoutMs)
+{
+    std::wstring commandLine = L"\"" + exePath + L"\"";
+    if (!arguments.empty())
+        commandLine += L" " + arguments;
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    PROCESS_INFORMATION pi{};
+    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+    mutableCommand.push_back(L'\0');
+
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+        return false;
+
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, timeoutMs);
+    DWORD exitCode = 1;
+    bool ok = false;
+    if (waitResult == WAIT_OBJECT_0 && GetExitCodeProcess(pi.hProcess, &exitCode))
+    {
+        ok = (exitCode == 0);
+    }
+    else if (waitResult == WAIT_TIMEOUT)
+    {
+        TerminateProcess(pi.hProcess, 1);
+        SetLastError(WAIT_TIMEOUT);
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    if (!ok && waitResult == WAIT_OBJECT_0)
+        SetLastError(exitCode);
+    return ok;
+}
+
+static bool SetTimeZoneByKey(const wchar_t* keyName)
+{
+    if (!keyName || !*keyName)
+        return false;
+
+    std::wstring tzutilPath = GetSystemToolPath(L"tzutil.exe");
+    std::wstring arguments = L"/s \"";
+    arguments += keyName;
+    arguments += L"\"";
+
+    if (!RunHiddenProcessAndWait(tzutilPath, arguments, 5000))
+        return false;
+
+    SendMessageTimeoutW(HWND_BROADCAST, WM_TIMECHANGE, 0, 0, SMTO_ABORTIFHUNG, 200, nullptr);
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, reinterpret_cast<LPARAM>(L"TimeZoneInformation"), SMTO_ABORTIFHUNG, 200, nullptr);
+    return true;
+}
+
+static bool ToggleChinaLosAngelesTimeZone(HWND parent)
+{
+    static const wchar_t* kChinaTimeZone = L"China Standard Time";
+    static const wchar_t* kLosAngelesTimeZone = L"Pacific Standard Time";
+
+    std::wstring currentKey = GetCurrentTimeZoneKey();
+    const wchar_t* targetKey = TimeZoneKeyEquals(currentKey.c_str(), kChinaTimeZone)
+        ? kLosAngelesTimeZone
+        : kChinaTimeZone;
+
+    if (SetTimeZoneByKey(targetKey))
+    {
+        LOG_G_INFO(L"ToggleChinaLosAngelesTimeZone: switched from %s to %s", currentKey.c_str(), targetKey);
+        return true;
+    }
+
+    DWORD err = GetLastError();
+    LOG_G_ERRA(L"ToggleChinaLosAngelesTimeZone: failed, current=%s target=%s error=%lu",
+               currentKey.c_str(), targetKey, err);
+    MessageBoxW(parent,
+                L"切换时区失败。请确认当前用户具有更改时区权限。",
+                L"WinLauncher",
+                MB_OK | MB_ICONWARNING);
+    return false;
+}
+
+static bool LaunchChinaLosAngelesTimeZoneToggleAsync()
+{
+    static std::atomic_bool s_running{ false };
+    if (s_running.exchange(true))
+    {
+        LOG_G_WORNING(L"LaunchChinaLosAngelesTimeZoneToggleAsync: toggle already running");
+        return true;
+    }
+
+    std::thread([]() {
+        ToggleChinaLosAngelesTimeZone(nullptr);
+        s_running.store(false);
+    }).detach();
+    return true;
 }
 
 int PopupWindow::CellWidth() const  { return GetIconSize() + GetCellMarginX() * 2 + GetIconGap(); }
@@ -1779,29 +1904,48 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
     if (dt <= 0.0f) dt = 0.001f;
 
     float target = (float)m_currentPage;
-    float error = target - m_scrollPosition;
     int numPages = (int)m_pages.size();
-    if (numPages > 1)
-    {
-        float halfN = (float)numPages / 2.0f;
-        if (error > halfN) error -= (float)numPages;
-        else if (error < -halfN) error += (float)numPages;
-    }
-
     float stiffness = 400.0f;
     float damping = 40.0f;
 
-    float force = error * stiffness - m_scrollVelocity * damping;
-    m_scrollVelocity += force * dt;
-    m_scrollPosition += m_scrollVelocity * dt;
-
-    if (numPages > 1)
+    // Physics sub-stepping for stability and smoothness
+    float remainingTime = dt;
+    const float stepSize = 0.002f; // 2ms steps
+    while (remainingTime > 0.0f)
     {
-        while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
-        while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
+        float currentStep = (std::min)(remainingTime, stepSize);
+        if (currentStep <= 0.0f) break;
+
+        float error = target - m_scrollPosition;
+        if (numPages > 1)
+        {
+            float halfN = (float)numPages / 2.0f;
+            if (error > halfN) error -= (float)numPages;
+            else if (error < -halfN) error += (float)numPages;
+        }
+
+        float force = error * stiffness - m_scrollVelocity * damping;
+        m_scrollVelocity += force * currentStep;
+        m_scrollPosition += m_scrollVelocity * currentStep;
+
+        if (numPages > 1)
+        {
+            while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
+            while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
+        }
+
+        remainingTime -= currentStep;
     }
 
-    if (std::abs(error) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
+    float finalError = target - m_scrollPosition;
+    if (numPages > 1)
+    {
+        float halfN = (float)numPages / 2.0f;
+        if (finalError > halfN) finalError -= (float)numPages;
+        else if (finalError < -halfN) finalError += (float)numPages;
+    }
+
+    if (std::abs(finalError) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
     {
         m_scrollPosition = target;
         m_scrollVelocity = 0.0f;
@@ -1812,6 +1956,7 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
         m_viewModel->UpdateAnimation();
 
     InvalidateRect(hWnd, nullptr, FALSE);
+    UpdateWindow(hWnd);
 
     double frameElapsedMs = (GetTimeInSeconds() - frameStart) * 1000.0;
     double dtMs = (double)dt * 1000.0;
@@ -3826,7 +3971,13 @@ void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
         }
     }
 
+    const bool isVirtualSystemAction =
+        sc.type == Model::ShortcutType::System &&
+        !sc.targetPath.empty() &&
+        sc.targetPath.front() == L':';
+
     const bool acceptsSelectedFiles =
+        !isVirtualSystemAction &&
         (sc.type == Model::ShortcutType::File || sc.type == Model::ShortcutType::System) &&
         (sc.targetKind == Model::ShortcutTargetKind::Exe ||
          sc.targetKind == Model::ShortcutTargetKind::File ||
@@ -3894,6 +4045,10 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
                 return true;
             }
             return false;
+        }
+        else if (sc.targetPath == L":timezone_cn_la_toggle")
+        {
+            return LaunchChinaLosAngelesTimeZoneToggleAsync();
         }
         else
         {

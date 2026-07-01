@@ -20,6 +20,7 @@ public:
     void SyncPosition(bool mainVisible);
     void UpdateShadow(int mainWidth, int mainHeight, float physicalCornerRadius, float scale);
     void SetOpacity(float factor);
+    void SetOpacityAndScale(float factor, float animScale, POINT animCenter);
     void Destroy();
     HWND GetHWND() const { return m_hShadowWnd; }
 
@@ -37,4 +38,7 @@ private:
     float m_cachedScale = 1.0f;
 
     ShadowSettings m_settings;
+    float m_animScale = 1.0f;
+    POINT m_animCenter = { 0, 0 };
+    float m_animOpacity = 1.0f;
 };

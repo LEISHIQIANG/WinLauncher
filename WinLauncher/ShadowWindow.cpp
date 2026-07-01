@@ -4,6 +4,8 @@
 #include <vector>
 #include <algorithm>
 
+#pragma comment(lib, "msimg32.lib")
+
 static void RegisterShadowClass()
 {
     static bool registered = false;
@@ -122,10 +124,27 @@ void ShadowWindow::SyncPosition(bool mainVisible)
     int offsetX = (int)(m_settings.offsetX * scale);
     int offsetY = (int)(m_settings.offsetY * scale);
 
-    int shadowX = wr.left - margin + offsetX;
-    int shadowY = wr.top - margin + offsetY;
-    int shadowW = mainW + margin * 2;
-    int shadowH = mainH + margin * 2;
+    int shadowX = 0, shadowY = 0, shadowW = 0, shadowH = 0;
+
+    if (m_animScale == 1.0f)
+    {
+        shadowX = wr.left - margin + offsetX;
+        shadowY = wr.top - margin + offsetY;
+        shadowW = mainW + margin * 2;
+        shadowH = mainH + margin * 2;
+    }
+    else
+    {
+        int origShadowWidth = mainW + margin * 2;
+        int origShadowHeight = mainH + margin * 2;
+        float centerX = (float)wr.left + (float)m_animCenter.x;
+        float centerY = (float)wr.top + (float)m_animCenter.y;
+
+        shadowW = (int)(origShadowWidth * m_animScale + 0.5f);
+        shadowH = (int)(origShadowHeight * m_animScale + 0.5f);
+        shadowX = (int)(centerX + (-m_animCenter.x - (float)margin + (float)offsetX) * m_animScale + 0.5f);
+        shadowY = (int)(centerY + (-m_animCenter.y - (float)margin + (float)offsetY) * m_animScale + 0.5f);
+    }
 
     UINT flags = SWP_NOACTIVATE | SWP_NOSENDCHANGING;
     if (show)
@@ -337,7 +356,7 @@ void ShadowWindow::GenerateShadowBitmap(int w, int h, int radius, int margin, in
         BLENDFUNCTION blend = { 0 };
         blend.BlendOp = AC_SRC_OVER;
         blend.BlendFlags = 0;
-        blend.SourceConstantAlpha = 255;
+        blend.SourceConstantAlpha = (BYTE)(m_animOpacity * 255.0f);
         blend.AlphaFormat = AC_SRC_ALPHA;
 
         UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
@@ -350,37 +369,115 @@ void ShadowWindow::GenerateShadowBitmap(int w, int h, int radius, int margin, in
 
 void ShadowWindow::SetOpacity(float factor)
 {
+    SetOpacityAndScale(factor, m_animScale, m_animCenter);
+}
+
+void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animCenter)
+{
+    m_animScale = animScale;
+    m_animCenter = animCenter;
+    m_animOpacity = factor;
+
     if (!m_hShadowWnd || !m_hBitmap) return;
 
     HDC hdcScreen = GetDC(nullptr);
-    HDC hdcMem = CreateCompatibleDC(hdcScreen);
-    HGDIOBJ hOld = SelectObject(hdcMem, m_hBitmap);
 
     float scale = m_cachedScale;
     int margin = (int)(m_settings.margin * scale);
     int offsetX = (int)(m_settings.offsetX * scale);
     int offsetY = (int)(m_settings.offsetY * scale);
-    int shadowWidth = m_cachedWidth + margin * 2;
-    int shadowHeight = m_cachedHeight + margin * 2;
-
-    POINT ptSrc = { 0, 0 };
-    SIZE sizeDst = { shadowWidth, shadowHeight };
+    int origShadowWidth = m_cachedWidth + margin * 2;
+    int origShadowHeight = m_cachedHeight + margin * 2;
 
     RECT wr;
     GetWindowRect(m_hMainWnd, &wr);
-    POINT ptDst = { wr.left - margin + offsetX, wr.top - margin + offsetY };
+    int mainW = wr.right - wr.left;
+    int mainH = wr.bottom - wr.top;
 
-    BLENDFUNCTION blend = { 0 };
-    blend.BlendOp = AC_SRC_OVER;
-    blend.BlendFlags = 0;
-    // Set custom opacity multiplier
-    blend.SourceConstantAlpha = (BYTE)(factor * 255.0f);
-    blend.AlphaFormat = AC_SRC_ALPHA;
+    float centerX = (float)wr.left + (float)animCenter.x;
+    float centerY = (float)wr.top + (float)animCenter.y;
 
-    UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+    int shadowW = (int)(origShadowWidth * animScale + 0.5f);
+    int shadowH = (int)(origShadowHeight * animScale + 0.5f);
+    int shadowX = (int)(centerX + (-animCenter.x - (float)margin + (float)offsetX) * animScale + 0.5f);
+    int shadowY = (int)(centerY + (-animCenter.y - (float)margin + (float)offsetY) * animScale + 0.5f);
 
-    SelectObject(hdcMem, hOld);
-    DeleteDC(hdcMem);
+    if (shadowW <= 0 || shadowH <= 0)
+    {
+        ReleaseDC(nullptr, hdcScreen);
+        return;
+    }
+
+    if (animScale == 1.0f)
+    {
+        HDC hdcMem = CreateCompatibleDC(hdcScreen);
+        HGDIOBJ hOld = SelectObject(hdcMem, m_hBitmap);
+
+        POINT ptSrc = { 0, 0 };
+        SIZE sizeDst = { shadowW, shadowH };
+        POINT ptDst = { shadowX, shadowY };
+
+        BLENDFUNCTION blend = { 0 };
+        blend.BlendOp = AC_SRC_OVER;
+        blend.BlendFlags = 0;
+        blend.SourceConstantAlpha = (BYTE)(factor * 255.0f);
+        blend.AlphaFormat = AC_SRC_ALPHA;
+
+        UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+        SelectObject(hdcMem, hOld);
+        DeleteDC(hdcMem);
+    }
+    else
+    {
+        BITMAPINFO bmi = { 0 };
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = shadowW;
+        bmi.bmiHeader.biHeight = -shadowH; // top-down
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+
+        void* pvBits = nullptr;
+        HBITMAP hScaledBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pvBits, nullptr, 0);
+
+        if (hScaledBitmap && pvBits)
+        {
+            HDC hdcSrcMem = CreateCompatibleDC(hdcScreen);
+            HDC hdcDstMem = CreateCompatibleDC(hdcScreen);
+
+            HGDIOBJ hOldSrc = SelectObject(hdcSrcMem, m_hBitmap);
+            HGDIOBJ hOldDst = SelectObject(hdcDstMem, hScaledBitmap);
+
+            BLENDFUNCTION stretchBlend = { 0 };
+            stretchBlend.BlendOp = AC_SRC_OVER;
+            stretchBlend.BlendFlags = 0;
+            stretchBlend.SourceConstantAlpha = 255;
+            stretchBlend.AlphaFormat = AC_SRC_ALPHA;
+
+            AlphaBlend(hdcDstMem, 0, 0, shadowW, shadowH, hdcSrcMem, 0, 0, origShadowWidth, origShadowHeight, stretchBlend);
+
+            POINT ptSrc = { 0, 0 };
+            SIZE sizeDst = { shadowW, shadowH };
+            POINT ptDst = { shadowX, shadowY };
+
+            BLENDFUNCTION finalBlend = { 0 };
+            finalBlend.BlendOp = AC_SRC_OVER;
+            finalBlend.BlendFlags = 0;
+            finalBlend.SourceConstantAlpha = (BYTE)(factor * 255.0f);
+            finalBlend.AlphaFormat = AC_SRC_ALPHA;
+
+            UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcDstMem, &ptSrc, 0, &finalBlend, ULW_ALPHA);
+
+            SelectObject(hdcSrcMem, hOldSrc);
+            SelectObject(hdcDstMem, hOldDst);
+
+            DeleteDC(hdcSrcMem);
+            DeleteDC(hdcDstMem);
+            DeleteObject(hScaledBitmap);
+        }
+    }
+
     ReleaseDC(nullptr, hdcScreen);
 }
 

@@ -40,12 +40,26 @@ public:
     virtual bool IsAnimating() const override { return m_animating; }
     virtual void UpdateAnimation(float dt, bool& repaint) override;
     void UpdateTheme();
-    bool IsDragging() const { return m_dragIndex >= 0; }
+    bool IsDragging() const { return m_dragActive; }
 
 private:
     void EnsureIcons(ID2D1HwndRenderTarget* rt);
     void EnsureShortcutStates();
+    bool HasDragExceededThreshold(POINT pt) const;
+    void StartShortcutDrag(POINT pt);
     void UpdateDragAndSortState(POINT clientPt);
+    int CountVisibleShortcuts() const;
+    void UpdateAddShortcutTarget(bool compactPendingDelete = false, bool snap = false);
+    void UpdateDragDeleteCursor(POINT pt);
+    HCURSOR GetDeleteCursor();
+    bool IsShortcutPendingDelete(int index) const;
+    std::vector<int> GetSelectedShortcutIndices() const;
+    std::vector<int> NormalizeShortcutIndices(const std::vector<int>& indices) const;
+    bool IsPointOutsideWindow(POINT pt) const;
+    void ResetShortcutTargets(bool compactPendingDelete = false);
+    void DeleteShortcuts(const std::vector<int>& sortedIndices);
+    bool ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bool& repaint);
+    bool ConfirmPendingDeleteShortcuts(const std::vector<int>& indices, bool& repaint);
     void AddShortcutFromPath(const std::wstring& filePath);
     void AddShortcutFromSingleFile(const std::wstring& path);
     ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
@@ -80,12 +94,21 @@ private:
 
     int m_dragIndex;
     int m_dragCurrentInsertIndex;
+    bool m_dragActive;
+    bool m_dragDeleteCursorShown;
+    HCURSOR m_deleteCursor;
     float m_grabOffsetX;
     float m_grabOffsetY;
     std::vector<ShortcutVisualState> m_shortcutStates;
+    std::vector<int> m_pendingDeleteIndices;
 
     int m_selectionAnchorIndex;
     POINT m_dragStartPt;
+    float m_addCardCurrentX = 0.0f;
+    float m_addCardCurrentY = 0.0f;
+    float m_addCardTargetX = 0.0f;
+    float m_addCardTargetY = 0.0f;
+    bool m_addCardInitialized = false;
 
     ID2D1HwndRenderTarget* m_lastRt;
     float m_lastDpi = 96.0f;

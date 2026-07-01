@@ -313,6 +313,16 @@ void GlassWindow::ApplySystemBackdrop()
         }
         SetAccent(m_hWnd, 2, 0x00000000);
     }
+
+    if (UIStyle::Animation::IsEnabled() && !IsWindowVisible(m_hWnd))
+    {
+        LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+        if (!(exStyle & WS_EX_LAYERED))
+        {
+            SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+        }
+        SetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_ALPHA);
+    }
 }
 
 bool GlassWindow::EnsureD2D()
@@ -1561,12 +1571,18 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     if (oldState == AnimState::Opening)
                     {
                         SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
-                        if (m_shadowWindow) m_shadowWindow->SetOpacity(1.0f);
+                        if (m_shadowWindow)
+                        {
+                            m_shadowWindow->SetOpacityAndScale(1.0f, 1.0f, POINT{ 0, 0 });
+                        }
                     }
                     else if (oldState == AnimState::Closing)
                     {
                         SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
-                        if (m_shadowWindow) m_shadowWindow->SetOpacity(0.0f);
+                        if (m_shadowWindow)
+                        {
+                            m_shadowWindow->SetOpacityAndScale(0.0f, 1.0f, POINT{ 0, 0 });
+                        }
                         if (m_animOnComplete)
                         {
                             auto cb = m_animOnComplete;
@@ -1582,12 +1598,26 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 else
                 {
                     BYTE alpha = 255;
+                    float animScale = 1.0f;
                     if (m_animState == AnimState::Opening)
+                    {
+                        m_animProgress = (std::max)(0.0f, (std::min)(1.0f, m_animProgress));
                         alpha = (BYTE)(EaseOutCubic(m_animProgress) * 255.0f);
+                        animScale = 0.90f + 0.10f * EaseOutCubic(m_animProgress);
+                    }
                     else if (m_animState == AnimState::Closing)
+                    {
+                        m_animProgress = (std::max)(0.0f, (std::min)(1.0f, m_animProgress));
                         alpha = (BYTE)((1.0f - EaseInCubic(m_animProgress)) * 255.0f);
+                        animScale = 1.0f - 0.10f * EaseInCubic(m_animProgress);
+                    }
                     SetLayeredWindowAttributes(hWnd, 0, alpha, LWA_ALPHA);
-                    if (m_shadowWindow) m_shadowWindow->SetOpacity((float)alpha / 255.0f);
+                    if (m_shadowWindow)
+                    {
+                        float scale = GetWindowScale(hWnd);
+                        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
+                        m_shadowWindow->SetOpacityAndScale((float)alpha / 255.0f, animScale, ptCenter);
+                    }
                 }
             }
 
@@ -1630,6 +1660,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
 
             InvalidateRect(hWnd, nullptr, FALSE);
+            UpdateWindow(hWnd);
             return 0;
         }
         break;
@@ -1745,7 +1776,9 @@ void GlassWindow::StartOpenTransition(bool fromWindowCenter)
     SetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_ALPHA);
     if (m_shadowWindow)
     {
-        m_shadowWindow->SetOpacity(0.0f);
+        float scale = GetWindowScale(m_hWnd);
+        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
+        m_shadowWindow->SetOpacityAndScale(0.0f, 0.90f, ptCenter);
     }
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);
@@ -1770,6 +1803,13 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fr
     if (!(exStyle & WS_EX_LAYERED))
     {
         SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+
+    if (m_shadowWindow)
+    {
+        float scale = GetWindowScale(m_hWnd);
+        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
+        m_shadowWindow->SetOpacityAndScale(1.0f, 1.0f, ptCenter);
     }
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);

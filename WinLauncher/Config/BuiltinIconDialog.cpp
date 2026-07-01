@@ -30,6 +30,7 @@ static const std::vector<BuiltinIconPreset> G_BUILTIN_PRESETS = {
     { L"PowerShell", L"powershell.exe", L"", Model::ShortcutType::System, 0, L"" },
     { L"屏幕键盘", L"osk.exe", L"", Model::ShortcutType::System, 0, L"" },
     { L"配置窗口", L":config_window", L"", Model::ShortcutType::System, 0, L"" },
+    { L"中洛时区", L":timezone_cn_la_toggle", L"", Model::ShortcutType::System, 0, L"timezone_cn_la" },
     { L"窗口置顶", L":topmost_toggle", L"", Model::ShortcutType::System, 0, L"" },
     
     // ── 2. 网站 (Category 1) ──
@@ -603,7 +604,8 @@ void BuiltinIconDialog::EnsurePresetBitmaps(ID2D1HwndRenderTarget* rt)
         sc.targetPath = ResolveSystemPath(G_BUILTIN_PRESETS[i].targetPath);
         sc.arguments = G_BUILTIN_PRESETS[i].arguments;
         sc.type = G_BUILTIN_PRESETS[i].type;
-        sc.iconSource = Model::IconSource::Auto;
+        sc.builtinIconId = G_BUILTIN_PRESETS[i].builtinIconId;
+        sc.iconSource = sc.builtinIconId.empty() ? Model::IconSource::Auto : Model::IconSource::Builtin;
         sc.targetKind = ShortcutManager::InferTargetKind(sc.targetPath);
 
         sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
@@ -642,7 +644,8 @@ void BuiltinIconDialog::UpdateFilteredItems()
             item.info.targetPath = ResolveSystemPath(G_BUILTIN_PRESETS[i].targetPath);
             item.info.arguments = G_BUILTIN_PRESETS[i].arguments;
             item.info.type = G_BUILTIN_PRESETS[i].type;
-            item.info.iconSource = Model::IconSource::Auto;
+            item.info.builtinIconId = G_BUILTIN_PRESETS[i].builtinIconId;
+            item.info.iconSource = item.info.builtinIconId.empty() ? Model::IconSource::Auto : Model::IconSource::Builtin;
             item.info.targetKind = ShortcutManager::InferTargetKind(item.info.targetPath);
             m_filteredItems.push_back(item);
         }

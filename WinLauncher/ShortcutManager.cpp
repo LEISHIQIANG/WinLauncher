@@ -123,6 +123,8 @@ static HICON GetBuiltinIconById(const std::wstring& iconId)
         return ShortcutManager::GetShortcutIcon(GetSystemFilePath(L"wscript.exe"));
     if (iconId == L"batch")
         return GetAssociatedIcon(L"WinLauncher.bat", FILE_ATTRIBUTE_NORMAL);
+    if (iconId == L"timezone_cn_la")
+        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TIME_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
 
     return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
 }
