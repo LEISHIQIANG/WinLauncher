@@ -45,6 +45,7 @@ public:
     static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut);
     static bool UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut);
     static Model::ShortcutTargetKind InferTargetKind(const std::wstring& path);
+    static std::wstring ResolveSystemTargetPath(const std::wstring& targetPath);
 
     static std::vector<RendPopupPage> LoadConfig(const std::wstring& configDir);
     static void SaveConfig(const std::wstring& configDir, const std::vector<RendPopupPage>& pages);

@@ -5,6 +5,7 @@
 #include <wrl.h>
 #include <string>
 #include "TextBox.h"
+#include "../Model/ShortcutInfo.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -21,6 +22,9 @@ struct SystemIconEditFormInitParams
     std::wstring name;
     std::wstring targetPath;
     std::wstring iconPath;
+    Model::ShortcutTargetKind targetKind = Model::ShortcutTargetKind::Unknown;
+    Model::IconSource iconSource = Model::IconSource::Auto;
+    std::wstring builtinIconId;
     bool         iconInvertLight = false;
     bool         iconInvertDark = false;
 };
@@ -73,7 +77,7 @@ private:
     void DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect, bool hovered);
     void DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, bool checked, bool hovered, const wchar_t* labelText);
     void DrawIconPreview(ID2D1HwndRenderTarget* rt);
-    HICON GetFileIconForPreview(const std::wstring& path);
+    HICON GetIconForPreview(const std::wstring& iconPath);
 
     HWND            m_parentHWND = nullptr;
     D2D1_RECT_F     m_bounds = {};

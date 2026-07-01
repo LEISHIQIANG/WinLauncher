@@ -2051,6 +2051,9 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
         init.name = sc.name;
         init.targetPath = sc.targetPath;
         init.iconPath = sc.iconPath;
+        init.targetKind = sc.targetKind;
+        init.iconSource = sc.iconSource;
+        init.builtinIconId = sc.builtinIconId;
         init.iconInvertLight = sc.iconInvertLight;
         init.iconInvertDark = sc.iconInvertDark;
 
@@ -2060,10 +2063,9 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
             Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-            if (result.iconPath.empty() && sc.targetPath == L":timezone_cn_la_toggle")
+            if (result.iconPath.empty() && !sc.builtinIconId.empty())
             {
                 newIconSource = Model::IconSource::Builtin;
-                if (sc.builtinIconId != L"timezone_cn_la") { sc.builtinIconId = L"timezone_cn_la"; changed = true; }
             }
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }

@@ -87,11 +87,7 @@ bool SystemIconEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, 
     m_focusedBox = &m_nameBox;
     m_nameBox.SetFocus(true);
 
-    std::wstring previewPath = m_init.iconPath.empty() ? m_init.targetPath : m_init.iconPath;
-    if (!previewPath.empty())
-    {
-        m_previewIcon = GetFileIconForPreview(previewPath);
-    }
+    m_previewIcon = GetIconForPreview(m_init.iconPath);
 
     return true;
 }
@@ -152,21 +148,30 @@ bool SystemIconEditForm::HitTestInvertDarkCheckbox(POINT pt)
     return HitTestRect(pt, D2D1::RectF(m_bounds.left + 106, m_bounds.top + Y_INVERT_DARK, m_bounds.left + 186, m_bounds.top + Y_INVERT_DARK + 22));
 }
 
-HICON SystemIconEditForm::GetFileIconForPreview(const std::wstring& path)
+HICON SystemIconEditForm::GetIconForPreview(const std::wstring& iconPath)
 {
-    if (path.empty()) return nullptr;
     RendShortcutInfo sc;
+    sc.name = m_nameBox.GetText();
     sc.type = Model::ShortcutType::System;
-    if (path == m_init.iconPath && !m_init.iconPath.empty())
+    sc.targetPath = m_init.targetPath;
+    sc.targetKind = m_init.targetKind == Model::ShortcutTargetKind::Unknown
+        ? ShortcutManager::InferTargetKind(m_init.targetPath)
+        : m_init.targetKind;
+    sc.iconSource = m_init.iconSource;
+    sc.iconPath = iconPath;
+    sc.builtinIconId = m_init.builtinIconId;
+    sc.iconInvertLight = m_iconInvertLight;
+    sc.iconInvertDark = m_iconInvertDark;
+
+    if (!iconPath.empty())
     {
         sc.iconSource = Model::IconSource::CustomPath;
-        sc.iconPath = path;
     }
-    else
+    else if (sc.iconSource == Model::IconSource::CustomPath)
     {
         sc.iconSource = Model::IconSource::Auto;
-        sc.targetPath = path;
     }
+
     return ShortcutManager::GetShortcutIcon(sc);
 }
 
@@ -235,7 +240,7 @@ void SystemIconEditForm::BrowseIconFile(HWND hWnd)
         if (m_previewIcon)   { DestroyIcon(m_previewIcon);   m_previewIcon = nullptr; }
         if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
 
-        m_previewIcon = GetFileIconForPreview(iconPath);
+        m_previewIcon = GetIconForPreview(iconPath);
     }
 }
 
@@ -319,14 +324,10 @@ void SystemIconEditForm::OnChar(HWND hWnd, WPARAM wParam, bool& repaint)
         m_focusedBox->OnChar(hWnd, wParam, repaint);
         if (m_focusedBox == &m_iconBox)
         {
-            std::wstring ip = m_iconBox.GetText();
-            std::wstring previewPath = ip.empty() ? m_init.targetPath : ip;
-
             if (m_previewIcon)   { DestroyIcon(m_previewIcon);   m_previewIcon = nullptr; }
             if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
 
-            if (!previewPath.empty())
-                m_previewIcon = GetFileIconForPreview(previewPath);
+            m_previewIcon = GetIconForPreview(m_iconBox.GetText());
 
             repaint = true;
         }
@@ -340,14 +341,10 @@ void SystemIconEditForm::OnKeyDown(HWND hWnd, WPARAM wParam, LPARAM lParam, bool
         m_focusedBox->OnKeyDown(hWnd, wParam, lParam, repaint);
         if (m_focusedBox == &m_iconBox)
         {
-            std::wstring ip = m_iconBox.GetText();
-            std::wstring previewPath = ip.empty() ? m_init.targetPath : ip;
-
             if (m_previewIcon)   { DestroyIcon(m_previewIcon);   m_previewIcon = nullptr; }
             if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
 
-            if (!previewPath.empty())
-                m_previewIcon = GetFileIconForPreview(previewPath);
+            m_previewIcon = GetIconForPreview(m_iconBox.GetText());
 
             repaint = true;
         }

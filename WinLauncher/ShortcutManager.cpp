@@ -105,6 +105,64 @@ static std::wstring GetSystemFilePath(const wchar_t* fileName)
     return path;
 }
 
+std::wstring ShortcutManager::ResolveSystemTargetPath(const std::wstring& targetPath)
+{
+    if (targetPath.empty())
+        return targetPath;
+
+    if (targetPath.front() == L':' ||
+        targetPath.rfind(L"http://", 0) == 0 ||
+        targetPath.rfind(L"https://", 0) == 0)
+    {
+        return targetPath;
+    }
+
+    if (GetFileAttributesW(targetPath.c_str()) != INVALID_FILE_ATTRIBUTES)
+        return targetPath;
+
+    wchar_t windowsDir[MAX_PATH]{};
+    if (_wcsicmp(targetPath.c_str(), L"explorer.exe") == 0 &&
+        GetWindowsDirectoryW(windowsDir, MAX_PATH) > 0)
+    {
+        std::wstring path = windowsDir;
+        path += L"\\explorer.exe";
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return path;
+    }
+
+    if (_wcsicmp(targetPath.c_str(), L"regedit.exe") == 0 &&
+        GetWindowsDirectoryW(windowsDir, MAX_PATH) > 0)
+    {
+        std::wstring path = windowsDir;
+        path += L"\\regedit.exe";
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return path;
+    }
+
+    if (_wcsicmp(targetPath.c_str(), L"powershell.exe") == 0)
+    {
+        std::wstring path = GetSystemFilePath(L"WindowsPowerShell\\v1.0\\powershell.exe");
+        if (!path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return path;
+    }
+
+    wchar_t foundPath[MAX_PATH]{};
+    DWORD foundLen = SearchPathW(nullptr, targetPath.c_str(), nullptr, MAX_PATH, foundPath, nullptr);
+    if (foundLen > 0 && foundLen < MAX_PATH)
+        return foundPath;
+
+    if (targetPath.find(L'\\') == std::wstring::npos &&
+        targetPath.find(L'/') == std::wstring::npos &&
+        targetPath.find(L':') == std::wstring::npos)
+    {
+        std::wstring path = GetSystemFilePath(targetPath.c_str());
+        if (!path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return path;
+    }
+
+    return targetPath;
+}
+
 static HICON GetBuiltinIconById(const std::wstring& iconId)
 {
     if (iconId == L"folder")
@@ -544,11 +602,13 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
 {
     if (targetPath.empty()) return nullptr;
 
+    const std::wstring iconTargetPath = ResolveSystemTargetPath(targetPath);
+
     bool isDir = false;
     bool isFile = false;
-    if (!targetPath.empty())
+    if (!iconTargetPath.empty())
     {
-        DWORD attr = GetFileAttributesW(targetPath.c_str());
+        DWORD attr = GetFileAttributesW(iconTargetPath.c_str());
         if (attr != INVALID_FILE_ATTRIBUTES)
         {
             isDir = (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
@@ -563,16 +623,16 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
             return hIcon;
     }
 
-    if (isFile && IsImageExtension(targetPath))
+    if (isFile && IsImageExtension(iconTargetPath))
     {
-        HICON hIcon = LoadIconViaGdiplus(targetPath);
+        HICON hIcon = LoadIconViaGdiplus(iconTargetPath);
         if (hIcon)
             return hIcon;
     }
 
     HICON hIcon = nullptr;
 
-    const wchar_t* ext = PathFindExtensionW(targetPath.c_str());
+    const wchar_t* ext = PathFindExtensionW(iconTargetPath.c_str());
     bool isExeOrDllOrIco = false;
     if (ext && *ext)
     {
@@ -583,7 +643,7 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
 
     if (isExeOrDllOrIco)
     {
-        UINT extracted = PrivateExtractIconsW(targetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
+        UINT extracted = PrivateExtractIconsW(iconTargetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
         if (extracted > 0 && hIcon)
         {
             return hIcon;
@@ -594,7 +654,7 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
     if (sysImgList)
     {
         SHFILEINFOW sfi{};
-        SHGetFileInfoW(targetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX);
+        SHGetFileInfoW(iconTargetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX);
         if (sysImgList->GetIcon(sfi.iIcon, ILD_NORMAL, &hIcon) != S_OK)
             hIcon = nullptr;
         sysImgList->Release();
@@ -603,7 +663,7 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
     if (!hIcon)
     {
         SHFILEINFOW sfi{};
-        if (SHGetFileInfoW(targetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON))
+        if (SHGetFileInfoW(iconTargetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON))
             hIcon = sfi.hIcon;
     }
 
@@ -615,11 +675,13 @@ Model::ShortcutTargetKind ShortcutManager::InferTargetKind(const std::wstring& p
     if (path.empty())
         return Model::ShortcutTargetKind::Unknown;
 
-    DWORD attr = GetFileAttributesW(path.c_str());
+    const std::wstring targetPath = ResolveSystemTargetPath(path);
+
+    DWORD attr = GetFileAttributesW(targetPath.c_str());
     if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
         return Model::ShortcutTargetKind::Folder;
 
-    const wchar_t* ext = PathFindExtensionW(path.c_str());
+    const wchar_t* ext = PathFindExtensionW(targetPath.c_str());
     if (ext && *ext)
     {
         if (_wcsicmp(ext, L".lnk") == 0) return Model::ShortcutTargetKind::Link;
