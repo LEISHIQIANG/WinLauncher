@@ -12,6 +12,7 @@
 #include "UIStyle.h"
 #include <vector>
 #include <string>
+#include <deque>
 #include <wrl.h>
 
 using Microsoft::WRL::ComPtr;
@@ -32,6 +33,7 @@ public:
 
     // IConfigWindow implementation
     virtual void NotifyConfigChanged(bool onlyBackgroundStyle = false) override;
+    virtual void RecordShortcutHistoryCheckpoint() override;
     virtual HWND GetWindowHWND() override;
     virtual std::wstring GetConfigDir() override;
     virtual std::wstring GetConfigFilePath() override;
@@ -134,6 +136,26 @@ private:
     void DrawAddButton(ID2D1HwndRenderTarget* rt);
     void HandleCategoryDrop(HDROP hDrop, bool& repaint);
     void AddSyncCategory(const std::wstring& name, const std::wstring& folderPath);
+    bool UndoShortcutHistory();
+    bool RedoShortcutHistory();
+
+    struct ShortcutHistoryPageState
+    {
+        int pageIndex = -1;
+        std::wstring pageName;
+        std::vector<Model::ShortcutInfo> shortcuts;
+    };
+
+    struct ShortcutHistorySnapshot
+    {
+        std::vector<ShortcutHistoryPageState> pages;
+        int currentCategory = 0;
+    };
+    ShortcutHistorySnapshot CaptureShortcutHistorySnapshot() const;
+    void ApplyShortcutHistorySnapshot(const ShortcutHistorySnapshot& snapshot);
+    int ResolveShortcutHistoryPageIndex(const ShortcutHistoryPageState& pageState, std::vector<bool>& usedPages) const;
+    void RestoreShortcutHistoryPage(RendPopupPage& page, const std::vector<Model::ShortcutInfo>& shortcuts);
+    static bool ShortcutHistorySnapshotsEqual(const ShortcutHistorySnapshot& a, const ShortcutHistorySnapshot& b);
 
     static ConfigWindow* s_instance;
     static AppContext* s_ctx;
@@ -177,4 +199,7 @@ private:
     double GetTimeInSeconds();
 
     int m_ignoreConfigChangedCount = 0;
+    std::deque<ShortcutHistorySnapshot> m_undoShortcutHistory;
+    std::deque<ShortcutHistorySnapshot> m_redoShortcutHistory;
+    bool m_applyingShortcutHistory = false;
 };

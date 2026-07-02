@@ -16,6 +16,7 @@ public:
     void OnMouseLeave(bool& repaint);
     void OnLButtonDown(POINT pt, bool& repaint);
     void OnLButtonUp(POINT pt, bool& repaint);
+    void OnMouseWheel(short zDelta, POINT pt, bool& repaint);
     virtual void OnRButtonDown(POINT pt, bool& repaint);
     bool IsAnimating() const { return m_animating || m_isAnimatingSelect; }
     void UpdateAnimation(float dt, bool& repaint);
@@ -32,6 +33,12 @@ private:
     bool HitTestAddCategory(POINT pt);
 
     void EnsureCategoryStates();
+    float GetListViewportBottom() const;
+    float GetMaxScrollY() const;
+    void ClampScroll();
+    bool HitTestListViewport(POINT pt) const;
+    void EnsureCurrentCategoryVisible();
+    void MoveSelectionToCategory(int index);
     void UpdateDragAndSortState(POINT pt);
     void DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, bool isActive, bool isHovered, bool isDragging, const D2D1_COLOR_F& baseClr, IDWriteTextFormat* tfLeft);
     void BeginSelectAnimation(float targetY);
@@ -45,6 +52,8 @@ private:
     // Drag and sort states
     std::vector<CategoryVisualState> m_categoryStates;
     int m_dragIndex;
+    int m_pendingDragIndex;
+    POINT m_pendingDragStartPt;
     int m_dragCurrentInsertIndex;
     float m_grabOffsetY;
     bool m_animating;
@@ -54,4 +63,8 @@ private:
     float m_selectAnimStartY = -1.0f;
     float m_selectAnimElapsed = 0.0f;
     bool m_isAnimatingSelect = false;
+
+    float m_scrollY = 0.0f;
+    float m_targetScrollY = 0.0f;
+    float m_scrollVelocity = 0.0f;
 };

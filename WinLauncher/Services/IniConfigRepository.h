@@ -504,6 +504,17 @@ public:
                         try { currentPage->isSyncFolder = (std::stoi(val) != 0); } catch (...) { currentPage->isSyncFolder = false; }
                     }
                     else if (key == L"FolderPath") currentPage->folderPath = val;
+                    else if (key == L"SceneMode") currentPage->sceneMode = Model::PageSceneModeFromKey(val);
+                    else if (key.rfind(L"SceneAvailableApp", 0) == 0 && key != L"SceneAvailableAppCount")
+                    {
+                        if (!val.empty())
+                            currentPage->sceneAvailableApps.push_back(val);
+                    }
+                    else if (key.rfind(L"SceneApp", 0) == 0 && key != L"SceneAppCount")
+                    {
+                        if (!val.empty())
+                            currentPage->sceneApps.push_back(val);
+                    }
                 }
             }
         }
@@ -668,6 +679,23 @@ public:
                 // Write IsSyncFolder=1 for active sync, IsSyncFolder=0 for paused
                 content += L"IsSyncFolder=" + std::to_wstring(page.isSyncFolder ? 1 : 0) + L"\r\n";
                 content += L"FolderPath=" + EscapeValue(page.folderPath) + L"\r\n";
+            }
+            if (!page.sceneApps.empty())
+            {
+                content += L"SceneMode=" + std::wstring(Model::PageSceneModeKey(page.sceneMode)) + L"\r\n";
+                content += L"SceneAppCount=" + std::to_wstring(page.sceneApps.size()) + L"\r\n";
+                for (size_t appIndex = 0; appIndex < page.sceneApps.size(); ++appIndex)
+                {
+                    content += L"SceneApp" + std::to_wstring(appIndex) + L"=" + EscapeValue(page.sceneApps[appIndex]) + L"\r\n";
+                }
+            }
+            if (!page.sceneAvailableApps.empty())
+            {
+                content += L"SceneAvailableAppCount=" + std::to_wstring(page.sceneAvailableApps.size()) + L"\r\n";
+                for (size_t appIndex = 0; appIndex < page.sceneAvailableApps.size(); ++appIndex)
+                {
+                    content += L"SceneAvailableApp" + std::to_wstring(appIndex) + L"=" + EscapeValue(page.sceneAvailableApps[appIndex]) + L"\r\n";
+                }
             }
             content += L"\r\n";
 

@@ -3,6 +3,7 @@
 #include "ShortcutManager.h"
 #include "ViewModel/PopupViewModel.h"
 #include "Services/IIconService.h"
+#include "Services/AppSceneMatcher.h"
 #include <vector>
 #include <unordered_map>
 #include <wrl.h>
@@ -76,6 +77,7 @@ private:
     void StartPageAnimationLoop();
     void StepPageAnimationFrame(HWND hWnd);
     void ResetPressedShortcut();
+    int ToModelPageIndex(int renderPageIndex) const;
 
     enum class PressedShortcutKind
     {
@@ -96,8 +98,10 @@ private:
     std::wstring m_configDir;
 
     std::vector<RendPopupPage> m_pages;  // Legacy: pages with icon bitmaps for rendering
+    std::vector<int> m_pageModelIndices;
     int m_currentPage;
     RendPopupPage m_dockPage;  // Fixed dock bar (DOCK category)
+    AppScene::AppIdentity m_sceneApp;
 
     int m_hovered;
     bool m_trackMouse;

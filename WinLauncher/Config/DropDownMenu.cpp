@@ -8,9 +8,10 @@ DropDownMenu* DropDownMenu::s_instance = nullptr;
 HWND DropDownMenu::s_hMainWnd = nullptr;
 AppContext* DropDownMenu::s_ctx = nullptr;
 
-DropDownMenu::DropDownMenu(AppContext* ctx, const std::vector<Item>& items)
+DropDownMenu::DropDownMenu(AppContext* ctx, const std::vector<Item>& items, float fontSize)
     : m_items(items)
     , m_hovered(-1)
+    , m_fontSize(fontSize)
 {
     m_appCtx = ctx;
 }
@@ -19,7 +20,7 @@ DropDownMenu::~DropDownMenu()
 {
 }
 
-void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth)
+void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth, bool fixedWidth, float fontSize)
 {
     Hide();
 
@@ -28,24 +29,27 @@ void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, A
 
     if (items.empty()) return;
 
-    s_instance = new DropDownMenu(s_ctx, items);
+    s_instance = new DropDownMenu(s_ctx, items, fontSize);
 
     const float itemH = 26.0f;
     const float pad = 6.0f;
 
-    float maxW = 80.0f;
-    for (const auto& item : items)
+    float maxW = fixedWidth && minWidth > 0.0f ? minWidth : 80.0f;
+    if (!fixedWidth)
     {
-        float itemW = 0.0f;
-        for (wchar_t c : item.text)
+        for (const auto& item : items)
         {
-            if (c >= 0x4e00 && c <= 0x9fff)
-                itemW += 13.0f;
-            else
-                itemW += 7.0f;
+            float itemW = 0.0f;
+            for (wchar_t c : item.text)
+            {
+                if (c >= 0x4e00 && c <= 0x9fff)
+                    itemW += 13.0f;
+                else
+                    itemW += 7.0f;
+            }
+            itemW += 24.0f;
+            if (itemW > maxW) maxW = itemW;
         }
-        itemW += 24.0f;
-        if (itemW > maxW) maxW = itemW;
     }
     if (minWidth > maxW) maxW = minWidth;
 
@@ -87,10 +91,12 @@ void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, A
         UIStyle::Typography::CreateTextFormat(
             s_instance->m_dw.Get(),
             &s_instance->m_tfMenu,
-            12.0f,
+            s_instance->m_fontSize,
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_TEXT_ALIGNMENT_CENTER,
             DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        if (s_instance->m_tfMenu)
+            s_instance->m_tfMenu->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     }
 
     s_instance->m_hovered = -1;

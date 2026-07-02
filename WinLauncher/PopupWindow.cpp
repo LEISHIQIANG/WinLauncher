@@ -76,6 +76,16 @@ static bool HasLaunchAction(const RendShortcutInfo& shortcut)
     }
 }
 
+static bool IsSameSceneApp(const AppScene::AppIdentity& left, const AppScene::AppIdentity& right)
+{
+    if (left.valid != right.valid)
+        return false;
+    if (!left.valid)
+        return true;
+    return _wcsicmp(left.exePath.c_str(), right.exePath.c_str()) == 0 &&
+           _wcsicmp(left.exeName.c_str(), right.exeName.c_str()) == 0;
+}
+
 static double GetTimeInSeconds()
 {
     static double freq = 0.0;
@@ -357,27 +367,25 @@ PopupWindow::~PopupWindow()
 
 void PopupWindow::ClearPages()
 {
-    bool hasIconSvc = m_iconService || (m_appCtx && m_appCtx->iconService);
+    m_searchResults.clear();
+    m_selectedSearchResult = -1;
+    m_bmpBrushCache.clear();
+
     for (auto& page : m_pages)
     {
         for (auto* bmp : page.iconBitmaps)
             if (bmp) bmp->Release();
         page.iconBitmaps.clear();
-        if (hasIconSvc)
-            page.shortcuts.clear(); // icon service owns HICON lifecycle
-        else
-            ShortcutManager::FreeShortcuts(page.shortcuts); // fallback: own lifecycle
+        ShortcutManager::FreeShortcuts(page.shortcuts);
     }
     m_pages.clear();
+    m_pageModelIndices.clear();
 
     // Clear dock page bitmaps
     for (auto* bmp : m_dockPage.iconBitmaps)
         if (bmp) bmp->Release();
     m_dockPage.iconBitmaps.clear();
-    if (hasIconSvc)
-        m_dockPage.shortcuts.clear();
-    else
-        ShortcutManager::FreeShortcuts(m_dockPage.shortcuts);
+    ShortcutManager::FreeShortcuts(m_dockPage.shortcuts);
     m_dockPage.name = L"DOCK";
 }
 
@@ -393,12 +401,22 @@ void PopupWindow::OnConfigChanged()
     if (m_viewModel)
     {
         // Convert ViewModel pages to legacy RendPopupPage format with HICON
+        int modelPageIndex = 0;
         for (const auto& vp : m_viewModel->GetPages())
         {
+            if (!AppScene::IsPageVisibleForApp(vp.sceneApps, vp.sceneMode, m_sceneApp))
+            {
+                modelPageIndex++;
+                continue;
+            }
+
             RendPopupPage pp;
             pp.name = vp.name;
             pp.isSyncFolder = vp.isSyncFolder;
             pp.folderPath = vp.folderPath;
+            pp.sceneMode = vp.sceneMode;
+            pp.sceneApps = vp.sceneApps;
+            pp.sceneAvailableApps = vp.sceneAvailableApps;
             for (const auto& vs : vp.shortcuts)
             {
                 RendShortcutInfo si;
@@ -417,11 +435,16 @@ void PopupWindow::OnConfigChanged()
                 pp.shortcuts.push_back(std::move(si));
             }
             m_pages.push_back(std::move(pp));
+            m_pageModelIndices.push_back(modelPageIndex);
+            modelPageIndex++;
         }
 
         // Populate dock render data
         m_dockPage = RendPopupPage{};
         m_dockPage.name = L"DOCK";
+        m_dockPage.sceneMode = m_viewModel->GetDockPage().sceneMode;
+        m_dockPage.sceneApps = m_viewModel->GetDockPage().sceneApps;
+        m_dockPage.sceneAvailableApps = m_viewModel->GetDockPage().sceneAvailableApps;
         for (const auto& vs : m_viewModel->GetDockPage().shortcuts)
         {
             RendShortcutInfo si;
@@ -440,8 +463,19 @@ void PopupWindow::OnConfigChanged()
             m_dockPage.shortcuts.push_back(std::move(si));
         }
 
-        m_currentPage = m_viewModel->GetCurrentPage();
-        m_scrollPosition = m_viewModel->GetScrollPosition();
+        int modelCurrentPage = m_viewModel->GetCurrentPage();
+        m_currentPage = 0;
+        for (int i = 0; i < (int)m_pageModelIndices.size(); ++i)
+        {
+            if (m_pageModelIndices[i] == modelCurrentPage)
+            {
+                m_currentPage = i;
+                break;
+            }
+        }
+        if (m_currentPage >= (int)m_pages.size())
+            m_currentPage = 0;
+        m_scrollPosition = (float)m_currentPage;
         m_scrollVelocity = 0.0f;
 
         if (m_rt)
@@ -627,9 +661,16 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     }
 
     POINT clickPt = pt; // Store the original click position
+    AppScene::AppIdentity previousSceneApp = this->m_sceneApp;
+    this->m_sceneApp = AppScene::IdentifyTriggerApp(clickPt);
+    const bool sceneAppChanged = !IsSameSceneApp(previousSceneApp, this->m_sceneApp);
 
     // 1. Load configuration and page data if not already loaded
-    if (this->m_pages.empty())
+    if (this->m_viewModel && (this->m_pages.empty() || sceneAppChanged))
+    {
+        this->OnConfigChanged();
+    }
+    else if (this->m_pages.empty())
     {
         this->OnConfigChanged();
     }
@@ -882,7 +923,7 @@ void PopupWindow::HideSelf()
             ShowWindow(h, SW_HIDE);
             if (inst->m_viewModel)
             {
-                inst->m_viewModel->SetCurrentPage(inst->m_currentPage);
+                inst->m_viewModel->SetCurrentPage(inst->ToModelPageIndex(inst->m_currentPage));
                 inst->m_viewModel->NotifyPopupHidden();
             }
         });
@@ -892,7 +933,7 @@ void PopupWindow::HideSelf()
         if (h) ShowWindow(h, SW_HIDE);
         if (m_viewModel)
         {
-            m_viewModel->SetCurrentPage(m_currentPage);
+            m_viewModel->SetCurrentPage(ToModelPageIndex(m_currentPage));
             m_viewModel->NotifyPopupHidden();
         }
     }
@@ -919,7 +960,7 @@ void PopupWindow::DestroySelf()
     auto finishDestroy = [h, inst]() {
         if (inst->m_viewModel)
         {
-            inst->m_viewModel->SetCurrentPage(inst->m_currentPage);
+            inst->m_viewModel->SetCurrentPage(inst->ToModelPageIndex(inst->m_currentPage));
             inst->m_viewModel->NotifyPopupHidden();
         }
         if (h && IsWindow(h))
@@ -945,6 +986,13 @@ void PopupWindow::ResetPressedShortcut()
     m_pressedShortcutKind = PressedShortcutKind::None;
     m_pressedShortcutIndex = -1;
     m_pressedShortcutPage = -1;
+}
+
+int PopupWindow::ToModelPageIndex(int renderPageIndex) const
+{
+    if (renderPageIndex >= 0 && renderPageIndex < (int)m_pageModelIndices.size())
+        return m_pageModelIndices[renderPageIndex];
+    return renderPageIndex;
 }
 
 void PopupWindow::Release()
@@ -1080,7 +1128,7 @@ void PopupWindow::UpdateSearch()
                 {
                     item.bitmap = page.iconBitmaps[sIndex];
                 }
-                item.originalPageIndex = (int)pIndex;
+                item.originalPageIndex = ToModelPageIndex((int)pIndex);
                 item.originalShortcutIndex = (int)sIndex;
                 m_searchResults.push_back(item);
             }
@@ -2351,7 +2399,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             m_currentPage = targetPage;
             m_hovered = -1;
-            if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
+            if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
 
             if (!m_animating)
             {
@@ -2406,7 +2454,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     {
                         m_currentPage = clickedTab;
                         m_hovered = -1;
-                        m_viewModel->SwitchToPage(clickedTab);
+                        if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(clickedTab));
 
                         if (!m_animating)
                         {
@@ -2578,7 +2626,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                         LaunchShortcut(sc);
                     }
                     if (m_viewModel)
-                        m_viewModel->NotifyShortcutLaunched(pressedPage, hit);
+                        m_viewModel->NotifyShortcutLaunched(ToModelPageIndex(pressedPage), hit);
                 }
             }
 
@@ -2737,7 +2785,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     m_currentPage = targetPage;
                     m_hovered = -1;
-                    if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
+                    if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
 
                     if (!m_animating)
                     {
@@ -2756,7 +2804,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     m_currentPage = targetPage;
                     m_hovered = -1;
-                    if (m_viewModel) m_viewModel->SetCurrentPage(targetPage);
+                    if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
 
                     if (!m_animating)
                     {

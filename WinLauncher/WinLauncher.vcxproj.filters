@@ -51,6 +51,9 @@
     <ClCompile Include="Config\ContextMenu.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\SceneSettingsWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\ShortcutPage.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -182,6 +185,9 @@
     <ClInclude Include="Config\ContextMenu.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Config\SceneSettingsWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Config\ConfigPage.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -225,6 +231,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\ConfigPath.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\AppSceneMatcher.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\PrivilegeLaunchService.h">

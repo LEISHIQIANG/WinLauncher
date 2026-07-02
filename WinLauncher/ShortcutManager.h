@@ -32,6 +32,9 @@ struct RendPopupPage
     std::vector<ID2D1Bitmap*> iconBitmaps;
     bool isSyncFolder = false;
     std::wstring folderPath;
+    Model::PageSceneMode sceneMode = Model::PageSceneMode::Whitelist;
+    std::vector<std::wstring> sceneApps;
+    std::vector<std::wstring> sceneAvailableApps;
 };
 
 // Legacy facade for config loading/icon extraction

@@ -147,6 +147,7 @@
     <ClCompile Include="Config\ConfigWindow.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
+    <ClCompile Include="Config\SceneSettingsWindow.cpp" />
     <ClCompile Include="Config\ShortcutPage.cpp" />
     <ClCompile Include="Config\SettingsPage.cpp" />
     <ClCompile Include="Config\DropDownMenu.cpp" />
@@ -208,6 +209,7 @@
     <ClInclude Include="Model\ShortcutInfo.h" />
     <!-- Services Layer -->
     <ClInclude Include="Services\IConfigService.h" />
+    <ClInclude Include="Services\AppSceneMatcher.h" />
     <ClInclude Include="Services\ConfigPath.h" />
     <ClInclude Include="Services\IIconService.h" />
     <ClInclude Include="Services\IniConfigRepository.h" />
@@ -236,6 +238,7 @@
     <ClInclude Include="Config\ConfigWindow.h" />
     <ClInclude Include="Config\CategoryList.h" />
     <ClInclude Include="Config\ContextMenu.h" />
+    <ClInclude Include="Config\SceneSettingsWindow.h" />
     <ClInclude Include="Config\ConfigPage.h" />
     <ClInclude Include="Config\ShortcutPage.h" />
     <ClInclude Include="Config\SettingsPage.h" />

@@ -2,6 +2,8 @@
 #include "IConfigWindow.h"
 #include "UIStyle.h"
 #include "ConfirmWindow.h"
+#include "DropDownMenu.h"
+#include "../DpiHelper.h"
 #include "../Services/UpdateService.h"
 #include "..\version.h"
 #include <cwchar>
@@ -10,9 +12,16 @@
 
 namespace
 {
+    constexpr float CONTENT_LEFT = 160.0f;
+    constexpr float CONTENT_RIGHT = 510.0f;
+    constexpr float TWO_COLUMN_GAP = 10.0f;
+    constexpr float TWO_COLUMN_WIDTH = (CONTENT_RIGHT - CONTENT_LEFT - TWO_COLUMN_GAP) / 2.0f;
+    constexpr float TWO_COLUMN_STEP = TWO_COLUMN_WIDTH + TWO_COLUMN_GAP;
+    constexpr float CARD_HEIGHT = 32.0f;
+
     constexpr float GLOBAL_SCALE_CARD_LEFT = 160.0f;
     constexpr float GLOBAL_SCALE_CARD_TOP = 112.0f;
-    constexpr float GLOBAL_SCALE_CARD_RIGHT = 510.0f;
+    constexpr float GLOBAL_SCALE_CARD_RIGHT = CONTENT_RIGHT;
     constexpr float GLOBAL_SCALE_CARD_BOTTOM = 148.0f;
     constexpr float GLOBAL_SCALE_TRACK_LEFT = 250.0f;
     constexpr float GLOBAL_SCALE_TRACK_RIGHT = 402.0f;
@@ -21,6 +30,61 @@ namespace
     constexpr float GLOBAL_SCALE_APPLY_TOP = 118.0f;
     constexpr float GLOBAL_SCALE_APPLY_RIGHT = 506.0f;
     constexpr float GLOBAL_SCALE_APPLY_BOTTOM = 142.0f;
+
+    constexpr float TRIGGER_TOP = 108.0f;
+    constexpr float TRIGGER_BOTTOM = 136.0f;
+    constexpr int TRIGGER_PRESET_BUTTON = 3;
+    constexpr int FOUR_SEGMENT_COUNT = 4;
+    constexpr float FOUR_SEGMENT_GAP = 10.0f;
+    constexpr float FOUR_SEGMENT_WIDTH = (CONTENT_RIGHT - CONTENT_LEFT - FOUR_SEGMENT_GAP * (FOUR_SEGMENT_COUNT - 1)) / FOUR_SEGMENT_COUNT;
+
+    D2D1_RECT_F TwoColumnRect(int col, float top, float height = CARD_HEIGHT)
+    {
+        const float left = CONTENT_LEFT + col * TWO_COLUMN_STEP;
+        return D2D1::RectF(left, top, left + TWO_COLUMN_WIDTH, top + height);
+    }
+
+    D2D1_RECT_F FourSegmentRect(int index, float top, float bottom)
+    {
+        const float left = CONTENT_LEFT + index * (FOUR_SEGMENT_WIDTH + FOUR_SEGMENT_GAP);
+        return D2D1::RectF(left, top, left + FOUR_SEGMENT_WIDTH, bottom);
+    }
+
+    D2D1_RECT_F PopupAlignRect(int index)
+    {
+        return FourSegmentRect(index, 182.0f, 210.0f);
+    }
+
+    D2D1_RECT_F PopupBehaviorRect(int index, float top)
+    {
+        return TwoColumnRect(index, top, 28.0f);
+    }
+
+    bool PointInRect(const D2D1_RECT_F& rect, POINT pt)
+    {
+        return pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom;
+    }
+
+    D2D1_RECT_F TriggerButtonRect(int index)
+    {
+        return FourSegmentRect(index, TRIGGER_TOP, TRIGGER_BOTTOM);
+    }
+
+    std::wstring TriggerPresetLabel(int type)
+    {
+        switch (type)
+        {
+        case 0: return L"鼠标中键";
+        case 1: return L"鼠标侧键 4";
+        case 2: return L"鼠标侧键 5";
+        case 3: return L"Ctrl + 中键";
+        case 4: return L"Shift + 中键";
+        case 5: return L"Alt + 中键";
+        case 6: return L"Ctrl + 侧键 4";
+        case 7: return L"Ctrl + 侧键 5";
+        default: return L"未知预设";
+        }
+    }
 }
 
 SettingsPage::SettingsPage(IConfigWindow* owner)
@@ -30,6 +94,146 @@ SettingsPage::SettingsPage(IConfigWindow* owner)
 
 SettingsPage::~SettingsPage()
 {
+}
+
+static bool SameRectLocal(const D2D1_RECT_F& a, const D2D1_RECT_F& b)
+{
+    return fabsf(a.left - b.left) < 0.1f &&
+        fabsf(a.top - b.top) < 0.1f &&
+        fabsf(a.right - b.right) < 0.1f &&
+        fabsf(a.bottom - b.bottom) < 0.1f;
+}
+
+D2D1_RECT_F SettingsPage::GetSelectionRect(SelectionVisual& visual, const D2D1_RECT_F& target)
+{
+    if (!visual.initialized || !UIStyle::Animation::IsEnabled())
+    {
+        visual.initialized = true;
+        visual.moving = false;
+        visual.current = target;
+        visual.target = target;
+        return visual.current;
+    }
+
+    if (!SameRectLocal(visual.target, target))
+    {
+        visual.target = target;
+        visual.moving = true;
+        m_selectionAnimating = true;
+        if (m_owner)
+            m_owner->StartAnimation();
+    }
+
+    return visual.current;
+}
+
+void SettingsPage::ShowTriggerPresetMenu()
+{
+    if (!m_owner) return;
+
+    HWND hwnd = m_owner->GetWindowHWND();
+    if (!hwnd) return;
+
+    std::vector<DropDownMenu::Item> items;
+    const int currentTrigger = m_owner->GetTriggerType();
+    auto addPreset = [&](int type)
+    {
+        std::wstring label = TriggerPresetLabel(type);
+        if (type == currentTrigger)
+            label = L"当前：" + label;
+
+        items.push_back(DropDownMenu::Item{
+            label,
+            [this, type]()
+            {
+                if (!m_owner) return;
+                if (m_owner->GetTriggerType() != type)
+                    m_owner->SetTriggerType(type);
+                m_owner->NotifyConfigChanged();
+                HWND ownerHwnd = m_owner->GetWindowHWND();
+                if (ownerHwnd)
+                    InvalidateRect(ownerHwnd, nullptr, FALSE);
+            },
+            false
+        });
+    };
+
+    for (int type = 3; type <= 7; ++type)
+        addPreset(type);
+
+    D2D1_RECT_F presetRect = TriggerButtonRect(TRIGGER_PRESET_BUTTON);
+    POINT menuPt{ (int)presetRect.left, (int)(presetRect.bottom + 6.0f) };
+    menuPt = DpiHelper::LogicalClientToScreen(hwnd, menuPt);
+    DropDownMenu::Show(hwnd, menuPt, items, m_owner->GetAppContext(), presetRect.right - presetRect.left, true, 10.5f);
+}
+
+void SettingsPage::DrawSelectionHighlight(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, float radius, float bgAlpha, float borderAlpha)
+{
+    D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(rect, radius, radius);
+
+    ID2D1SolidColorBrush* bgBrush = nullptr;
+    D2D1_COLOR_F bgClr = UIStyle::ThemeColor::Accent().d2d;
+    bgClr.a = bgAlpha;
+    rt->CreateSolidColorBrush(bgClr, &bgBrush);
+    if (bgBrush)
+    {
+        rt->FillRoundedRectangle(rounded, bgBrush);
+        bgBrush->Release();
+    }
+
+    ID2D1SolidColorBrush* borderBrush = nullptr;
+    D2D1_COLOR_F borderClr = UIStyle::ThemeColor::Accent().d2d;
+    borderClr.a = borderAlpha;
+    rt->CreateSolidColorBrush(borderClr, &borderBrush);
+    if (borderBrush)
+    {
+        rt->DrawRoundedRectangle(rounded, borderBrush, UIStyle::Metrics::ControlStroke());
+        borderBrush->Release();
+    }
+}
+
+void SettingsPage::UpdateAnimation(float dt, bool& repaint)
+{
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_selectionAnimating = false;
+        return;
+    }
+
+    bool stillMoving = false;
+    auto updateVisual = [&](SelectionVisual& visual)
+    {
+        if (!visual.initialized || !visual.moving)
+            return;
+
+        float t = 1.0f - std::exp(-20.0f * dt);
+        visual.current.left += (visual.target.left - visual.current.left) * t;
+        visual.current.top += (visual.target.top - visual.current.top) * t;
+        visual.current.right += (visual.target.right - visual.current.right) * t;
+        visual.current.bottom += (visual.target.bottom - visual.current.bottom) * t;
+
+        if (SameRectLocal(visual.current, visual.target))
+        {
+            visual.current = visual.target;
+            visual.moving = false;
+        }
+        else
+        {
+            stillMoving = true;
+        }
+    };
+
+    updateVisual(m_themeSelection);
+    updateVisual(m_themeColorSelection);
+    updateVisual(m_windowModeSelection);
+    updateVisual(m_triggerSelection);
+    updateVisual(m_popupAlignSelection);
+    updateVisual(m_popupAutoCloseSelection);
+    updateVisual(m_popupMultiOpenSelection);
+    updateVisual(m_sortModeSelection);
+
+    m_selectionAnimating = stillMoving;
+    repaint = true;
 }
 
 int SettingsPage::PendingGlobalScalePercent()
@@ -310,6 +514,10 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         // Draw Theme Buttons side-by-side
         int currentTheme = m_owner->GetTheme();
         std::wstring themeLabels[] = { L"深色主题", L"浅色主题" };
+        {
+            float selectedX = (currentTheme == 0) ? 160.0f : 345.0f;
+            DrawSelectionHighlight(rt, GetSelectionRect(m_themeSelection, D2D1::RectF(selectedX, 180.0f, selectedX + 165.0f, 212.0f)), 6.0f);
+        }
         for (int i = 0; i < 2; i++)
         {
             bool isSelected = (i == currentTheme);
@@ -319,8 +527,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
-            D2D1_COLOR_F bgClr = isSelected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float bgAlpha = isSelected ? (isHovered ? 0.16f : 0.10f) : (isHovered ? 0.06f : 0.018f);
+            D2D1_COLOR_F bgClr = baseClr;
+            float bgAlpha = isHovered ? 0.06f : 0.018f;
             rt->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, bgAlpha), &bgBrush);
             if (bgBrush)
             {
@@ -329,8 +537,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
 
             ID2D1SolidColorBrush* borderBrush = nullptr;
-            D2D1_COLOR_F borderClr = isSelected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float borderAlpha = isSelected ? 0.34f : (isHovered ? 0.105f : 0.045f);
+            D2D1_COLOR_F borderClr = baseClr;
+            float borderAlpha = isHovered ? 0.105f : 0.045f;
             rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &borderBrush);
             if (borderBrush)
             {
@@ -395,12 +603,12 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
 
             ID2D1SolidColorBrush* borderBrush = nullptr;
-            D2D1_COLOR_F borderClr = isSelected ? UIStyle::GetThemeColorPresetColor(i).d2d : baseClr;
-            float borderAlpha = isSelected ? 0.92f : (isHovered ? 0.42f : 0.18f);
+            D2D1_COLOR_F borderClr = baseClr;
+            float borderAlpha = isHovered ? 0.42f : 0.18f;
             rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &borderBrush);
             if (borderBrush)
             {
-                rt->DrawRoundedRectangle(roundedSwatch, borderBrush, isSelected ? 1.6f : UIStyle::Metrics::ControlStroke());
+                rt->DrawRoundedRectangle(roundedSwatch, borderBrush, UIStyle::Metrics::ControlStroke());
                 borderBrush->Release();
             }
 
@@ -414,6 +622,23 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                     rt->DrawLine(D2D1::Point2F(x + 8.0f, 256.0f), D2D1::Point2F(x + 14.0f, 249.0f), checkBrush, 1.4f);
                     checkBrush->Release();
                 }
+            }
+        }
+        {
+            const float swatchLeft = 160.0f;
+            const float swatchRight = 510.0f;
+            const float swatchSize = 18.0f;
+            const float swatchStep = (swatchRight - swatchLeft - swatchSize) / (float)(UIStyle::ThemeColorPresetCount() - 1);
+            float x = swatchLeft + currentThemeColor * swatchStep;
+            D2D1_RECT_F ringRect = GetSelectionRect(m_themeColorSelection, D2D1::RectF(x - 2.0f, 242.0f, x + swatchSize + 2.0f, 264.0f));
+            ID2D1SolidColorBrush* ringBrush = nullptr;
+            D2D1_COLOR_F ringClr = UIStyle::GetThemeColorPresetColor(currentThemeColor).d2d;
+            ringClr.a = 0.92f;
+            rt->CreateSolidColorBrush(ringClr, &ringBrush);
+            if (ringBrush)
+            {
+                rt->DrawRoundedRectangle(D2D1::RoundedRect(ringRect, 6.0f, 6.0f), ringBrush, 1.6f);
+                ringBrush->Release();
             }
         }
 
@@ -434,6 +659,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
         // Draw Window Mode Buttons side-by-side
         std::wstring modeLabels[] = { L"发光材质", L"亚克力材质", L"玻璃材质" };
+        DrawSelectionHighlight(rt, GetSelectionRect(m_windowModeSelection,
+            D2D1::RectF(160.0f + currentWindowMode * 120.0f, 298.0f, 270.0f + currentWindowMode * 120.0f, 326.0f)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
             bool isSelected = (i == currentWindowMode);
@@ -443,8 +670,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
-            D2D1_COLOR_F bgClr = isSelected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float bgAlpha = isSelected ? (isHovered ? 0.16f : 0.10f) : (isHovered ? 0.06f : 0.018f);
+            D2D1_COLOR_F bgClr = baseClr;
+            float bgAlpha = isHovered ? 0.06f : 0.018f;
             rt->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, bgAlpha), &bgBrush);
             if (bgBrush)
             {
@@ -453,8 +680,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
 
             ID2D1SolidColorBrush* borderBrush = nullptr;
-            D2D1_COLOR_F borderClr = isSelected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float borderAlpha = isSelected ? 0.34f : (isHovered ? 0.105f : 0.045f);
+            D2D1_COLOR_F borderClr = baseClr;
+            float borderAlpha = isHovered ? 0.105f : 0.045f;
             rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &borderBrush);
             if (borderBrush)
             {
@@ -518,13 +745,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 int col = i % 2;
                 int row = i / 2;
-                float ix = 160.0f + col * 175.0f;
+                D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + row * 38.0f);
+                float ix = cardRect.left;
                 float iy = 360.0f + row * 38.0f;
                 float cy = iy + 16.0f;
                 bool isRowHovered = (m_hoveredThemeDetailSetting == activeItems[i].originalIdx);
 
                 // 1. Draw subtle card background
-                D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + 165.0f, iy + 32.0f);
                 D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
                 ID2D1SolidColorBrush* cardBg = nullptr;
@@ -662,13 +889,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         {
             int col = i % 2;
             int row = i / 2;
-            float ix = 160.0f + col * 175.0f;
+            D2D1_RECT_F cardRect = TwoColumnRect(col, 90.0f + row * 42.0f);
+            float ix = cardRect.left;
             float iy = 90.0f + row * 42.0f;
             float cy = iy + 16.0f;
             bool isRowHovered = (m_hoveredAppearanceSetting == i);
 
             // 1. Draw subtle card background
-            D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + 165.0f, iy + 32.0f);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* cardBg = nullptr;
@@ -773,8 +1000,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         {
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
             ID2D1SolidColorBrush* bgBrush = nullptr;
-            D2D1_COLOR_F bgClr = selected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float bgAlpha = selected ? (hovered ? 0.16f : 0.10f) : (hovered ? 0.06f : 0.018f);
+            D2D1_COLOR_F bgClr = baseClr;
+            float bgAlpha = hovered ? 0.06f : 0.018f;
             rt->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, bgAlpha), &bgBrush);
             if (bgBrush)
             {
@@ -783,8 +1010,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             }
 
             ID2D1SolidColorBrush* borderBrush = nullptr;
-            D2D1_COLOR_F borderClr = selected ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-            float borderAlpha = selected ? 0.34f : (hovered ? 0.105f : 0.045f);
+            D2D1_COLOR_F borderClr = baseClr;
+            float borderAlpha = hovered ? 0.105f : 0.045f;
             rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &borderBrush);
             if (borderBrush)
             {
@@ -811,7 +1038,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         auto drawStepperCard = [&](float ix, float iy, const std::wstring& label, const std::wstring& value, bool hovered, int button)
         {
             float cy = iy + 16.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + 165.0f, iy + 32.0f);
+            D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + TWO_COLUMN_WIDTH, iy + CARD_HEIGHT);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* cardBg = nullptr;
@@ -885,21 +1112,30 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"唤醒触发方式";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 82, 510, 102), tb);
+                    D2D1::RectF(160, 82, 300, 102), tb);
+                std::wstring currentLabel = L"当前：" + TriggerPresetLabel(m_owner->GetTriggerType());
+                DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
+                tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+                rt->DrawTextW(currentLabel.c_str(), (UINT32)currentLabel.size(), tfDefault,
+                    D2D1::RectF(300, 82, 510, 102), tb);
+                tfDefault->SetTextAlignment(oldAlignment);
                 tb->Release();
             }
         }
 
         int currentTrigger = m_owner->GetTriggerType();
         std::wstring radioLabels[] = { L"鼠标中键", L"侧键 4", L"侧键 5" };
+        int selectedTriggerButton = (currentTrigger >= 0 && currentTrigger <= 2) ? currentTrigger : TRIGGER_PRESET_BUTTON;
+        DrawSelectionHighlight(rt, GetSelectionRect(m_triggerSelection, TriggerButtonRect(selectedTriggerButton)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
             drawSegmentButton(
-                D2D1::RectF(160.0f + i * 118.0f, 108.0f, 266.0f + i * 118.0f, 136.0f),
+                TriggerButtonRect(i),
                 radioLabels[i],
                 i == currentTrigger,
                 i == m_hoveredTrigger);
         }
+        drawSegmentButton(TriggerButtonRect(TRIGGER_PRESET_BUTTON), L"其他预设", currentTrigger > 2, m_hoveredTrigger == TRIGGER_PRESET_BUTTON);
 
         if (tfDefault)
         {
@@ -916,10 +1152,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
         int alignMode = m_owner->GetPopupAlignMode();
         std::wstring alignLabels[] = { L"鼠标居中", L"鼠标左上", L"屏幕居中", L"右下角" };
+        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAlignSelection, PopupAlignRect(alignMode)), 6.0f);
         for (int i = 0; i < 4; i++)
         {
             drawSegmentButton(
-                D2D1::RectF(160.0f + i * 88.0f, 182.0f, 240.0f + i * 88.0f, 210.0f),
+                PopupAlignRect(i),
                 alignLabels[i],
                 i == alignMode,
                 i == m_hoveredPopupAlignMode);
@@ -941,39 +1178,45 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         bool autoClose = m_owner->GetPopupAutoClose();
         bool multiOpen = m_owner->GetPopupMultiOpenWhenPinned();
         int sortMode = m_owner->GetSortMode();
-        drawSegmentButton(D2D1::RectF(160.0f, 256.0f, 325.0f, 284.0f), L"自动关闭", autoClose, m_hoveredPopupAutoClose == 0);
-        drawSegmentButton(D2D1::RectF(335.0f, 256.0f, 500.0f, 284.0f), L"点击关闭", !autoClose, m_hoveredPopupAutoClose == 1);
-        drawSegmentButton(D2D1::RectF(160.0f, 296.0f, 325.0f, 324.0f), L"固定时复用", !multiOpen, m_hoveredPopupMultiOpenWhenPinned == 0);
-        drawSegmentButton(D2D1::RectF(335.0f, 296.0f, 500.0f, 324.0f), L"固定时多开", multiOpen, m_hoveredPopupMultiOpenWhenPinned == 1);
-        drawSegmentButton(D2D1::RectF(160.0f, 336.0f, 325.0f, 364.0f), L"自定义排序", sortMode == 0, m_hoveredSortMode == 0);
-        drawSegmentButton(D2D1::RectF(335.0f, 336.0f, 500.0f, 364.0f), L"智能排序", sortMode == 1, m_hoveredSortMode == 1);
+        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAutoCloseSelection,
+            PopupBehaviorRect(autoClose ? 0 : 1, 256.0f)), 6.0f);
+        drawSegmentButton(PopupBehaviorRect(0, 256.0f), L"自动关闭", autoClose, m_hoveredPopupAutoClose == 0);
+        drawSegmentButton(PopupBehaviorRect(1, 256.0f), L"点击关闭", !autoClose, m_hoveredPopupAutoClose == 1);
+        DrawSelectionHighlight(rt, GetSelectionRect(m_popupMultiOpenSelection,
+            PopupBehaviorRect(!multiOpen ? 0 : 1, 296.0f)), 6.0f);
+        drawSegmentButton(PopupBehaviorRect(0, 296.0f), L"固定时复用", !multiOpen, m_hoveredPopupMultiOpenWhenPinned == 0);
+        drawSegmentButton(PopupBehaviorRect(1, 296.0f), L"固定时多开", multiOpen, m_hoveredPopupMultiOpenWhenPinned == 1);
+        DrawSelectionHighlight(rt, GetSelectionRect(m_sortModeSelection,
+            PopupBehaviorRect(sortMode == 0 ? 0 : 1, 336.0f)), 6.0f);
+        drawSegmentButton(PopupBehaviorRect(0, 336.0f), L"自定义排序", sortMode == 0, m_hoveredSortMode == 0);
+        drawSegmentButton(PopupBehaviorRect(1, 336.0f), L"智能排序", sortMode == 1, m_hoveredSortMode == 1);
 
         wchar_t delayBuf[32];
         swprintf_s(delayBuf, L"%dms", m_owner->GetHoverLeaveDelay());
-        drawStepperCard(160.0f, 386.0f, L"消失延迟", delayBuf, m_hoveredHoverLeaveDelay, m_hoveredHoverLeaveDelayButton);
+        drawStepperCard(TwoColumnRect(0, 386.0f).left, 386.0f, L"消失延迟", delayBuf, m_hoveredHoverLeaveDelay, m_hoveredHoverLeaveDelayButton);
 
         wchar_t animBuf[32];
         swprintf_s(animBuf, L"%dms", m_owner->GetAnimationDuration());
-        drawStepperCard(335.0f, 386.0f, L"动画时长", animBuf, m_hoveredAnimationDuration, m_hoveredAnimationDurationButton);
+        drawStepperCard(TwoColumnRect(1, 386.0f).left, 386.0f, L"动画时长", animBuf, m_hoveredAnimationDuration, m_hoveredAnimationDurationButton);
     }
     else if (m_categoryIndex == 3) // 配置管理
     {
         if (tfDefault)
         {
-            const D2D1_RECT_F pathCardRect = D2D1::RectF(160.0f, 82.0f, 500.0f, 154.0f);
-            const D2D1_RECT_F dirLabelRect = D2D1::RectF(180.0f, 92.0f, 480.0f, 110.0f);
-            const D2D1_RECT_F dirValueRect = D2D1::RectF(180.0f, 112.0f, 480.0f, 146.0f);
-            const D2D1_RECT_F historyCardRect = D2D1::RectF(160.0f, 164.0f, 500.0f, 214.0f);
-            const D2D1_RECT_F historyLabelRect = D2D1::RectF(180.0f, 172.0f, 480.0f, 190.0f);
-            const D2D1_RECT_F historyValueRect = D2D1::RectF(180.0f, 192.0f, 480.0f, 210.0f);
-            const D2D1_RECT_F openConfigFileRect = D2D1::RectF(160.0f, 226.0f, 325.0f, 258.0f);
-            const D2D1_RECT_F openLogFileRect = D2D1::RectF(335.0f, 226.0f, 500.0f, 258.0f);
-            const D2D1_RECT_F backupRect = D2D1::RectF(160.0f, 268.0f, 325.0f, 300.0f);
-            const D2D1_RECT_F restoreRect = D2D1::RectF(335.0f, 268.0f, 500.0f, 300.0f);
-            const D2D1_RECT_F historyDirRect = D2D1::RectF(160.0f, 310.0f, 325.0f, 342.0f);
-            const D2D1_RECT_F importJsonRect = D2D1::RectF(335.0f, 310.0f, 500.0f, 342.0f);
-            const D2D1_RECT_F clearConfigRect = D2D1::RectF(160.0f, 352.0f, 325.0f, 384.0f);
-            const D2D1_RECT_F clearHistoryRect = D2D1::RectF(335.0f, 352.0f, 500.0f, 384.0f);
+            const D2D1_RECT_F pathCardRect = D2D1::RectF(CONTENT_LEFT, 82.0f, CONTENT_RIGHT, 154.0f);
+            const D2D1_RECT_F dirLabelRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 92.0f, CONTENT_RIGHT - 20.0f, 110.0f);
+            const D2D1_RECT_F dirValueRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 112.0f, CONTENT_RIGHT - 20.0f, 146.0f);
+            const D2D1_RECT_F historyCardRect = D2D1::RectF(CONTENT_LEFT, 164.0f, CONTENT_RIGHT, 214.0f);
+            const D2D1_RECT_F historyLabelRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 172.0f, CONTENT_RIGHT - 20.0f, 190.0f);
+            const D2D1_RECT_F historyValueRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 192.0f, CONTENT_RIGHT - 20.0f, 210.0f);
+            const D2D1_RECT_F openConfigFileRect = TwoColumnRect(0, 226.0f);
+            const D2D1_RECT_F openLogFileRect = TwoColumnRect(1, 226.0f);
+            const D2D1_RECT_F backupRect = TwoColumnRect(0, 268.0f);
+            const D2D1_RECT_F restoreRect = TwoColumnRect(1, 268.0f);
+            const D2D1_RECT_F historyDirRect = TwoColumnRect(0, 310.0f);
+            const D2D1_RECT_F importJsonRect = TwoColumnRect(1, 310.0f);
+            const D2D1_RECT_F clearConfigRect = TwoColumnRect(0, 352.0f);
+            const D2D1_RECT_F clearHistoryRect = TwoColumnRect(1, 352.0f);
 
             ID2D1SolidColorBrush* tbNormal = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
@@ -1094,7 +1337,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
                 // Description
                 std::wstring desc = L"一个极简、快速、带毛玻璃特效的快捷方式启动工具。\n可以通过鼠标中键或侧键快速唤醒，方便管理并运行常用程序。";
-                rt->DrawTextW(desc.c_str(), (UINT32)desc.size(), tfDefault, D2D1::RectF(160, 160, 500, 235), tbNormal);
+                rt->DrawTextW(desc.c_str(), (UINT32)desc.size(), tfDefault, D2D1::RectF(160, 160, CONTENT_RIGHT, 235), tbNormal);
             }
 
             if (tbNormal) tbNormal->Release();
@@ -1578,7 +1821,12 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
     else if (m_categoryIndex == 2)
     {
         int htrig = HitTestTrigger(pt);
-        if (htrig >= 0 && htrig <= 2)
+        if (htrig == TRIGGER_PRESET_BUTTON)
+        {
+            ShowTriggerPresetMenu();
+            repaint = true;
+        }
+        else if (htrig >= 0 && htrig <= 2)
         {
             m_owner->SetTriggerType(htrig);
             m_owner->NotifyConfigChanged();
@@ -1731,11 +1979,12 @@ bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
     {
         int col = i % 2;
         int row = i / 2;
-        float ix = 160.0f + col * 175.0f;
+        D2D1_RECT_F cardRect = TwoColumnRect(col, 90.0f + row * 42.0f);
+        float ix = cardRect.left;
         float iy = 90.0f + row * 42.0f;
         float cy = iy + 16.0f;
 
-        if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
+        if (PointInRect(cardRect, pt))
         {
             settingIdx = i;
             if (pt.x >= ix + 83 && pt.x <= ix + 103 && pt.y >= cy - 10 && pt.y <= cy + 10)
@@ -1777,10 +2026,10 @@ bool SettingsPage::HitTestHardwareAcceleration(POINT pt)
 int SettingsPage::HitTestTrigger(POINT pt)
 {
     if (m_categoryIndex != 2) return -1;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i <= TRIGGER_PRESET_BUTTON; i++)
     {
-        float left = 160.0f + i * 118.0f;
-        if (pt.x >= left && pt.x <= left + 106.0f && pt.y >= 108.0f && pt.y <= 136.0f)
+        D2D1_RECT_F rect = TriggerButtonRect(i);
+        if (pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom)
         {
             return i;
         }
@@ -1793,8 +2042,7 @@ int SettingsPage::HitTestPopupAlignMode(POINT pt)
     if (m_categoryIndex != 2) return -1;
     for (int i = 0; i < 4; i++)
     {
-        float left = 160.0f + i * 88.0f;
-        if (pt.x >= left && pt.x <= left + 80.0f && pt.y >= 182.0f && pt.y <= 210.0f)
+        if (PointInRect(PopupAlignRect(i), pt))
             return i;
     }
     return -1;
@@ -1805,8 +2053,8 @@ int SettingsPage::HitTestPopupAutoClose(POINT pt)
     if (m_categoryIndex != 2) return -1;
     if (pt.y >= 256.0f && pt.y <= 284.0f)
     {
-        if (pt.x >= 160.0f && pt.x <= 325.0f) return 0;
-        if (pt.x >= 335.0f && pt.x <= 500.0f) return 1;
+        if (PointInRect(PopupBehaviorRect(0, 256.0f), pt)) return 0;
+        if (PointInRect(PopupBehaviorRect(1, 256.0f), pt)) return 1;
     }
     return -1;
 }
@@ -1816,8 +2064,8 @@ int SettingsPage::HitTestPopupMultiOpenWhenPinned(POINT pt)
     if (m_categoryIndex != 2) return -1;
     if (pt.y >= 296.0f && pt.y <= 324.0f)
     {
-        if (pt.x >= 160.0f && pt.x <= 325.0f) return 0;
-        if (pt.x >= 335.0f && pt.x <= 500.0f) return 1;
+        if (PointInRect(PopupBehaviorRect(0, 296.0f), pt)) return 0;
+        if (PointInRect(PopupBehaviorRect(1, 296.0f), pt)) return 1;
     }
     return -1;
 }
@@ -1827,8 +2075,8 @@ int SettingsPage::HitTestSortMode(POINT pt)
     if (m_categoryIndex != 2) return -1;
     if (pt.y >= 336.0f && pt.y <= 364.0f)
     {
-        if (pt.x >= 160.0f && pt.x <= 325.0f) return 0;
-        if (pt.x >= 335.0f && pt.x <= 500.0f) return 1;
+        if (PointInRect(PopupBehaviorRect(0, 336.0f), pt)) return 0;
+        if (PointInRect(PopupBehaviorRect(1, 336.0f), pt)) return 1;
     }
     return -1;
 }
@@ -1836,11 +2084,12 @@ int SettingsPage::HitTestSortMode(POINT pt)
 bool SettingsPage::HitTestHoverLeaveDelay(POINT pt, int& buttonType)
 {
     if (m_categoryIndex != 2) return false;
-    float ix = 160.0f;
+    D2D1_RECT_F cardRect = TwoColumnRect(0, 386.0f);
+    float ix = cardRect.left;
     float iy = 386.0f;
     float cy = iy + 16.0f;
 
-    if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
+    if (PointInRect(cardRect, pt))
     {
         if (pt.x >= ix + 83 && pt.x <= ix + 103 && pt.y >= cy - 10 && pt.y <= cy + 10)
             buttonType = 1;
@@ -1906,55 +2155,55 @@ int SettingsPage::HitTestWindowMode(POINT pt)
 bool SettingsPage::HitTestOpenConfigFile(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 160 && pt.x <= 325 && pt.y >= 226 && pt.y <= 258);
+    return PointInRect(TwoColumnRect(0, 226.0f), pt);
 }
 
 bool SettingsPage::HitTestOpenLogFile(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 335 && pt.x <= 500 && pt.y >= 226 && pt.y <= 258);
+    return PointInRect(TwoColumnRect(1, 226.0f), pt);
 }
 
 bool SettingsPage::HitTestConfigDirText(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 180 && pt.x <= 480 && pt.y >= 112 && pt.y <= 146);
+    return (pt.x >= CONTENT_LEFT + 20.0f && pt.x <= CONTENT_RIGHT - 20.0f && pt.y >= 112 && pt.y <= 146);
 }
 
 bool SettingsPage::HitTestOpenConfigHistoryDir(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 160 && pt.x <= 325 && pt.y >= 310 && pt.y <= 342);
+    return PointInRect(TwoColumnRect(0, 310.0f), pt);
 }
 
 bool SettingsPage::HitTestCreateConfigBackup(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 160 && pt.x <= 325 && pt.y >= 268 && pt.y <= 300);
+    return PointInRect(TwoColumnRect(0, 268.0f), pt);
 }
 
 bool SettingsPage::HitTestRestoreConfigBackup(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 335 && pt.x <= 500 && pt.y >= 268 && pt.y <= 300);
+    return PointInRect(TwoColumnRect(1, 268.0f), pt);
 }
 
 bool SettingsPage::HitTestClearConfig(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 160 && pt.x <= 325 && pt.y >= 352 && pt.y <= 384);
+    return PointInRect(TwoColumnRect(0, 352.0f), pt);
 }
 
 bool SettingsPage::HitTestClearConfigHistory(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 335 && pt.x <= 500 && pt.y >= 352 && pt.y <= 384);
+    return PointInRect(TwoColumnRect(1, 352.0f), pt);
 }
 
 bool SettingsPage::HitTestImportJson(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return (pt.x >= 335 && pt.x <= 500 && pt.y >= 310 && pt.y <= 342);
+    return PointInRect(TwoColumnRect(1, 310.0f), pt);
 }
 
 bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType)
@@ -1968,11 +2217,12 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
     {
         int col = i % 2;
         int row = i / 2;
-        float ix = 160.0f + col * 175.0f;
+        D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + row * 38.0f);
+        float ix = cardRect.left;
         float iy = 360.0f + row * 38.0f;
         float cy = iy + 16.0f;
 
-        if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
+        if (PointInRect(cardRect, pt))
         {
             settingIdx = activeIndices[i];
             if (pt.x >= ix + 83 && pt.x <= ix + 103 && pt.y >= cy - 10 && pt.y <= cy + 10)
@@ -2002,11 +2252,12 @@ bool SettingsPage::HitTestAnimationToggle(POINT pt)
 bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
 {
     if (m_categoryIndex != 2) return false;
-    float ix = 335.0f;
+    D2D1_RECT_F cardRect = TwoColumnRect(1, 386.0f);
+    float ix = cardRect.left;
     float iy = 386.0f;
     float cy = iy + 16.0f;
 
-    if (pt.x >= ix && pt.x <= ix + 165.0f && pt.y >= iy && pt.y <= iy + 32.0f)
+    if (PointInRect(cardRect, pt))
     {
         if (pt.x >= ix + 83 && pt.x <= ix + 103 && pt.y >= cy - 10 && pt.y <= cy + 10)
         {

@@ -28,9 +28,76 @@ static constexpr UINT_PTR CONFIG_SAVE_TIMER_ID = 101;
 static constexpr UINT_PTR CONFIG_BACKGROUND_STYLE_TIMER_ID = 102;
 static constexpr UINT CONFIG_SAVE_DEBOUNCE_MS = 500;
 static constexpr UINT CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS = 120;
+static constexpr size_t SHORTCUT_HISTORY_LIMIT = 5;
 
 namespace
 {
+    Model::ShortcutInfo ToSnapshotShortcut(const RendShortcutInfo& si)
+    {
+        Model::ShortcutInfo vs;
+        vs.id = si.id;
+        vs.name = si.name;
+        vs.targetPath = si.targetPath;
+        vs.arguments = si.arguments;
+        vs.iconPath = si.iconPath;
+        vs.runAsAdmin = si.runAsAdmin;
+        vs.type = si.type;
+        vs.targetKind = si.targetKind;
+        vs.iconSource = si.iconSource;
+        vs.builtinIconId = si.builtinIconId;
+        vs.iconInvertLight = si.iconInvertLight;
+        vs.iconInvertDark = si.iconInvertDark;
+        return vs;
+    }
+
+    RendShortcutInfo ToRenderShortcut(const Model::ShortcutInfo& vs)
+    {
+        RendShortcutInfo si;
+        si.id = vs.id;
+        si.name = vs.name;
+        si.targetPath = vs.targetPath;
+        si.arguments = vs.arguments;
+        si.iconPath = vs.iconPath;
+        si.runAsAdmin = vs.runAsAdmin;
+        si.type = vs.type;
+        si.targetKind = vs.targetKind;
+        si.iconSource = vs.iconSource;
+        si.builtinIconId = vs.builtinIconId;
+        si.iconInvertLight = vs.iconInvertLight;
+        si.iconInvertDark = vs.iconInvertDark;
+        si.hIcon = ShortcutManager::GetShortcutIcon(si);
+        return si;
+    }
+
+    bool ShortcutEqual(const Model::ShortcutInfo& a, const Model::ShortcutInfo& b)
+    {
+        return a.id == b.id &&
+            a.name == b.name &&
+            a.targetPath == b.targetPath &&
+            a.arguments == b.arguments &&
+            a.iconPath == b.iconPath &&
+            a.runAsAdmin == b.runAsAdmin &&
+            a.type == b.type &&
+            a.targetKind == b.targetKind &&
+            a.iconSource == b.iconSource &&
+            a.builtinIconId == b.builtinIconId &&
+            a.iconInvertLight == b.iconInvertLight &&
+            a.iconInvertDark == b.iconInvertDark;
+    }
+
+    bool ShortcutListEqual(const std::vector<Model::ShortcutInfo>& a, const std::vector<Model::ShortcutInfo>& b)
+    {
+        if (a.size() != b.size())
+            return false;
+
+        for (size_t i = 0; i < a.size(); i++)
+        {
+            if (!ShortcutEqual(a[i], b[i]))
+                return false;
+        }
+        return true;
+    }
+
     std::wstring FormatHistoryTime(unsigned long long fileTimeValue)
     {
         if (fileTimeValue == 0)
@@ -142,6 +209,9 @@ void ConfigWindow::LoadConfig()
             pp.name = vp.name;
             pp.isSyncFolder = vp.isSyncFolder;
             pp.folderPath = vp.folderPath;
+            pp.sceneMode = vp.sceneMode;
+            pp.sceneApps = vp.sceneApps;
+            pp.sceneAvailableApps = vp.sceneAvailableApps;
             for (const auto& vs : vp.shortcuts)
             {
                 RendShortcutInfo si;
@@ -209,6 +279,9 @@ void ConfigWindow::SaveConfig()
             vp.name = pp.name;
             vp.isSyncFolder = pp.isSyncFolder;
             vp.folderPath = pp.folderPath;
+            vp.sceneMode = pp.sceneMode;
+            vp.sceneApps = pp.sceneApps;
+            vp.sceneAvailableApps = pp.sceneAvailableApps;
             for (const auto& si : pp.shortcuts)
             {
                 Model::ShortcutInfo vs;
@@ -234,6 +307,217 @@ void ConfigWindow::SaveConfig()
     {
         ShortcutManager::SaveConfig(m_configDir, m_pages);
     }
+}
+
+ConfigWindow::ShortcutHistorySnapshot ConfigWindow::CaptureShortcutHistorySnapshot() const
+{
+    ShortcutHistorySnapshot snapshot;
+    snapshot.currentCategory = m_currentCategory;
+    for (int pageIndex = 0; pageIndex < (int)m_pages.size(); pageIndex++)
+    {
+        const auto& page = m_pages[pageIndex];
+        if (page.isSyncFolder)
+            continue;
+
+        ShortcutHistoryPageState pageState;
+        pageState.pageIndex = pageIndex;
+        pageState.pageName = page.name;
+        pageState.shortcuts.reserve(page.shortcuts.size());
+        for (const auto& shortcut : page.shortcuts)
+        {
+            pageState.shortcuts.push_back(ToSnapshotShortcut(shortcut));
+        }
+        snapshot.pages.push_back(std::move(pageState));
+    }
+    return snapshot;
+}
+
+bool ConfigWindow::ShortcutHistorySnapshotsEqual(const ShortcutHistorySnapshot& a, const ShortcutHistorySnapshot& b)
+{
+    if (a.currentCategory != b.currentCategory || a.pages.size() != b.pages.size())
+        return false;
+
+    for (size_t i = 0; i < a.pages.size(); i++)
+    {
+        if (a.pages[i].pageIndex != b.pages[i].pageIndex ||
+            a.pages[i].pageName != b.pages[i].pageName ||
+            !ShortcutListEqual(a.pages[i].shortcuts, b.pages[i].shortcuts))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void ConfigWindow::ApplyShortcutHistorySnapshot(const ShortcutHistorySnapshot& snapshot)
+{
+    struct ApplyGuard
+    {
+        bool& flag;
+        explicit ApplyGuard(bool& value) : flag(value) { flag = true; }
+        ~ApplyGuard() { flag = false; }
+    } guard(m_applyingShortcutHistory);
+
+    m_shortcutPage.SetPageData(nullptr);
+
+    std::vector<bool> usedPages(m_pages.size(), false);
+    for (const auto& pageState : snapshot.pages)
+    {
+        int pageIndex = ResolveShortcutHistoryPageIndex(pageState, usedPages);
+        if (pageIndex >= 0 && pageIndex < (int)m_pages.size())
+        {
+            std::vector<Model::ShortcutInfo> currentShortcuts;
+            currentShortcuts.reserve(m_pages[pageIndex].shortcuts.size());
+            for (const auto& shortcut : m_pages[pageIndex].shortcuts)
+            {
+                currentShortcuts.push_back(ToSnapshotShortcut(shortcut));
+            }
+            if (ShortcutListEqual(currentShortcuts, pageState.shortcuts))
+            {
+                continue;
+            }
+
+            RestoreShortcutHistoryPage(m_pages[pageIndex], pageState.shortcuts);
+        }
+    }
+
+    m_currentCategory = snapshot.currentCategory;
+    if (m_currentCategory >= (int)m_pages.size())
+        m_currentCategory = (int)m_pages.size() - 1;
+    if (m_currentCategory < 0 && !m_pages.empty())
+        m_currentCategory = 0;
+
+    m_categoryList.Reset();
+    if (!m_pages.empty())
+        m_shortcutPage.SetPageData(&m_pages[m_currentCategory]);
+    else
+        m_shortcutPage.SetPageData(nullptr);
+
+    NotifyConfigChanged();
+    InvalidateRect(GetHWND(), nullptr, FALSE);
+}
+
+int ConfigWindow::ResolveShortcutHistoryPageIndex(const ShortcutHistoryPageState& pageState, std::vector<bool>& usedPages) const
+{
+    if (pageState.pageIndex >= 0 && pageState.pageIndex < (int)m_pages.size() &&
+        !usedPages[pageState.pageIndex] &&
+        !m_pages[pageState.pageIndex].isSyncFolder &&
+        m_pages[pageState.pageIndex].name == pageState.pageName)
+    {
+        usedPages[pageState.pageIndex] = true;
+        return pageState.pageIndex;
+    }
+
+    for (int i = 0; i < (int)m_pages.size(); i++)
+    {
+        if (!usedPages[i] && !m_pages[i].isSyncFolder && m_pages[i].name == pageState.pageName)
+        {
+            usedPages[i] = true;
+            return i;
+        }
+    }
+
+    if (pageState.pageIndex >= 0 && pageState.pageIndex < (int)m_pages.size() &&
+        !usedPages[pageState.pageIndex] &&
+        !m_pages[pageState.pageIndex].isSyncFolder)
+    {
+        usedPages[pageState.pageIndex] = true;
+        return pageState.pageIndex;
+    }
+
+    return -1;
+}
+
+void ConfigWindow::RestoreShortcutHistoryPage(RendPopupPage& page, const std::vector<Model::ShortcutInfo>& shortcuts)
+{
+    for (auto* bmp : page.iconBitmaps)
+    {
+        if (bmp) bmp->Release();
+    }
+    page.iconBitmaps.clear();
+    ShortcutManager::FreeShortcuts(page.shortcuts);
+
+    page.shortcuts.reserve(shortcuts.size());
+    for (const auto& shortcut : shortcuts)
+    {
+        page.shortcuts.push_back(ToRenderShortcut(shortcut));
+    }
+}
+
+void ConfigWindow::RecordShortcutHistoryCheckpoint()
+{
+    if (m_applyingShortcutHistory || m_showSettings)
+        return;
+
+    ShortcutHistorySnapshot snapshot = CaptureShortcutHistorySnapshot();
+    if (!m_undoShortcutHistory.empty() &&
+        ShortcutHistorySnapshotsEqual(m_undoShortcutHistory.back(), snapshot))
+    {
+        return;
+    }
+
+    m_undoShortcutHistory.push_back(std::move(snapshot));
+    while (m_undoShortcutHistory.size() > SHORTCUT_HISTORY_LIMIT)
+    {
+        m_undoShortcutHistory.pop_front();
+    }
+    m_redoShortcutHistory.clear();
+}
+
+bool ConfigWindow::UndoShortcutHistory()
+{
+    if (m_applyingShortcutHistory)
+        return false;
+
+    ShortcutHistorySnapshot current = CaptureShortcutHistorySnapshot();
+    while (!m_undoShortcutHistory.empty() &&
+        ShortcutHistorySnapshotsEqual(m_undoShortcutHistory.back(), current))
+    {
+        m_undoShortcutHistory.pop_back();
+    }
+
+    if (m_undoShortcutHistory.empty())
+        return false;
+
+    ShortcutHistorySnapshot previous = std::move(m_undoShortcutHistory.back());
+    m_undoShortcutHistory.pop_back();
+
+    m_redoShortcutHistory.push_back(std::move(current));
+    while (m_redoShortcutHistory.size() > SHORTCUT_HISTORY_LIMIT)
+    {
+        m_redoShortcutHistory.pop_front();
+    }
+
+    ApplyShortcutHistorySnapshot(previous);
+    return true;
+}
+
+bool ConfigWindow::RedoShortcutHistory()
+{
+    if (m_applyingShortcutHistory)
+        return false;
+
+    ShortcutHistorySnapshot current = CaptureShortcutHistorySnapshot();
+    while (!m_redoShortcutHistory.empty() &&
+        ShortcutHistorySnapshotsEqual(m_redoShortcutHistory.back(), current))
+    {
+        m_redoShortcutHistory.pop_back();
+    }
+
+    if (m_redoShortcutHistory.empty())
+        return false;
+
+    ShortcutHistorySnapshot next = std::move(m_redoShortcutHistory.back());
+    m_redoShortcutHistory.pop_back();
+
+    m_undoShortcutHistory.push_back(std::move(current));
+    while (m_undoShortcutHistory.size() > SHORTCUT_HISTORY_LIMIT)
+    {
+        m_undoShortcutHistory.pop_front();
+    }
+
+    ApplyShortcutHistorySnapshot(next);
+    return true;
 }
 
 void ConfigWindow::Show(HWND parent, AppContext* ctx)
@@ -1814,9 +2098,10 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         pt.x = (int)(pt.x / scale);
         pt.y = (int)(pt.y / scale);
         bool repaint = false;
+        int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+        m_categoryList.OnMouseWheel((short)zDelta, pt, repaint);
         if (m_currentPage)
         {
-            int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
             m_currentPage->OnMouseWheel((short)zDelta, pt, repaint);
         }
         if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
@@ -1880,8 +2165,30 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         break;
 
     case WM_KEYDOWN:
+    {
+        bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        if (!m_showSettings && ctrlPressed && wParam == 'Z')
+        {
+            bool changed = shiftPressed ? RedoShortcutHistory() : UndoShortcutHistory();
+            if (changed)
+            {
+                StartAnimation();
+            }
+            return 0;
+        }
+        if (!m_showSettings && ctrlPressed && wParam == 'Y')
+        {
+            bool changed = RedoShortcutHistory();
+            if (changed)
+            {
+                StartAnimation();
+            }
+            return 0;
+        }
         if (wParam == VK_ESCAPE) Release();
         return 0;
+    }
 
     case WM_DESTROY:
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);

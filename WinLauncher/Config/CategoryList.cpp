@@ -3,6 +3,7 @@
 #include "ConfirmWindow.h"
 #include "PromptWindow.h"
 #include "ContextMenu.h"
+#include "SceneSettingsWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../GlassWindow.h"
@@ -14,12 +15,36 @@
 #include <cmath>
 #include <algorithm>
 
+namespace
+{
+    constexpr float kCategoryLeft = 10.0f;
+    constexpr float kCategoryRight = 140.0f;
+    constexpr float kCategoryTop = 72.0f;
+    constexpr float kCategoryItemHeight = 32.0f;
+    constexpr float kCategoryStep = 40.0f;
+    constexpr float kCategoryBottomPadding = 10.0f;
+    constexpr float kAddCategoryReservedHeight = 52.0f;
+    constexpr int kDragStartThresholdPx = 4;
+
+    struct CopiedSceneSettings
+    {
+        bool hasData = false;
+        Model::PageSceneMode mode = Model::PageSceneMode::Whitelist;
+        std::vector<std::wstring> selectedApps;
+        std::vector<std::wstring> availableApps;
+    };
+
+    CopiedSceneSettings g_copiedSceneSettings;
+}
+
 CategoryList::CategoryList(IConfigWindow* owner)
     : m_owner(owner)
     , m_hoveredCategory(-1)
     , m_hoveredAddCategory(false)
     , m_trackMouse(false)
     , m_dragIndex(-1)
+    , m_pendingDragIndex(-1)
+    , m_pendingDragStartPt({ 0, 0 })
     , m_dragCurrentInsertIndex(-1)
     , m_grabOffsetY(0.0f)
     , m_animating(false)
@@ -28,6 +53,9 @@ CategoryList::CategoryList(IConfigWindow* owner)
     , m_selectAnimStartY(-1.0f)
     , m_selectAnimElapsed(0.0f)
     , m_isAnimatingSelect(false)
+    , m_scrollY(0.0f)
+    , m_targetScrollY(0.0f)
+    , m_scrollVelocity(0.0f)
 {
 }
 
@@ -39,6 +67,8 @@ void CategoryList::Reset()
 {
     m_categoryStates.clear();
     m_dragIndex = -1;
+    m_pendingDragIndex = -1;
+    m_pendingDragStartPt = { 0, 0 };
     m_dragCurrentInsertIndex = -1;
     m_animating = false;
     m_selectAnimCurrentY = -1.0f;
@@ -46,6 +76,9 @@ void CategoryList::Reset()
     m_selectAnimStartY = -1.0f;
     m_selectAnimElapsed = 0.0f;
     m_isAnimatingSelect = false;
+    m_scrollY = 0.0f;
+    m_targetScrollY = 0.0f;
+    m_scrollVelocity = 0.0f;
 }
 
 static float EaseOutCubicLocal(float t)
@@ -78,6 +111,7 @@ void CategoryList::EnsureCategoryStates()
     if (m_owner->IsSettingsMode())
     {
         m_categoryStates.clear();
+        ClampScroll();
         return;
     }
     size_t count = m_owner->GetCategoryCount();
@@ -87,16 +121,117 @@ void CategoryList::EnsureCategoryStates()
         m_categoryStates.resize(count);
         for (size_t i = oldSize; i < count; i++)
         {
-            float targetY = (float)(72 + i * 40);
+            float targetY = kCategoryTop + (float)i * kCategoryStep;
             m_categoryStates[i].currentY = targetY;
             m_categoryStates[i].targetY = targetY;
         }
+    }
+    ClampScroll();
+}
+
+float CategoryList::GetListViewportBottom() const
+{
+    RECT cr{};
+    GetClientRect(m_owner->GetWindowHWND(), &cr);
+    float scale = GlassWindow::GetWindowScale(m_owner->GetWindowHWND());
+    float h = (scale > 0.0f) ? (float)cr.bottom / scale : (float)cr.bottom;
+    float reserved = m_owner->IsSettingsMode() ? kCategoryBottomPadding : kAddCategoryReservedHeight;
+    return (std::max)(kCategoryTop, h - reserved);
+}
+
+float CategoryList::GetMaxScrollY() const
+{
+    size_t count = m_owner->GetCategoryCount();
+    if (count == 0) return 0.0f;
+
+    float viewportH = GetListViewportBottom() - kCategoryTop;
+    if (viewportH <= 0.0f) return 0.0f;
+
+    float contentH = ((float)count - 1.0f) * kCategoryStep + kCategoryItemHeight;
+    return (std::max)(0.0f, contentH - viewportH);
+}
+
+void CategoryList::ClampScroll()
+{
+    float maxScrollY = GetMaxScrollY();
+    m_targetScrollY = (std::max)(0.0f, (std::min)(m_targetScrollY, maxScrollY));
+    m_scrollY = (std::max)(0.0f, (std::min)(m_scrollY, maxScrollY));
+    if (m_scrollY == 0.0f || m_scrollY == maxScrollY)
+    {
+        m_scrollVelocity = 0.0f;
+    }
+}
+
+bool CategoryList::HitTestListViewport(POINT pt) const
+{
+    return pt.x >= 0 && pt.x < 150 &&
+        pt.y >= (int)kCategoryTop &&
+        pt.y <= (int)GetListViewportBottom();
+}
+
+void CategoryList::EnsureCurrentCategoryVisible()
+{
+    int currentCategory = m_owner->GetCurrentCategoryIndex();
+    if (currentCategory < 0 || currentCategory >= (int)m_owner->GetCategoryCount())
+        return;
+
+    float viewportBottom = GetListViewportBottom();
+    float maxScrollY = GetMaxScrollY();
+    float itemTop = kCategoryTop + (float)currentCategory * kCategoryStep;
+    float itemBottom = itemTop + kCategoryItemHeight;
+
+    if (itemTop - m_targetScrollY < kCategoryTop)
+    {
+        m_targetScrollY = itemTop - kCategoryTop;
+    }
+    else if (itemBottom - m_targetScrollY > viewportBottom)
+    {
+        m_targetScrollY = itemBottom - viewportBottom;
+    }
+
+    m_targetScrollY = (std::max)(0.0f, (std::min)(m_targetScrollY, maxScrollY));
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollY = m_targetScrollY;
+        m_scrollVelocity = 0.0f;
+    }
+    else if (std::abs(m_targetScrollY - m_scrollY) > 0.1f)
+    {
+        m_animating = true;
+        m_owner->StartAnimation();
+    }
+}
+
+void CategoryList::MoveSelectionToCategory(int index)
+{
+    if (index < 0 || index >= (int)m_owner->GetCategoryCount())
+        return;
+
+    EnsureCategoryStates();
+
+    float selectedY = kCategoryTop + (float)index * kCategoryStep - m_scrollY;
+    if (!m_owner->IsSettingsMode() && index < (int)m_categoryStates.size())
+    {
+        selectedY = m_categoryStates[index].targetY - m_scrollY;
+    }
+
+    if (UIStyle::Animation::IsEnabled() && m_selectAnimCurrentY >= 0.0f)
+    {
+        BeginSelectAnimation(selectedY);
+        m_animating = true;
+        m_owner->StartAnimation();
+    }
+    else
+    {
+        m_selectAnimCurrentY = selectedY;
+        m_selectAnimTargetY = selectedY;
+        m_isAnimatingSelect = false;
     }
 }
 
 void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, bool isActive, bool isHovered, bool isDragging, const D2D1_COLOR_F& baseClr, IDWriteTextFormat* tfLeft)
 {
-    D2D1_RECT_F itemRect = D2D1::RectF(10, cy, 140, cy + 32);
+    D2D1_RECT_F itemRect = D2D1::RectF(kCategoryLeft, cy, kCategoryRight, cy + kCategoryItemHeight);
     D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 6.0f, 6.0f);
 
     bool isShortcutDragTarget = isHovered && m_owner->IsDraggingShortcut();
@@ -109,8 +244,8 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
 
     if (isDragging)
     {
-        alphaBg = 0.18f;
-        alphaBorder = 0.36f;
+        alphaBg = 0.20f;
+        alphaBorder = 0.42f;
     }
     else if (isShortcutDragTarget)
     {
@@ -151,7 +286,8 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
     if (borderBrush)
     {
         float strokeWidth = UIStyle::Metrics::ControlStroke();
-        if (isShortcutDragTarget) strokeWidth = UIStyle::Metrics::EmphasisStroke();
+        if (isDragging) strokeWidth = UIStyle::Metrics::EmphasisStroke();
+        else if (isShortcutDragTarget) strokeWidth = UIStyle::Metrics::EmphasisStroke();
         else if (drawActiveStyle) strokeWidth = UIStyle::Metrics::HairlineStroke();
         rt->DrawRoundedRectangle(roundedItem, borderBrush, strokeWidth);
         borderBrush->Release();
@@ -181,7 +317,7 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
         {
             float dist = std::abs(cy - m_selectAnimCurrentY);
             float factor = 0.0f;
-            if (dist < 40.0f) factor = 1.0f - dist / 40.0f;
+            if (dist < kCategoryStep) factor = 1.0f - dist / kCategoryStep;
 
             textLeft = 18.0f + 4.0f * factor;
             textClr = UIStyle::LerpColor(
@@ -202,14 +338,34 @@ void CategoryList::DrawCategoryItem(ID2D1HwndRenderTarget* rt, int i, float cy, 
         {
             std::wstring name = m_owner->GetCategoryName(i);
             rt->DrawTextW(name.c_str(), (UINT32)name.size(), tfLeft,
-                D2D1::RectF(textLeft, cy, 115, cy + 32), tb);
+                D2D1::RectF(textLeft, cy, 115, cy + kCategoryItemHeight), tb);
             tb->Release();
+        }
+    }
+
+    RendPopupPage* page = m_owner->GetPageByIndex(i);
+    if (page && !page->sceneApps.empty())
+    {
+        ID2D1SolidColorBrush* sceneBrush = nullptr;
+        D2D1_COLOR_F dotClr = UIStyle::ThemeColor::Accent().d2d;
+        dotClr.a = 0.92f;
+        rt->CreateSolidColorBrush(dotClr, &sceneBrush);
+        if (sceneBrush)
+        {
+            D2D1_ELLIPSE dot = D2D1::Ellipse(
+                D2D1::Point2F(kCategoryRight - 12.0f, cy + kCategoryItemHeight * 0.5f),
+                2.4f,
+                2.4f);
+            rt->FillEllipse(dot, sceneBrush);
+            sceneBrush->Release();
         }
     }
 }
 
 void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 {
+    ClampScroll();
+
     // Draw Category List Title
     IDWriteTextFormat* tfTitle = m_owner->GetTitleFont();
     if (tfTitle)
@@ -218,7 +374,7 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &textBrush);
         if (textBrush)
         {
-            rt->DrawTextW(L"分类列表", 4, tfTitle, D2D1::RectF(10, 42, 140, 62), textBrush);
+            rt->DrawTextW(L"分类列表", 4, tfTitle, D2D1::RectF(kCategoryLeft, 42, kCategoryRight, 62), textBrush);
             textBrush->Release();
         }
     }
@@ -231,11 +387,18 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
     EnsureCategoryStates();
 
+    float viewportBottom = GetListViewportBottom();
+    rt->PushAxisAlignedClip(D2D1::RectF(0.0f, kCategoryTop, 150.0f, viewportBottom), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
     // Draw sliding active background and indicator if animations are enabled
     if (UIStyle::Animation::IsEnabled() && m_selectAnimCurrentY >= 0.0f)
     {
         float selectionY = std::roundf(m_selectAnimCurrentY);
-        D2D1_RECT_F itemRect = D2D1::RectF(10, selectionY, 140, selectionY + 32);
+        if (m_dragIndex >= 0 && m_dragIndex == currentCategory && m_dragIndex < (int)m_categoryStates.size())
+        {
+            selectionY = std::roundf(m_categoryStates[m_dragIndex].currentY - m_scrollY);
+        }
+        D2D1_RECT_F itemRect = D2D1::RectF(kCategoryLeft, selectionY, kCategoryRight, selectionY + kCategoryItemHeight);
         D2D1_ROUNDED_RECT roundedItem = D2D1::RoundedRect(itemRect, 6.0f, 6.0f);
 
         ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -273,7 +436,7 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     {
         if (m_owner->IsSettingsMode())
         {
-            float cy = (float)(72 + i * 40);
+            float cy = kCategoryTop + (float)i * kCategoryStep - m_scrollY;
             bool isActive = (i == currentCategory);
             bool isHovered = (i == m_hoveredCategory);
             DrawCategoryItem(rt, i, cy, isActive, isHovered, false, baseClr, tfLeft);
@@ -283,7 +446,7 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             if (i == m_dragIndex) continue;
             if (i >= (int)m_categoryStates.size()) continue;
 
-            float cy = std::roundf(m_categoryStates[i].currentY);
+            float cy = std::roundf(m_categoryStates[i].currentY - m_scrollY);
             bool isActive = (i == currentCategory);
             bool isHovered = (i == m_hoveredCategory) && (m_dragIndex == -1);
             DrawCategoryItem(rt, i, cy, isActive, isHovered, false, baseClr, tfLeft);
@@ -293,15 +456,17 @@ void CategoryList::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     // Draw Dragged Category on top
     if (m_dragIndex >= 0 && m_dragIndex < (int)count && m_dragIndex < (int)m_categoryStates.size())
     {
-        float cy = std::roundf(m_categoryStates[m_dragIndex].currentY);
+        float cy = std::roundf(m_categoryStates[m_dragIndex].currentY - m_scrollY);
         bool isActive = (m_dragIndex == currentCategory);
         DrawCategoryItem(rt, m_dragIndex, cy, isActive, false, true, baseClr, tfLeft);
     }
 
+    rt->PopAxisAlignedClip();
+
     // "+ 新建分类" Button
     if (!m_owner->IsSettingsMode())
     {
-        D2D1_RECT_F addCatRect = D2D1::RectF(10, rect.bottom - 42.0f, 140, rect.bottom - 10.0f);
+        D2D1_RECT_F addCatRect = D2D1::RectF(kCategoryLeft, rect.bottom - 42.0f, kCategoryRight, rect.bottom - kCategoryBottomPadding);
         D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addCatRect, 6.0f, 6.0f);
 
         float alphaBg = m_hoveredAddCategory ? 0.08f : 0.018f;
@@ -348,8 +513,31 @@ void CategoryList::OnMouseMove(POINT pt, bool& repaint)
     if (m_dragIndex >= 0)
     {
         UpdateDragAndSortState(pt);
+        m_animating = true;
+        m_owner->StartAnimation();
         repaint = true;
         return;
+    }
+
+    if (m_pendingDragIndex >= 0)
+    {
+        int dx = pt.x - m_pendingDragStartPt.x;
+        int dy = pt.y - m_pendingDragStartPt.y;
+        if (dx * dx + dy * dy >= kDragStartThresholdPx * kDragStartThresholdPx)
+        {
+            m_dragIndex = m_pendingDragIndex;
+            m_dragCurrentInsertIndex = m_pendingDragIndex;
+            EnsureCategoryStates();
+
+            float origY = kCategoryTop + (float)m_dragIndex * kCategoryStep;
+            m_grabOffsetY = (float)m_pendingDragStartPt.y + m_scrollY - origY;
+
+            UpdateDragAndSortState(pt);
+            m_animating = true;
+            m_owner->StartAnimation();
+            repaint = true;
+            return;
+        }
     }
 
     int hc = HitTestCategory(pt);
@@ -379,6 +567,7 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
     {
         m_owner->AddCategory(L"");
         EnsureCategoryStates();
+        EnsureCurrentCategoryVisible();
         repaint = true;
         return;
     }
@@ -387,20 +576,13 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
     if (hc >= 0 && hc < (int)m_owner->GetCategoryCount())
     {
         m_owner->SetCurrentCategoryIndex(hc);
-        m_animating = true;
-        m_owner->StartAnimation();
+        MoveSelectionToCategory(hc);
 
         // Start dragging if not in Settings mode and not the DOCK category
         if (!m_owner->IsSettingsMode() && m_owner->GetCategoryName(hc) != L"DOCK")
         {
-            m_dragIndex = hc;
-            m_dragCurrentInsertIndex = hc;
-
-            EnsureCategoryStates();
-
-            float origY = (float)(72 + hc * 40);
-            m_grabOffsetY = pt.y - origY;
-
+            m_pendingDragIndex = hc;
+            m_pendingDragStartPt = pt;
             SetCapture(hwnd);
         }
 
@@ -410,6 +592,14 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
 
 void CategoryList::OnLButtonUp(POINT pt, bool& repaint)
 {
+    if (m_pendingDragIndex >= 0 && m_dragIndex < 0)
+    {
+        ReleaseCapture();
+        m_pendingDragIndex = -1;
+        m_pendingDragStartPt = { 0, 0 };
+        return;
+    }
+
     if (m_dragIndex >= 0)
     {
         ReleaseCapture();
@@ -432,11 +622,13 @@ void CategoryList::OnLButtonUp(POINT pt, bool& repaint)
         {
             if (i < m_categoryStates.size())
             {
-                m_categoryStates[i].targetY = (float)(72 + i * 40);
+                m_categoryStates[i].targetY = kCategoryTop + (float)i * kCategoryStep;
             }
         }
 
         m_dragIndex = -1;
+        m_pendingDragIndex = -1;
+        m_pendingDragStartPt = { 0, 0 };
         m_dragCurrentInsertIndex = -1;
 
         m_animating = true;
@@ -444,6 +636,37 @@ void CategoryList::OnLButtonUp(POINT pt, bool& repaint)
 
         repaint = true;
     }
+}
+
+void CategoryList::OnMouseWheel(short zDelta, POINT pt, bool& repaint)
+{
+    if (!HitTestListViewport(pt))
+        return;
+
+    ClampScroll();
+    float maxScrollY = GetMaxScrollY();
+    if (maxScrollY <= 0.0f)
+        return;
+
+    float oldTarget = m_targetScrollY;
+    m_targetScrollY -= (zDelta / 120.0f) * kCategoryStep;
+    m_targetScrollY = (std::max)(0.0f, (std::min)(m_targetScrollY, maxScrollY));
+
+    if (std::abs(m_targetScrollY - oldTarget) <= 0.1f)
+        return;
+
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollY = m_targetScrollY;
+        m_scrollVelocity = 0.0f;
+    }
+    else
+    {
+        m_animating = true;
+        m_owner->StartAnimation();
+    }
+
+    repaint = true;
 }
 
 static std::wstring ChooseFolder(HWND owner)
@@ -490,8 +713,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
     {
         // Select category on right click
         m_owner->SetCurrentCategoryIndex(hc);
-        m_animating = true;
-        m_owner->StartAnimation();
+        MoveSelectionToCategory(hc);
         repaint = true;
 
         HWND hwnd = m_owner->GetWindowHWND();
@@ -515,9 +737,10 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
                 {
                     if (i < m_categoryStates.size())
                     {
-                        m_categoryStates[i].targetY = (float)(72 + i * 40);
+                        m_categoryStates[i].targetY = kCategoryTop + (float)i * kCategoryStep;
                     }
                 }
+                ClampScroll();
 
                 m_animating = true;
                 m_owner->StartAnimation();
@@ -532,6 +755,45 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
             if (PromptWindow::Show(hwnd, L"重命名分类", L"输入新分类的名称:", name, name.c_str(), m_owner->GetAppContext()))
             {
                 m_owner->RenameCategory(hc, name);
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        } });
+
+        menuItems.push_back({ L"复制场景", [this, hc]() {
+            RendPopupPage* p = m_owner->GetPageByIndex(hc);
+            if (!p)
+                return;
+
+            g_copiedSceneSettings.hasData = true;
+            g_copiedSceneSettings.mode = p->sceneMode;
+            g_copiedSceneSettings.selectedApps = p->sceneApps;
+            g_copiedSceneSettings.availableApps = p->sceneAvailableApps;
+        } });
+
+        menuItems.push_back({ L"粘贴场景", [this, hc]() {
+            if (!g_copiedSceneSettings.hasData)
+                return;
+
+            HWND hwnd = m_owner->GetWindowHWND();
+            RendPopupPage* p = m_owner->GetPageByIndex(hc);
+            if (!p)
+                return;
+
+            p->sceneMode = g_copiedSceneSettings.mode;
+            p->sceneApps = g_copiedSceneSettings.selectedApps;
+            p->sceneAvailableApps = g_copiedSceneSettings.availableApps;
+            m_owner->NotifyConfigChanged();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }, !g_copiedSceneSettings.hasData });
+
+        menuItems.push_back({ L"场景设置", [this, hc]() {
+            HWND hwnd = m_owner->GetWindowHWND();
+            RendPopupPage* p = m_owner->GetPageByIndex(hc);
+            if (p && SceneSettingsWindow::Show(hwnd, p, m_owner->GetAppContext(), [this, hwnd]() {
+                m_owner->NotifyConfigChanged();
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }))
+            {
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
         } });
@@ -600,11 +862,13 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         float targetActiveY = 0.0f;
         if (m_owner->IsSettingsMode())
         {
-            targetActiveY = (float)(72 + currentCategory * 40);
+            targetActiveY = kCategoryTop + (float)currentCategory * kCategoryStep - m_scrollY;
         }
         else if (currentCategory < (int)m_categoryStates.size())
         {
-            targetActiveY = m_categoryStates[currentCategory].currentY;
+            targetActiveY = (m_dragIndex == currentCategory)
+                ? m_categoryStates[currentCategory].currentY - m_scrollY
+                : m_categoryStates[currentCategory].targetY - m_scrollY;
         }
 
         if (m_selectAnimCurrentY < 0.0f)
@@ -615,8 +879,34 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         }
         else
         {
-            BeginSelectAnimation(targetActiveY);
+            bool scrolling = std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f;
+            bool draggingSelection = (m_dragIndex >= 0 && m_dragIndex == currentCategory);
+            if (scrolling || draggingSelection)
+            {
+                m_selectAnimCurrentY = targetActiveY;
+                m_selectAnimTargetY = targetActiveY;
+                m_isAnimatingSelect = false;
+            }
+            else if (std::abs(targetActiveY - m_selectAnimTargetY) > 0.1f)
+            {
+                BeginSelectAnimation(targetActiveY);
+            }
         }
+    }
+
+    if (!UIStyle::Animation::IsEnabled())
+    {
+        m_scrollY = m_targetScrollY;
+        m_scrollVelocity = 0.0f;
+        m_selectAnimCurrentY = m_selectAnimTargetY;
+        m_isAnimatingSelect = false;
+        for (auto& state : m_categoryStates)
+        {
+            state.currentY = state.targetY;
+        }
+        m_animating = (m_dragIndex >= 0);
+        repaint = true;
+        return;
     }
 
     if (m_isAnimatingSelect)
@@ -624,7 +914,7 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         float dy = m_selectAnimTargetY - m_selectAnimCurrentY;
         if (std::abs(dy) > 0.05f)
         {
-            m_selectAnimCurrentY += dy * (1.0f - std::exp(-22.0f * dt));
+            m_selectAnimCurrentY += dy * (1.0f - std::exp(-20.0f * dt));
             selectMoving = true;
             repaint = true;
         }
@@ -635,20 +925,28 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         }
     }
 
-    if (!m_animating && !selectMoving) return;
-
-    HWND hWnd = m_owner->GetWindowHWND();
-
-    if (m_dragIndex >= 0)
+    bool scrollMoving = false;
+    float maxScrollY = GetMaxScrollY();
+    m_targetScrollY = (std::max)(0.0f, (std::min)(m_targetScrollY, maxScrollY));
+    float scrollError = m_targetScrollY - m_scrollY;
+    if (std::abs(scrollError) > 0.05f || std::abs(m_scrollVelocity) > 1.0f)
     {
-        POINT mousePt;
-        GetCursorPos(&mousePt);
-        ScreenToClient(hWnd, &mousePt);
-        float scale = GlassWindow::GetWindowScale(hWnd);
-        mousePt.x = (int)(mousePt.x / scale);
-        mousePt.y = (int)(mousePt.y / scale);
-        UpdateDragAndSortState(mousePt);
+        const float stiffness = 70.0f;
+        const float damping = 16.0f;
+        float force = scrollError * stiffness - m_scrollVelocity * damping;
+        m_scrollVelocity += force * dt;
+        m_scrollY += m_scrollVelocity * dt;
+        m_scrollY = (std::max)(0.0f, (std::min)(m_scrollY, maxScrollY));
+        scrollMoving = true;
+        repaint = true;
     }
+    else
+    {
+        m_scrollY = m_targetScrollY;
+        m_scrollVelocity = 0.0f;
+    }
+
+    if (!m_animating && !selectMoving && !scrollMoving) return;
 
     // Smooth interpolation
     bool anyCategoryMoving = false;
@@ -666,9 +964,7 @@ void CategoryList::UpdateAnimation(float dt, bool& repaint)
         }
     }
 
-    bool dragging = (m_dragIndex >= 0);
-
-    if (dragging || anyCategoryMoving || selectMoving)
+    if (anyCategoryMoving || selectMoving || scrollMoving)
     {
         // Keep animating, trigger repaint
     }
@@ -687,12 +983,12 @@ void CategoryList::UpdateDragAndSortState(POINT pt)
     size_t count = m_owner->GetCategoryCount();
 
     // 1. Follow mouse Y with grab offset
-    float mouseY = (float)pt.y;
+    float mouseY = (float)pt.y + m_scrollY;
     float leaderCurrentY = mouseY - m_grabOffsetY;
 
     // Capping boundary
-    float minDragY = 92.0f;
-    float maxDragY = 72.0f + (count - 1) * 40.0f + 20.0f;
+    float minDragY = kCategoryTop + 20.0f;
+    float maxDragY = kCategoryTop + ((float)count - 1.0f) * kCategoryStep + 20.0f;
     if (leaderCurrentY < minDragY) leaderCurrentY = minDragY;
     if (leaderCurrentY > maxDragY) leaderCurrentY = maxDragY;
 
@@ -700,16 +996,23 @@ void CategoryList::UpdateDragAndSortState(POINT pt)
     {
         m_categoryStates[m_dragIndex].currentY = leaderCurrentY;
         m_categoryStates[m_dragIndex].targetY = leaderCurrentY;
+        if (m_dragIndex == m_owner->GetCurrentCategoryIndex())
+        {
+            float selectionY = leaderCurrentY - m_scrollY;
+            m_selectAnimCurrentY = selectionY;
+            m_selectAnimTargetY = selectionY;
+            m_isAnimatingSelect = false;
+        }
     }
 
     // 2. Find closest slot (DOCK is slot 0, and is fixed, so slots start at 1)
-    float centerY = leaderCurrentY + 16.0f;
+    float centerY = leaderCurrentY + kCategoryItemHeight * 0.5f;
     int closestSlot = m_dragCurrentInsertIndex;
     float minDistSq = -1.0f;
 
     for (int j = 1; j < (int)count; j++)
     {
-        float slotY = (float)(72 + j * 40 + 16);
+        float slotY = kCategoryTop + (float)j * kCategoryStep + kCategoryItemHeight * 0.5f;
         float dy = centerY - slotY;
         float distSq = dy * dy;
 
@@ -748,18 +1051,19 @@ void CategoryList::UpdateDragAndSortState(POINT pt)
             }
         }
 
-        m_categoryStates[i].targetY = (float)(72 + targetSlot * 40);
+        m_categoryStates[i].targetY = kCategoryTop + (float)targetSlot * kCategoryStep;
     }
 }
 
 int CategoryList::HitTestCategory(POINT pt)
 {
-    if (pt.x < 10 || pt.x > 140 || pt.y < 72) return -1;
+    if (pt.x < (int)kCategoryLeft || pt.x > (int)kCategoryRight || !HitTestListViewport(pt)) return -1;
+    float contentY = (float)pt.y + m_scrollY;
     size_t count = m_owner->GetCategoryCount();
     for (int i = 0; i < (int)count; i++)
     {
-        int y = 72 + i * 40;
-        if (pt.y >= y && pt.y <= y + 32)
+        float y = kCategoryTop + (float)i * kCategoryStep;
+        if (contentY >= y && contentY <= y + kCategoryItemHeight)
             return i;
     }
     return -1;
@@ -770,5 +1074,5 @@ bool CategoryList::HitTestAddCategory(POINT pt)
     RECT cr; GetClientRect(m_owner->GetWindowHWND(), &cr);
     float scale = GlassWindow::GetWindowScale(m_owner->GetWindowHWND());
     float h = (float)cr.bottom / scale;
-    return (pt.x >= 10 && pt.x <= 140 && pt.y >= h - 42.0f && pt.y <= h - 10.0f);
+    return (pt.x >= (int)kCategoryLeft && pt.x <= (int)kCategoryRight && pt.y >= h - 42.0f && pt.y <= h - kCategoryBottomPadding);
 }

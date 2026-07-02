@@ -13,6 +13,7 @@ public:
     virtual ~IConfigWindow() = default;
 
     virtual void NotifyConfigChanged(bool onlyBackgroundStyle = false) = 0;
+    virtual void RecordShortcutHistoryCheckpoint() = 0;
     virtual HWND GetWindowHWND() = 0;
     virtual std::wstring GetConfigDir() = 0;
     virtual std::wstring GetConfigFilePath() = 0;

@@ -17,7 +17,7 @@ public:
         bool disabled = false;
     };
 
-    static void Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx = nullptr, float minWidth = 0.0f);
+    static void Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx = nullptr, float minWidth = 0.0f, bool fixedWidth = false, float fontSize = 12.0f);
     static void Hide();
     static bool IsVisible();
 
@@ -28,7 +28,7 @@ protected:
     virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform) override;
 
 private:
-    DropDownMenu(AppContext* ctx, const std::vector<Item>& items);
+    DropDownMenu(AppContext* ctx, const std::vector<Item>& items, float fontSize);
     virtual ~DropDownMenu() override;
 
     int HitTest(POINT pt);
@@ -39,5 +39,6 @@ private:
 
     std::vector<Item> m_items;
     int m_hovered;
+    float m_fontSize;
     ComPtr<IDWriteTextFormat> m_tfMenu;
 };

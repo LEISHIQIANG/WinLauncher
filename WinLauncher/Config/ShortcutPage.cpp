@@ -110,6 +110,7 @@ void ShortcutPage::ShowAddShortcutDialog()
             sc.iconSource      = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
             sc.hIcon           = ShortcutManager::GetShortcutIcon(sc);
 
+            m_owner->RecordShortcutHistoryCheckpoint();
             m_pageData->shortcuts.push_back(sc);
             ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
             m_pageData->iconBitmaps.push_back(bmp);
@@ -139,6 +140,7 @@ void ShortcutPage::ShowAddHotkeyDialog()
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
+        m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
@@ -167,6 +169,7 @@ void ShortcutPage::ShowAddUrlDialog()
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
+        m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
@@ -199,6 +202,7 @@ void ShortcutPage::ShowAddCommandDialog()
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
+        m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
@@ -227,6 +231,7 @@ void ShortcutPage::ShowAddMacroDialog()
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
+        m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
@@ -255,6 +260,7 @@ void ShortcutPage::ShowAddBatchDialog()
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
         sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
 
+        m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
@@ -271,6 +277,7 @@ void ShortcutPage::ShowBuiltinIconDialog()
     std::vector<RendShortcutInfo> results;
     if (BuiltinIconDialog::Show(hWnd, results, m_owner->GetAppContext()))
     {
+        m_owner->RecordShortcutHistoryCheckpoint();
         for (auto& sc : results)
         {
             sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
@@ -773,6 +780,8 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 
                     if (!selectedIndices.empty())
                     {
+                        m_owner->RecordShortcutHistoryCheckpoint();
+
                         // Move to destination category
                         for (int idx : selectedIndices)
                         {
@@ -854,6 +863,8 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 
                 if (orderChanged && !droppedOnLeft)
                 {
+                    m_owner->RecordShortcutHistoryCheckpoint();
+
                     // Extract selected elements
                     std::vector<RendShortcutInfo> selShortcuts;
                     std::vector<ID2D1Bitmap*> selBitmaps;
@@ -954,6 +965,7 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
 
                 if (!name.empty() && hs < (int)m_pageData->shortcuts.size())
                 {
+                    m_owner->RecordShortcutHistoryCheckpoint();
                     m_pageData->shortcuts[hs].name = name;
                     m_owner->NotifyConfigChanged();
                     InvalidateRect(hWnd, nullptr, FALSE);
@@ -996,6 +1008,7 @@ void ShortcutPage::OnDropFiles(HDROP hDrop, bool& repaint)
     UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
     if (fileCount > 0)
     {
+        m_owner->RecordShortcutHistoryCheckpoint();
         for (UINT i = 0; i < fileCount; ++i)
         {
             wchar_t filePath[MAX_PATH]{};
@@ -1411,6 +1424,7 @@ bool ShortcutPage::ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bo
         return false;
     }
 
+    m_owner->RecordShortcutHistoryCheckpoint();
     DeleteShortcuts(normalized);
 
     m_animating = true;
@@ -1465,6 +1479,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
     bool confirmed = ConfirmWindow::Show(hWnd, L"确认删除", prompt.c_str(), m_owner->GetAppContext());
     if (confirmed)
     {
+        m_owner->RecordShortcutHistoryCheckpoint();
         DeleteShortcuts(normalized);
         m_owner->NotifyConfigChanged();
     }
@@ -1923,6 +1938,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
     if (!m_pageData || index < 0 || index >= (int)m_pageData->shortcuts.size()) return;
 
     RendShortcutInfo& sc = m_pageData->shortcuts[index];
+    RendShortcutInfo originalSc = sc;
     bool changed = false;
 
     if (sc.type == Model::ShortcutType::Hotkey)
@@ -2144,6 +2160,14 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
 
     if (changed)
     {
+        HICON currentIcon = sc.hIcon;
+        RendShortcutInfo changedSc = sc;
+        sc = originalSc;
+        sc.hIcon = currentIcon;
+        m_owner->RecordShortcutHistoryCheckpoint();
+        sc = changedSc;
+        sc.hIcon = currentIcon;
+
         if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
         sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
 

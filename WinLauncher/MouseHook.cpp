@@ -19,6 +19,27 @@ namespace
     constexpr DWORD SuppressMiddleUp  = 0x01;
     constexpr DWORD SuppressXButton1Up = 0x02;
     constexpr DWORD SuppressXButton2Up = 0x04;
+
+    bool IsCtrlDown()
+    {
+        return (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+            (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+            (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+    }
+
+    bool IsShiftDown()
+    {
+        return (GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
+            (GetAsyncKeyState(VK_LSHIFT) & 0x8000) ||
+            (GetAsyncKeyState(VK_RSHIFT) & 0x8000);
+    }
+
+    bool IsAltDown()
+    {
+        return (GetAsyncKeyState(VK_MENU) & 0x8000) ||
+            (GetAsyncKeyState(VK_LMENU) & 0x8000) ||
+            (GetAsyncKeyState(VK_RMENU) & 0x8000);
+    }
 }
 
 void MouseHook::SetTriggerType(int type)
@@ -228,6 +249,38 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                     suppressUpMask = SuppressXButton1Up;
                 }
                 if (trigger == 2 && btn == XBUTTON2)
+                {
+                    activated = true;
+                    suppressUpMask = SuppressXButton2Up;
+                }
+            }
+        }
+        else if (trigger == 3 || trigger == 4 || trigger == 5) // Modifier + Middle Click
+        {
+            if (wParam == WM_MBUTTONDOWN)
+            {
+                bool modifierMatched =
+                    (trigger == 3 && IsCtrlDown()) ||
+                    (trigger == 4 && IsShiftDown()) ||
+                    (trigger == 5 && IsAltDown());
+                if (modifierMatched)
+                {
+                    activated = true;
+                    suppressUpMask = SuppressMiddleUp;
+                }
+            }
+        }
+        else if (trigger == 6 || trigger == 7) // Ctrl + Side button 4 or 5
+        {
+            if (wParam == WM_XBUTTONDOWN && IsCtrlDown())
+            {
+                WORD btn = HIWORD(pMsh->mouseData);
+                if (trigger == 6 && btn == XBUTTON1)
+                {
+                    activated = true;
+                    suppressUpMask = SuppressXButton1Up;
+                }
+                if (trigger == 7 && btn == XBUTTON2)
                 {
                     activated = true;
                     suppressUpMask = SuppressXButton2Up;

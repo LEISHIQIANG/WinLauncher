@@ -32,6 +32,12 @@ namespace Model
         Builtin = 2
     };
 
+    enum class PageSceneMode
+    {
+        Whitelist = 0,
+        Blacklist = 1
+    };
+
     struct ShortcutInfo
     {
         std::wstring id;
@@ -56,7 +62,25 @@ namespace Model
         std::vector<ShortcutInfo> shortcuts;
         bool isSyncFolder = false;
         std::wstring folderPath;
+        PageSceneMode sceneMode = PageSceneMode::Whitelist;
+        std::vector<std::wstring> sceneApps;
+        std::vector<std::wstring> sceneAvailableApps;
     };
+
+    inline const wchar_t* PageSceneModeKey(PageSceneMode mode)
+    {
+        switch (mode)
+        {
+        case PageSceneMode::Blacklist: return L"blacklist";
+        default:                       return L"whitelist";
+        }
+    }
+
+    inline PageSceneMode PageSceneModeFromKey(const std::wstring& key)
+    {
+        if (key == L"blacklist" || key == L"1") return PageSceneMode::Blacklist;
+        return PageSceneMode::Whitelist;
+    }
 
     inline const wchar_t* ShortcutTypeKey(ShortcutType type)
     {
