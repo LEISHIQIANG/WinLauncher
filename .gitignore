@@ -7,6 +7,10 @@
 # Opencode
 .opencode/
 
+# Agent instructions & release notes
+AGENTS.md
+RELEASE_NOTES.md
+
 # Build output
 x64/
 Release/
