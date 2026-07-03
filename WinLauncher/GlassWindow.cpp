@@ -1603,13 +1603,13 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     {
                         m_animProgress = (std::max)(0.0f, (std::min)(1.0f, m_animProgress));
                         alpha = (BYTE)(EaseOutCubic(m_animProgress) * 255.0f);
-                        animScale = 0.90f + 0.10f * EaseOutCubic(m_animProgress);
+                        animScale = GetAnimationScale(m_animProgress, m_animState);
                     }
                     else if (m_animState == AnimState::Closing)
                     {
                         m_animProgress = (std::max)(0.0f, (std::min)(1.0f, m_animProgress));
                         alpha = (BYTE)((1.0f - EaseInCubic(m_animProgress)) * 255.0f);
-                        animScale = 1.0f - 0.10f * EaseInCubic(m_animProgress);
+                        animScale = GetAnimationScale(m_animProgress, m_animState);
                     }
                     SetLayeredWindowAttributes(hWnd, 0, alpha, LWA_ALPHA);
                     if (m_shadowWindow)
@@ -1778,7 +1778,7 @@ void GlassWindow::StartOpenTransition(bool fromWindowCenter)
     {
         float scale = GetWindowScale(m_hWnd);
         POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-        m_shadowWindow->SetOpacityAndScale(0.0f, 0.90f, ptCenter);
+        m_shadowWindow->SetOpacityAndScale(0.0f, GetAnimationScale(0.0f, AnimState::Opening), ptCenter);
     }
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);
@@ -1809,7 +1809,7 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fr
     {
         float scale = GetWindowScale(m_hWnd);
         POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-        m_shadowWindow->SetOpacityAndScale(1.0f, 1.0f, ptCenter);
+        m_shadowWindow->SetOpacityAndScale(1.0f, GetAnimationScale(0.0f, AnimState::Closing), ptCenter);
     }
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);
@@ -1839,22 +1839,20 @@ void GlassWindow::SetAnimationCenter(bool fromWindowCenter)
     m_animCenter = D2D1::Point2F(cx, cy);
 }
 
+float GlassWindow::GetAnimationScale(float progress, AnimState state)
+{
+    (void)progress;
+    (void)state;
+    return 1.0f;
+}
+
 void GlassWindow::GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform)
 {
-    float scale = 1.0f;
-    if (state == AnimState::Opening)
-    {
-        scale = 0.90f + 0.10f * EaseOutCubic(progress); // Apple-style 90% to 100% pop
-    }
-    else if (state == AnimState::Closing)
-    {
-        scale = 1.0f - 0.10f * EaseInCubic(progress); // Apple-style 100% to 90% shrink
-    }
-
-    transform = D2D1::Matrix3x2F::Scale(
-        scale, scale,
-        m_animCenter
-    );
+    (void)w;
+    (void)h;
+    (void)progress;
+    (void)state;
+    transform = D2D1::Matrix3x2F::Identity();
 }
 
 void GlassWindow::CaptureTransitionSnapshot()

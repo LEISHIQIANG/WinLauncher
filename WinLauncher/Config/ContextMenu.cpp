@@ -130,24 +130,6 @@ void ContextMenu::Hide()
     }
 }
 
-void ContextMenu::GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform)
-{
-    float scaleY = 1.0f;
-    if (state == AnimState::Opening)
-    {
-        scaleY = 0.9f + 0.1f * progress;
-    }
-    else if (state == AnimState::Closing)
-    {
-        scaleY = 1.0f - 0.1f * progress;
-    }
-
-    transform = D2D1::Matrix3x2F::Scale(
-        1.0f, scaleY,
-        D2D1::Point2F(w / 2.0f, 0.0f)
-    );
-}
-
 bool ContextMenu::IsVisible()
 {
     return s_instance != nullptr;

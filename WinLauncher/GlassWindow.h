@@ -114,6 +114,7 @@ protected:
 protected:
     virtual ShadowSettings GetShadowSettings() const;
 
+    virtual float GetAnimationScale(float progress, AnimState state);
     virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform);
 
     void CaptureTransitionSnapshot();
