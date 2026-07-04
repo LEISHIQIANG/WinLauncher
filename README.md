@@ -11,7 +11,7 @@
 
 **WinLauncher** 是一个原生 Windows 桌面应用启动器 —— 极速、轻量、零依赖。完全基于 Win32 API + Direct2D 渲染构建，常驻系统托盘，通过鼠标手势或键盘快捷键在光标处弹出精美的毛玻璃快捷方式面板。可以把它看作你桌面上的个人命令面板。
 
-> 版本 **0.5.1.7** | C++17 | MSVC v143 | Windows 10+
+> 版本 **0.5.1.8** | C++17 | MSVC v143 | Windows 10+
 
 ---
 
@@ -270,7 +270,7 @@ WinLauncher/
 \-- WinLauncher/
     +-- main.cpp                          # WinMain 入口
     +-- resource.h / resource.rc          # Windows 资源
-    +-- version.h                         # 版本宏 (0.5.1.7)
+    +-- version.h                         # 版本宏 (0.5.1.8)
     +-- WinLauncher.exe.manifest          # 应用清单 (ComCtl6, Win10)
     |
     +-- App/                              # 应用生命周期
@@ -417,7 +417,7 @@ WinLauncher 是从零开始的 C++ 重写项目，受 QuickLauncher Python 项�
 
 **WinLauncher** is a native Windows desktop application launcher — fast, lightweight, zero-dependency. Built entirely with Win32 API + Direct2D rendering, it stays in your system tray and pops up a sleek, frosted-glass shortcut panel at your cursor via mouse gesture or keyboard shortcut. Think of it as a personal command palette for your desktop.
 
-> Version **0.5.1.7** | C++17 | MSVC v143 | Windows 10+
+> Version **0.5.1.8** | C++17 | MSVC v143 | Windows 10+
 
 ---
 
@@ -676,7 +676,7 @@ WinLauncher/
 \-- WinLauncher/
     +-- main.cpp                          # WinMain entry point
     +-- resource.h / resource.rc          # Windows resources
-    +-- version.h                         # Version macros (0.5.1.7)
+    +-- version.h                         # Version macros (0.5.1.8)
     +-- WinLauncher.exe.manifest          # App manifest (ComCtl6, Win10)
     |
     +-- App/                              # Application lifecycle
