@@ -3,8 +3,10 @@
 #include "../DpiHelper.h"
 #include <windowsx.h>
 #include "UIStyle.h"
+#include <algorithm>
 
 DropDownMenu* DropDownMenu::s_instance = nullptr;
+std::vector<DropDownMenu*> DropDownMenu::s_closingInstances;
 HWND DropDownMenu::s_hMainWnd = nullptr;
 AppContext* DropDownMenu::s_ctx = nullptr;
 
@@ -22,7 +24,7 @@ DropDownMenu::~DropDownMenu()
 
 void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth, bool fixedWidth, float fontSize)
 {
-    Hide();
+    CloseExisting(true);
 
     s_hMainWnd = parent;
     s_ctx = ctx;
@@ -102,16 +104,66 @@ void DropDownMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, A
     s_instance->m_hovered = -1;
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-    ShowWindow(s_instance->GetHWND(), SW_SHOW);
-    SetForegroundWindow(s_instance->GetHWND());
-
+    s_instance->PrepareOpenTransitionFrame();
     s_instance->CaptureBackground();
     s_instance->CompositeBackgroundToCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+
+    ShowWindow(s_instance->GetHWND(), SW_SHOW);
+    SetForegroundWindow(s_instance->GetHWND());
+    s_instance->CaptureMouse();
 }
 
 void DropDownMenu::Hide()
 {
+    CloseExisting(false);
+}
+
+void DropDownMenu::DestroyInstance(DropDownMenu* inst)
+{
+    if (!inst)
+        return;
+
+    HWND h = inst->GetHWND();
+    inst->ReleaseMouseCapture();
+    if (h && IsWindow(h))
+        DestroyWindow(h);
+    delete inst;
+}
+
+void DropDownMenu::RemoveClosingInstance(DropDownMenu* inst)
+{
+    s_closingInstances.erase(
+        std::remove(s_closingInstances.begin(), s_closingInstances.end(), inst),
+        s_closingInstances.end());
+}
+
+void DropDownMenu::CloseExisting(bool immediate)
+{
+    if (immediate)
+    {
+        if (s_instance)
+        {
+            HWND parent = GetParent(s_instance->GetHWND());
+            DropDownMenu* inst = s_instance;
+            s_instance = nullptr;
+            DestroyInstance(inst);
+            if (parent)
+                InvalidateRect(parent, nullptr, FALSE);
+        }
+
+        auto closingInstances = s_closingInstances;
+        s_closingInstances.clear();
+        for (DropDownMenu* inst : closingInstances)
+        {
+            HWND parent = inst ? GetParent(inst->GetHWND()) : nullptr;
+            DestroyInstance(inst);
+            if (parent)
+                InvalidateRect(parent, nullptr, FALSE);
+        }
+        return;
+    }
+
     if (s_instance)
     {
         HWND parent = GetParent(s_instance->GetHWND());
@@ -119,19 +171,19 @@ void DropDownMenu::Hide()
         s_instance = nullptr;
         if (UIStyle::Animation::IsEnabled())
         {
+            s_closingInstances.push_back(inst);
+            inst->ReleaseMouseCapture();
             inst->StartCloseTransition([inst, parent]() {
-                HWND h = inst->GetHWND();
-                if (h) DestroyWindow(h);
-                delete inst;
+                RemoveClosingInstance(inst);
+                DestroyInstance(inst);
                 if (parent)
                     InvalidateRect(parent, nullptr, FALSE);
             });
         }
         else
         {
-            HWND h = inst->GetHWND();
-            if (h) DestroyWindow(h);
-            delete inst;
+            inst->ReleaseMouseCapture();
+            DestroyInstance(inst);
             if (parent)
                 InvalidateRect(parent, nullptr, FALSE);
         }
@@ -141,6 +193,42 @@ void DropDownMenu::Hide()
 bool DropDownMenu::IsVisible()
 {
     return s_instance != nullptr;
+}
+
+bool DropDownMenu::IsInsideClient(POINT pt) const
+{
+    HWND h = GetHWND();
+    if (!h)
+        return false;
+
+    RECT cr{};
+    GetClientRect(h, &cr);
+    float scale = GetWindowScale(h);
+    int right = (int)((float)cr.right / scale);
+    int bottom = (int)((float)cr.bottom / scale);
+    return pt.x >= 0 && pt.x < right && pt.y >= 0 && pt.y < bottom;
+}
+
+void DropDownMenu::CaptureMouse()
+{
+    HWND h = GetHWND();
+    if (!h || !IsWindow(h))
+        return;
+
+    SetCapture(h);
+    m_mouseCaptured = (GetCapture() == h);
+}
+
+void DropDownMenu::ReleaseMouseCapture()
+{
+    HWND h = GetHWND();
+    if (m_mouseCaptured && h && GetCapture() == h)
+    {
+        m_mouseCaptured = false;
+        ReleaseCapture();
+        return;
+    }
+    m_mouseCaptured = false;
 }
 
 int DropDownMenu::HitTest(POINT pt)
@@ -210,11 +298,24 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         if (LOWORD(wParam) == WA_INACTIVE)
             Hide();
         return 0;
+
+    case WM_CAPTURECHANGED:
+        if (m_mouseCaptured && reinterpret_cast<HWND>(lParam) != hWnd)
+        {
+            m_mouseCaptured = false;
+            Hide();
+        }
+        return 0;
  
     case WM_MOUSEMOVE:
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            if (m_hovered != -1) { m_hovered = -1; InvalidateRect(hWnd, nullptr, FALSE); }
+            return 0;
+        }
         int h = HitTest(pt);
         if (h >= 0 && h < (int)m_items.size() && m_items[h].disabled) h = -1;
         if (h != m_hovered) { m_hovered = h; InvalidateRect(hWnd, nullptr, FALSE); }
@@ -225,6 +326,11 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            Hide();
+            return 0;
+        }
         int hit = HitTest(pt);
         if (hit >= 0 && hit < (int)m_items.size() && !m_items[hit].disabled)
         {
@@ -244,6 +350,7 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         return 0;
 
     case WM_DESTROY:
+        ReleaseMouseCapture();
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         return 0;
     }

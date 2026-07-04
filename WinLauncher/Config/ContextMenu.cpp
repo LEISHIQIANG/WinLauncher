@@ -3,8 +3,10 @@
 #include "../DpiHelper.h"
 #include <windowsx.h>
 #include "UIStyle.h"
+#include <algorithm>
 
 ContextMenu* ContextMenu::s_instance = nullptr;
+std::vector<ContextMenu*> ContextMenu::s_closingInstances;
 HWND ContextMenu::s_hMainWnd = nullptr;
 AppContext* ContextMenu::s_ctx = nullptr;
 
@@ -21,7 +23,7 @@ ContextMenu::~ContextMenu()
 
 void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, AppContext* ctx, float minWidth)
 {
-    Hide();
+    CloseExisting(true);
 
     s_hMainWnd = parent;
     s_ctx = ctx;
@@ -99,33 +101,77 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
     s_instance->m_hovered = -1;
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-    ShowWindow(s_instance->GetHWND(), SW_SHOW);
-    SetForegroundWindow(s_instance->GetHWND());
-
+    s_instance->PrepareOpenTransitionFrame();
     s_instance->CaptureBackground();
     s_instance->CompositeBackgroundToCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+
+    ShowWindow(s_instance->GetHWND(), SW_SHOW);
+    SetForegroundWindow(s_instance->GetHWND());
+    s_instance->CaptureMouse();
 }
 
 void ContextMenu::Hide()
 {
+    CloseExisting(false);
+}
+
+void ContextMenu::DestroyInstance(ContextMenu* inst)
+{
+    if (!inst)
+        return;
+
+    HWND h = inst->GetHWND();
+    inst->ReleaseMouseCapture();
+    if (h && IsWindow(h))
+        DestroyWindow(h);
+    delete inst;
+}
+
+void ContextMenu::RemoveClosingInstance(ContextMenu* inst)
+{
+    s_closingInstances.erase(
+        std::remove(s_closingInstances.begin(), s_closingInstances.end(), inst),
+        s_closingInstances.end());
+}
+
+void ContextMenu::CloseExisting(bool immediate)
+{
+    if (immediate)
+    {
+        if (s_instance)
+        {
+            ContextMenu* inst = s_instance;
+            s_instance = nullptr;
+            DestroyInstance(inst);
+        }
+
+        auto closingInstances = s_closingInstances;
+        s_closingInstances.clear();
+        for (ContextMenu* inst : closingInstances)
+        {
+            DestroyInstance(inst);
+        }
+        return;
+    }
+
     if (s_instance)
     {
         ContextMenu* inst = s_instance;
         s_instance = nullptr;
         if (UIStyle::Animation::IsEnabled())
         {
+            s_closingInstances.push_back(inst);
+            inst->ReleaseMouseCapture();
             inst->StartCloseTransition([inst]() {
-                HWND h = inst->GetHWND();
-                if (h) DestroyWindow(h);
-                delete inst;
+                RemoveClosingInstance(inst);
+                DestroyInstance(inst);
             });
         }
         else
         {
-            HWND h = inst->GetHWND();
-            if (h) DestroyWindow(h);
-            delete inst;
+            inst->ReleaseMouseCapture();
+            DestroyInstance(inst);
         }
     }
 }
@@ -133,6 +179,42 @@ void ContextMenu::Hide()
 bool ContextMenu::IsVisible()
 {
     return s_instance != nullptr;
+}
+
+bool ContextMenu::IsInsideClient(POINT pt) const
+{
+    HWND h = GetHWND();
+    if (!h)
+        return false;
+
+    RECT cr{};
+    GetClientRect(h, &cr);
+    float scale = GetWindowScale(h);
+    int right = (int)((float)cr.right / scale);
+    int bottom = (int)((float)cr.bottom / scale);
+    return pt.x >= 0 && pt.x < right && pt.y >= 0 && pt.y < bottom;
+}
+
+void ContextMenu::CaptureMouse()
+{
+    HWND h = GetHWND();
+    if (!h || !IsWindow(h))
+        return;
+
+    SetCapture(h);
+    m_mouseCaptured = (GetCapture() == h);
+}
+
+void ContextMenu::ReleaseMouseCapture()
+{
+    HWND h = GetHWND();
+    if (m_mouseCaptured && h && GetCapture() == h)
+    {
+        m_mouseCaptured = false;
+        ReleaseCapture();
+        return;
+    }
+    m_mouseCaptured = false;
 }
 
 int ContextMenu::HitTest(POINT pt)
@@ -212,10 +294,23 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             Hide();
         return 0;
 
+    case WM_CAPTURECHANGED:
+        if (m_mouseCaptured && reinterpret_cast<HWND>(lParam) != hWnd)
+        {
+            m_mouseCaptured = false;
+            Hide();
+        }
+        return 0;
+
     case WM_MOUSEMOVE:
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            if (m_hovered != -1) { m_hovered = -1; InvalidateRect(hWnd, nullptr, FALSE); }
+            return 0;
+        }
         int h = HitTest(pt);
         // Don't highlight disabled items
         if (h >= 0 && h < (int)m_items.size() && m_items[h].disabled)
@@ -228,6 +323,11 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            Hide();
+            return 0;
+        }
         int hit = HitTest(pt);
         if (hit >= 0 && hit < (int)m_items.size() && !m_items[hit].disabled)
         {
@@ -239,7 +339,6 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_RBUTTONDOWN:
-        // Hide context menu when right-clicked on context menu
         Hide();
         return 0;
 
@@ -248,6 +347,7 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_DESTROY:
+        ReleaseMouseCapture();
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         return 0;
     }

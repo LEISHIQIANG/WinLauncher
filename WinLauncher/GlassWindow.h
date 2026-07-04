@@ -117,6 +117,11 @@ protected:
     virtual float GetAnimationScale(float progress, AnimState state);
     virtual void GetAnimationTransform(float w, float h, float progress, AnimState state, D2D1_MATRIX_3X2_F& transform);
 
+    bool EnsureShadowForCurrentBounds(float initialOpacity = -1.0f);
+    void ApplyVisibilityFrame(float opacity, float animScale);
+    void HideShadowNow();
+    void PrepareOpenTransitionFrame(bool fromWindowCenter = false);
+
     void CaptureTransitionSnapshot();
     void DrawThemeTransitionOverlay(ID2D1HwndRenderTarget* rt, float w, float h);
     void StartThemeTransition(POINT clickPt);
@@ -126,6 +131,9 @@ protected:
     ULONGLONG m_animStartTime = 0;
     std::function<void()> m_animOnComplete = nullptr;
     D2D1_POINT_2F m_animCenter = { 0.0f, 0.0f };
+    float m_visibilityOpacity = 1.0f;
+    float m_closeStartOpacity = 1.0f;
+    bool m_openTransitionPrepared = false;
 
     bool m_themeTransitionActive = false;
     float m_themeTransitionProgress = 0.0f;

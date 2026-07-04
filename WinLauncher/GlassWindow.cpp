@@ -1447,32 +1447,14 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             // Sync shadow window
             if (isVisible)
             {
-                if (!m_shadowWindow)
-                {
-                    m_shadowWindow = std::make_unique<ShadowWindow>(hWnd);
-                    m_shadowWindow->SetSettings(GetShadowSettings());
-                }
-                
-                RECT wr;
-                GetWindowRect(hWnd, &wr);
-                int mainW = wr.right - wr.left;
-                int mainH = wr.bottom - wr.top;
-                float scale = GetWindowScale(hWnd);
-                float physicalRadius = GetPhysicalCornerRadius();
-
-                if (sizeChanged)
-                {
-                    UpdateWindowCornerRadius();
-                    m_shadowWindow->UpdateShadow(mainW, mainH, physicalRadius, scale);
-                }
-                else
-                {
+                if (sizeChanged || !m_shadowWindow)
+                    EnsureShadowForCurrentBounds();
+                else if (m_shadowWindow)
                     m_shadowWindow->SyncPosition(true);
-                }
             }
-            else if (m_shadowWindow)
+            else if (m_shadowWindow && m_animState != AnimState::Closing)
             {
-                m_shadowWindow->SyncPosition(false);
+                HideShadowNow();
             }
 
             if (sizeChanged || posChanged || (wp->flags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW)))
@@ -1498,22 +1480,13 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_SHOWWINDOW:
         if (wParam)
         {
-            MarkBackgroundDirty(L"window_show", true);
+            bool hadPreparedOpenFrame = m_openTransitionPrepared;
+            if (!hadPreparedOpenFrame)
+            {
+                MarkBackgroundDirty(L"window_show", true);
+            }
             if (m_bgRefreshMs > 0)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
-
-            if (!m_shadowWindow)
-            {
-                m_shadowWindow = std::make_unique<ShadowWindow>(hWnd);
-                m_shadowWindow->SetSettings(GetShadowSettings());
-            }
-            RECT wr;
-            GetWindowRect(hWnd, &wr);
-            UpdateWindowCornerRadius();
-            UpdateWindowRoundRegion();
-            float scale = GetWindowScale(hWnd);
-            float physicalRadius = GetPhysicalCornerRadius();
-            m_shadowWindow->UpdateShadow(wr.right - wr.left, wr.bottom - wr.top, physicalRadius, scale);
 
             if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
             {
@@ -1521,25 +1494,23 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             else if (!UIStyle::Animation::IsEnabled())
             {
+                EnsureShadowForCurrentBounds();
                 m_animState = AnimState::None;
-                LONG_PTR exStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
-                if (exStyle & WS_EX_LAYERED)
-                {
-                    SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
-                }
-                if (m_shadowWindow)
-                {
-                    m_shadowWindow->SetOpacity(1.0f);
-                }
+                ApplyVisibilityFrame(1.0f, 1.0f);
             }
+            else
+            {
+                EnsureShadowForCurrentBounds(0.0f);
+            }
+            m_openTransitionPrepared = false;
         }
         else
         {
             LOG_G_INFO_NODE(L"ui.glass", L"window_hidden", L"hwnd=%p", hWnd);
             KillTimer(hWnd, 0x888);
-            if (m_shadowWindow)
+            if (m_shadowWindow && m_animState != AnimState::Closing)
             {
-                m_shadowWindow->SyncPosition(false);
+                HideShadowNow();
             }
         }
         break;
@@ -1570,19 +1541,12 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                     if (oldState == AnimState::Opening)
                     {
-                        SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
-                        if (m_shadowWindow)
-                        {
-                            m_shadowWindow->SetOpacityAndScale(1.0f, 1.0f, POINT{ 0, 0 });
-                        }
+                        ApplyVisibilityFrame(1.0f, 1.0f);
                     }
                     else if (oldState == AnimState::Closing)
                     {
-                        SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
-                        if (m_shadowWindow)
-                        {
-                            m_shadowWindow->SetOpacityAndScale(0.0f, 1.0f, POINT{ 0, 0 });
-                        }
+                        ApplyVisibilityFrame(0.0f, 1.0f);
+                        HideShadowNow();
                         if (m_animOnComplete)
                         {
                             auto cb = m_animOnComplete;
@@ -1608,16 +1572,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     else if (m_animState == AnimState::Closing)
                     {
                         m_animProgress = (std::max)(0.0f, (std::min)(1.0f, m_animProgress));
-                        alpha = (BYTE)((1.0f - EaseInCubic(m_animProgress)) * 255.0f);
+                        alpha = (BYTE)(m_closeStartOpacity * (1.0f - EaseInCubic(m_animProgress)) * 255.0f);
                         animScale = GetAnimationScale(m_animProgress, m_animState);
                     }
-                    SetLayeredWindowAttributes(hWnd, 0, alpha, LWA_ALPHA);
-                    if (m_shadowWindow)
-                    {
-                        float scale = GetWindowScale(hWnd);
-                        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-                        m_shadowWindow->SetOpacityAndScale((float)alpha / 255.0f, animScale, ptCenter);
-                    }
+                    ApplyVisibilityFrame((float)alpha / 255.0f, animScale);
                 }
             }
 
@@ -1758,6 +1716,81 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 
+bool GlassWindow::EnsureShadowForCurrentBounds(float initialOpacity)
+{
+    if (!m_hWnd || !IsWindow(m_hWnd))
+        return false;
+
+    if (!m_shadowWindow)
+    {
+        m_shadowWindow = std::make_unique<ShadowWindow>(m_hWnd);
+        m_shadowWindow->SetSettings(GetShadowSettings());
+    }
+    if (initialOpacity >= 0.0f)
+    {
+        m_shadowWindow->SetOpacity((std::max)(0.0f, (std::min)(1.0f, initialOpacity)));
+    }
+
+    RECT wr{};
+    GetWindowRect(m_hWnd, &wr);
+    int mainW = wr.right - wr.left;
+    int mainH = wr.bottom - wr.top;
+    if (mainW <= 0 || mainH <= 0)
+        return false;
+
+    UpdateWindowCornerRadius();
+    UpdateWindowRoundRegion();
+
+    float scale = GetWindowScale(m_hWnd);
+    float physicalRadius = GetPhysicalCornerRadius();
+    m_shadowWindow->UpdateShadow(mainW, mainH, physicalRadius, scale);
+    return true;
+}
+
+void GlassWindow::ApplyVisibilityFrame(float opacity, float animScale)
+{
+    if (!m_hWnd || !IsWindow(m_hWnd))
+        return;
+
+    opacity = (std::max)(0.0f, (std::min)(1.0f, opacity));
+    m_visibilityOpacity = opacity;
+    BYTE alpha = (BYTE)(opacity * 255.0f + 0.5f);
+
+    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+    if (!(exStyle & WS_EX_LAYERED))
+    {
+        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+    }
+    SetLayeredWindowAttributes(m_hWnd, 0, alpha, LWA_ALPHA);
+
+    if (m_shadowWindow)
+    {
+        float scale = GetWindowScale(m_hWnd);
+        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
+        m_shadowWindow->SetOpacityAndScale(opacity, animScale, ptCenter);
+    }
+}
+
+void GlassWindow::HideShadowNow()
+{
+    if (!m_shadowWindow)
+        return;
+
+    m_shadowWindow->SetOpacityAndScale(0.0f, 1.0f, POINT{ 0, 0 });
+    m_shadowWindow->SyncPosition(false);
+}
+
+void GlassWindow::PrepareOpenTransitionFrame(bool fromWindowCenter)
+{
+    if (!m_hWnd || !IsWindow(m_hWnd) || !UIStyle::Animation::IsEnabled())
+        return;
+
+    SetAnimationCenter(fromWindowCenter);
+    EnsureShadowForCurrentBounds(0.0f);
+    ApplyVisibilityFrame(0.0f, GetAnimationScale(0.0f, AnimState::Opening));
+    m_openTransitionPrepared = true;
+}
+
 void GlassWindow::StartOpenTransition(bool fromWindowCenter)
 {
     if (!UIStyle::Animation::IsEnabled()) return;
@@ -1765,21 +1798,16 @@ void GlassWindow::StartOpenTransition(bool fromWindowCenter)
     m_animState = AnimState::Opening;
     m_animProgress = 0.0f;
     m_animStartTime = GetTickCount64();
+    m_animOnComplete = nullptr;
+    m_closeStartOpacity = 1.0f;
 
-    SetAnimationCenter(fromWindowCenter);
+    if (!m_openTransitionPrepared)
+    {
+        SetAnimationCenter(fromWindowCenter);
+        EnsureShadowForCurrentBounds(0.0f);
+    }
 
-    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-    if (!(exStyle & WS_EX_LAYERED))
-    {
-        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-    }
-    SetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_ALPHA);
-    if (m_shadowWindow)
-    {
-        float scale = GetWindowScale(m_hWnd);
-        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-        m_shadowWindow->SetOpacityAndScale(0.0f, GetAnimationScale(0.0f, AnimState::Opening), ptCenter);
-    }
+    ApplyVisibilityFrame(0.0f, GetAnimationScale(0.0f, AnimState::Opening));
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);
 }
@@ -1796,21 +1824,12 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fr
     m_animProgress = 0.0f;
     m_animStartTime = GetTickCount64();
     m_animOnComplete = onComplete;
+    m_closeStartOpacity = (std::max)(0.0f, (std::min)(1.0f, m_visibilityOpacity));
 
     SetAnimationCenter(fromWindowCenter);
+    EnsureShadowForCurrentBounds(m_closeStartOpacity);
 
-    LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-    if (!(exStyle & WS_EX_LAYERED))
-    {
-        SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-    }
-
-    if (m_shadowWindow)
-    {
-        float scale = GetWindowScale(m_hWnd);
-        POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-        m_shadowWindow->SetOpacityAndScale(1.0f, GetAnimationScale(0.0f, AnimState::Closing), ptCenter);
-    }
+    ApplyVisibilityFrame(m_closeStartOpacity, GetAnimationScale(0.0f, AnimState::Closing));
 
     SetTimer(m_hWnd, 0x889, 10, nullptr);
 }

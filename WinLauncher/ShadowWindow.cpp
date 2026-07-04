@@ -374,11 +374,29 @@ void ShadowWindow::SetOpacity(float factor)
 
 void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animCenter)
 {
+    factor = (std::max)(0.0f, (std::min)(1.0f, factor));
+
     m_animScale = animScale;
     m_animCenter = animCenter;
     m_animOpacity = factor;
 
-    if (!m_hShadowWnd || !m_hBitmap) return;
+    if (!m_hShadowWnd) return;
+
+    if (factor <= 0.0f)
+    {
+        SetWindowPos(
+            m_hShadowWnd,
+            nullptr,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                SWP_NOSENDCHANGING | SWP_HIDEWINDOW);
+        return;
+    }
+
+    if (!m_hBitmap) return;
 
     HDC hdcScreen = GetDC(nullptr);
 
@@ -420,7 +438,7 @@ void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animC
         BLENDFUNCTION blend = { 0 };
         blend.BlendOp = AC_SRC_OVER;
         blend.BlendFlags = 0;
-        blend.SourceConstantAlpha = (BYTE)(factor * 255.0f);
+        blend.SourceConstantAlpha = (BYTE)(factor * 255.0f + 0.5f);
         blend.AlphaFormat = AC_SRC_ALPHA;
 
         UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
@@ -464,7 +482,7 @@ void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animC
             BLENDFUNCTION finalBlend = { 0 };
             finalBlend.BlendOp = AC_SRC_OVER;
             finalBlend.BlendFlags = 0;
-            finalBlend.SourceConstantAlpha = (BYTE)(factor * 255.0f);
+            finalBlend.SourceConstantAlpha = (BYTE)(factor * 255.0f + 0.5f);
             finalBlend.AlphaFormat = AC_SRC_ALPHA;
 
             UpdateLayeredWindow(m_hShadowWnd, hdcScreen, &ptDst, &sizeDst, hdcDstMem, &ptSrc, 0, &finalBlend, ULW_ALPHA);
@@ -478,6 +496,16 @@ void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animC
         }
     }
 
+    UINT flags = SWP_NOACTIVATE | SWP_NOSENDCHANGING;
+    if (IsWindowVisible(m_hMainWnd) && !IsIconic(m_hMainWnd))
+    {
+        flags |= SWP_SHOWWINDOW;
+    }
+    else
+    {
+        flags |= SWP_HIDEWINDOW;
+    }
+    SetWindowPos(m_hShadowWnd, m_hMainWnd, shadowX, shadowY, shadowW, shadowH, flags);
+
     ReleaseDC(nullptr, hdcScreen);
 }
-

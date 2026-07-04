@@ -88,12 +88,14 @@ void TrayMenuWindow::Show(POINT pt)
     s_instance->m_hovered = -1;
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-    ShowWindow(s_instance->GetHWND(), SW_SHOW);
-    SetForegroundWindow(s_instance->GetHWND());
-
+    s_instance->PrepareOpenTransitionFrame();
     s_instance->CaptureBackground();
     s_instance->CompositeBackgroundToCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+
+    ShowWindow(s_instance->GetHWND(), SW_SHOW);
+    SetForegroundWindow(s_instance->GetHWND());
+    s_instance->CaptureMouse();
 }
 
 void TrayMenuWindow::Hide()
@@ -103,8 +105,20 @@ void TrayMenuWindow::Hide()
         TrayMenuWindow* inst = s_instance;
         s_instance = nullptr;
         HWND h = inst->GetHWND();
-        if (h) DestroyWindow(h);
-        delete inst;
+        inst->ReleaseMouseCapture();
+        if (h && UIStyle::Animation::IsEnabled())
+        {
+            inst->StartCloseTransition([h, inst]() {
+                if (IsWindow(h))
+                    DestroyWindow(h);
+                delete inst;
+            });
+        }
+        else
+        {
+            if (h) DestroyWindow(h);
+            delete inst;
+        }
     }
 }
 
@@ -135,6 +149,42 @@ int TrayMenuWindow::HitTest(POINT pt)
             return i;
     }
     return -1;
+}
+
+bool TrayMenuWindow::IsInsideClient(POINT pt) const
+{
+    HWND h = GetHWND();
+    if (!h)
+        return false;
+
+    RECT cr{};
+    GetClientRect(h, &cr);
+    float scale = GetWindowScale(h);
+    int right = (int)((float)cr.right / scale);
+    int bottom = (int)((float)cr.bottom / scale);
+    return pt.x >= 0 && pt.x < right && pt.y >= 0 && pt.y < bottom;
+}
+
+void TrayMenuWindow::CaptureMouse()
+{
+    HWND h = GetHWND();
+    if (!h || !IsWindow(h))
+        return;
+
+    SetCapture(h);
+    m_mouseCaptured = (GetCapture() == h);
+}
+
+void TrayMenuWindow::ReleaseMouseCapture()
+{
+    HWND h = GetHWND();
+    if (m_mouseCaptured && h && GetCapture() == h)
+    {
+        m_mouseCaptured = false;
+        ReleaseCapture();
+        return;
+    }
+    m_mouseCaptured = false;
 }
 
 // ============================================================
@@ -234,10 +284,23 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
             Hide();
         return 0;
 
+    case WM_CAPTURECHANGED:
+        if (m_mouseCaptured && reinterpret_cast<HWND>(lParam) != hWnd)
+        {
+            m_mouseCaptured = false;
+            Hide();
+        }
+        return 0;
+
     case WM_MOUSEMOVE:
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            if (m_hovered != -1) { m_hovered = -1; InvalidateRect(hWnd, nullptr, FALSE); }
+            return 0;
+        }
         int h = HitTest(pt);
         if (h != m_hovered) { m_hovered = h; InvalidateRect(hWnd, nullptr, FALSE); }
         return 0;
@@ -247,6 +310,11 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
     {
         float scale = GetWindowScale(hWnd);
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+        {
+            Hide();
+            return 0;
+        }
         int hit = HitTest(pt);
 
         if (hit == 0)   // 显示弹窗
@@ -289,11 +357,21 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
         return 0;
     }
 
+    case WM_RBUTTONDOWN:
+    {
+        float scale = GetWindowScale(hWnd);
+        POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
+        if (!IsInsideClient(pt))
+            Hide();
+        return 0;
+    }
+
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) Hide();
         return 0;
 
     case WM_DESTROY:
+        ReleaseMouseCapture();
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         // s_instance is managed by Hide()/Release()
         return 0;

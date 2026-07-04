@@ -746,8 +746,11 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 
     this->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
 
-    // 3. Handle window (create or reposition) and ensure stable render target
+    // 3. Handle window (create or reposition) and ensure stable render target.
+    // Keep hidden windows hidden until the first frame is ready, otherwise a
+    // cold startup trigger can briefly expose the empty DWM frame.
     HWND hwnd = this->GetHWND();
+    bool needsShow = false;
     if (hwnd)
     {
         if (this->EnsureD2D() && this->m_rt)
@@ -764,12 +767,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         {
             this->EnsureIcons();
         }
-        if (!IsWindowVisible(hwnd))
-        {
-            ShowWindow(hwnd, SW_SHOW);
-        }
-        SetActiveWindow(hwnd);
-        SetForegroundWindow(hwnd);
+        needsShow = !IsWindowVisible(hwnd);
     }
     else
     {
@@ -787,9 +785,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
                 }
                 this->EnsureIcons();
             }
-            ShowWindow(this->GetHWND(), SW_SHOW);
-            SetActiveWindow(this->GetHWND());
-            SetForegroundWindow(this->GetHWND());
+            needsShow = true;
         }
     }
 
@@ -855,21 +851,35 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             this->m_searchTextBox.UpdateImeWindowPosition(this->GetHWND(), scale);
         }
  
-        SetFocus(this->GetHWND());
-
         this->StartAutoHideTimer();
 
         this->m_bgCaptureDirty = true;
         this->m_bgCompositeDirty = true;
         double bgStart = GetTimeInSeconds();
         this->CaptureBackground();
+        this->m_bgCaptureDirty = false;
         this->CompositeBackgroundToCache();
+        this->m_bgCompositeDirty = false;
         double bgElapsedMs = (GetTimeInSeconds() - bgStart) * 1000.0;
         if (bgElapsedMs >= POPUP_SLOW_FRAME_MS)
         {
             LOG_G_WORNING(L"PopupWindow perf: initial background refresh took %.2fms", bgElapsedMs);
         }
-        InvalidateRect(this->GetHWND(), nullptr, FALSE);
+
+        if (needsShow)
+        {
+            this->PrepareOpenTransitionFrame();
+            this->DoPaint();
+            ShowWindow(this->GetHWND(), SW_SHOWNOACTIVATE);
+        }
+        else
+        {
+            InvalidateRect(this->GetHWND(), nullptr, FALSE);
+        }
+
+        SetActiveWindow(this->GetHWND());
+        SetForegroundWindow(this->GetHWND());
+        SetFocus(this->GetHWND());
 
         if (this->m_viewModel)
             this->m_viewModel->NotifyPopupShown();

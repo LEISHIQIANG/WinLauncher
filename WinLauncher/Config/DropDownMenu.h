@@ -31,13 +31,21 @@ private:
     virtual ~DropDownMenu() override;
 
     int HitTest(POINT pt);
+    bool IsInsideClient(POINT pt) const;
+    void CaptureMouse();
+    void ReleaseMouseCapture();
+    static void DestroyInstance(DropDownMenu* inst);
+    static void RemoveClosingInstance(DropDownMenu* inst);
+    static void CloseExisting(bool immediate);
 
     static DropDownMenu* s_instance;
+    static std::vector<DropDownMenu*> s_closingInstances;
     static HWND s_hMainWnd;
     static AppContext* s_ctx;
 
     std::vector<Item> m_items;
     int m_hovered;
     float m_fontSize;
+    bool m_mouseCaptured = false;
     ComPtr<IDWriteTextFormat> m_tfMenu;
 };

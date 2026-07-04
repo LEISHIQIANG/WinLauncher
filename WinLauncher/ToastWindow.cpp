@@ -98,11 +98,12 @@ void ToastWindow::Show(const std::wstring& message, DWORD durationMs)
     s_instance->EnsureD2D();
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, x, y, W, H, SWP_NOACTIVATE);
-    ShowWindow(s_instance->GetHWND(), SW_SHOWNOACTIVATE);
-
+    s_instance->PrepareOpenTransitionFrame();
     s_instance->CaptureBackground();
     s_instance->CompositeBackgroundToCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+
+    ShowWindow(s_instance->GetHWND(), SW_SHOWNOACTIVATE);
 
     // 定时自动关闭
     SetTimer(s_instance->GetHWND(), TIMER_CLOSE, durationMs, nullptr);
@@ -118,9 +119,24 @@ void ToastWindow::Hide()
         if (h && IsWindow(h))
         {
             KillTimer(h, TIMER_CLOSE);
-            DestroyWindow(h);
+            if (UIStyle::Animation::IsEnabled())
+            {
+                inst->StartCloseTransition([h, inst]() {
+                    if (IsWindow(h))
+                        DestroyWindow(h);
+                    delete inst;
+                });
+            }
+            else
+            {
+                DestroyWindow(h);
+                delete inst;
+            }
         }
-        delete inst;
+        else
+        {
+            delete inst;
+        }
     }
 }
 

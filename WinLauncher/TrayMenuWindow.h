@@ -26,6 +26,9 @@ protected:
 
 private:
     int HitTest(POINT pt);
+    bool IsInsideClient(POINT pt) const;
+    void CaptureMouse();
+    void ReleaseMouseCapture();
 
     static TrayMenuWindow* s_instance;
     static HWND s_hMainWnd;
@@ -33,4 +36,5 @@ private:
     static bool s_popupPaused;   // mirrors Application::m_popupPaused
 
     int m_hovered;
+    bool m_mouseCaptured = false;
 };
