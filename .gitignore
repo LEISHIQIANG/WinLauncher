@@ -17,6 +17,10 @@ Release/
 Debug/
 *.exe
 
+# Plan documents (local only)
+PLUGIN_SYSTEM_PLAN.md
+PLUGIN_API_PLAN.md
+
 # OS files
 Thumbs.db
 *.DS_Store
