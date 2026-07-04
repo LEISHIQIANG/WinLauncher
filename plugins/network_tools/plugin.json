@@ -1,0 +1,46 @@
+{
+  "id": "wl.network_tools",
+  "name": "Network Tools",
+  "version": "1.0.0",
+  "description": "Network diagnostics: ping, DNS lookup, local IP addresses, and TCP port checker.",
+  "entry": "network_tools.dll",
+  "abiVersion": 1,
+  "permissions": ["network.request", "ui.input"],
+  "category": "Network",
+  "commands": [],
+  "slashCommands": [
+    {
+      "id": "wl.network_tools.ping",
+      "command": "ping",
+      "title": "Ping Host",
+      "description": "Ping a hostname or IP address (4 packets, 3s timeout).",
+      "usage": "/ping <hostname-or-IP>",
+      "keywords": ["latency", "rtt", "connectivity", "延迟"]
+    },
+    {
+      "id": "wl.network_tools.dns",
+      "command": "dns",
+      "title": "DNS Lookup",
+      "description": "Resolve a hostname to IPv4 and IPv6 addresses.",
+      "usage": "/dns <hostname>",
+      "keywords": ["nslookup", "resolve", "域名解析", "lookup"]
+    },
+    {
+      "id": "wl.network_tools.ip",
+      "command": "ip",
+      "title": "Local IP Addresses",
+      "description": "Show all active local IP addresses and adapter names.",
+      "usage": "/ip",
+      "keywords": ["address", "network", "本机IP", "ifconfig"]
+    },
+    {
+      "id": "wl.network_tools.port",
+      "command": "port",
+      "title": "Port Check",
+      "description": "Check if a TCP port is open on a remote host.",
+      "usage": "/port <host> <port>",
+      "keywords": ["tcp", "scan", "端扫描", "check"]
+    }
+  ],
+  "settings": []
+}

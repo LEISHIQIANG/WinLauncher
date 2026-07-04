@@ -1,0 +1,13 @@
+param([string]$Configuration="Release",[string]$Platform="x64",[string]$MsBuildPath="msbuild")
+$ErrorActionPreference="Stop"
+$root=Split-Path -Parent $MyInvocation.MyCommand.Path
+$project=Join-Path $root "system_info.vcxproj"
+$dist=Join-Path $root "dist";$stage=Join-Path $dist "wl.system_info";$pkg=Join-Path $dist "wl.system_info.wlplugin"
+& $MsBuildPath $project /p:Configuration=$Configuration /p:Platform=$Platform;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+New-Item -ItemType Directory -Path $stage|Out-Null
+Copy-Item (Join-Path $root "plugin.json") -Destination (Join-Path $stage "plugin.json")
+Copy-Item (Join-Path $root "$Platform\$Configuration\system_info.dll") -Destination (Join-Path $stage "system_info.dll")
+if(Test-Path $pkg){Remove-Item $pkg -Force}
+Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $pkg -Force
+Write-Host "Created $pkg"

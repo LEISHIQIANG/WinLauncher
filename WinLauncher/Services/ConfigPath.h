@@ -49,10 +49,69 @@ namespace ConfigPath
         return GetUserRoamingDirectory() + L"\\WinLauncher\\config";
     }
 
+    inline std::wstring GetUserDataDirectory()
+    {
+        return GetUserRoamingDirectory() + L"\\WinLauncher";
+    }
+
+    inline std::wstring GetUserPluginDirectory()
+    {
+        return GetUserDataDirectory() + L"\\plugins";
+    }
+
+    inline std::wstring GetUserPluginInstalledDirectory()
+    {
+        return GetUserPluginDirectory() + L"\\installed";
+    }
+
+    inline std::wstring GetUserPluginStateDirectory()
+    {
+        return GetUserPluginDirectory() + L"\\state";
+    }
+
+    inline std::wstring GetUserPluginCacheDirectory()
+    {
+        return GetUserPluginDirectory() + L"\\cache";
+    }
+
     inline std::wstring PrepareUserConfigDirectory()
     {
         std::wstring userConfigDir = GetUserConfigDirectory();
         EnsureDirectoryExists(userConfigDir);
         return userConfigDir;
+    }
+
+    inline std::wstring PrepareUserPluginDirectory()
+    {
+        std::wstring userDataDir = GetUserDataDirectory();
+        EnsureDirectoryExists(userDataDir);
+
+        std::wstring pluginDir = GetUserPluginDirectory();
+        EnsureDirectoryExists(pluginDir);
+        return pluginDir;
+    }
+
+    inline std::wstring PrepareUserPluginInstalledDirectory()
+    {
+        PrepareUserPluginDirectory();
+        std::wstring installedDir = GetUserPluginInstalledDirectory();
+        EnsureDirectoryExists(installedDir);
+        return installedDir;
+    }
+
+    inline std::wstring PrepareUserPluginStateDirectory()
+    {
+        PrepareUserPluginDirectory();
+        std::wstring stateDir = GetUserPluginStateDirectory();
+        EnsureDirectoryExists(stateDir);
+        return stateDir;
+    }
+
+    inline std::wstring PrepareUserPluginCacheDirectory()
+    {
+        PrepareUserPluginDirectory();
+        std::wstring cacheDir = GetUserPluginCacheDirectory();
+        EnsureDirectoryExists(cacheDir);
+        return cacheDir;
     }
 }

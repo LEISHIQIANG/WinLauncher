@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Project" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>WinLauncher Plugin</Name>
+    <Description>Native C++ DLL plugin for WinLauncher.</Description>
+    <ProjectType>VC</ProjectType>
+    <DefaultName>WinLauncherPlugin</DefaultName>
+    <SortOrder>1000</SortOrder>
+    <CreateNewFolder>true</CreateNewFolder>
+  </TemplateData>
+  <TemplateContent>
+    <Project File="WinLauncherPlugin.vcxproj" ReplaceParameters="true">
+      <ProjectItem ReplaceParameters="true" TargetFileName="plugin.cpp">plugin.cpp</ProjectItem>
+      <ProjectItem ReplaceParameters="true" TargetFileName="plugin.json">plugin.json</ProjectItem>
+    </Project>
+  </TemplateContent>
+</VSTemplate>
+

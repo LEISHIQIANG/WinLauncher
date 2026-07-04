@@ -1,0 +1,35 @@
+{
+  "id": "example.hello_world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "Adds a sample WinLauncher plugin command.",
+  "entry": "hello_world.dll",
+  "abiVersion": 1,
+  "permissions": ["app.info", "log.write", "plugin.config.read", "plugin.config.write", "file.write"],
+  "commands": [
+    {
+      "id": "example.hello_world.hello",
+      "title": "Hello World",
+      "description": "Shows a sample plugin response."
+    }
+  ],
+  "slashCommands": [
+    {
+      "id": "example.hello_world.about",
+      "command": "hello",
+      "title": "Hello",
+      "description": "Slash command sample.",
+      "usage": "/hello [text]",
+      "keywords": ["sample"],
+      "aliases": ["hi"]
+    }
+  ],
+  "settings": [
+    {
+      "key": "greeting",
+      "type": "string",
+      "title": "Greeting",
+      "default": "Hello from settings"
+    }
+  ]
+}

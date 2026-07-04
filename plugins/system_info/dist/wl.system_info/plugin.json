@@ -1,0 +1,22 @@
+{
+  "id": "wl.system_info",
+  "name": "System Information",
+  "version": "1.0.1",
+  "description": "Display a comprehensive system summary: OS, CPU, GPU, memory, disk, display, uptime, and hostname — all from Win32 APIs.",
+  "entry": "system_info.dll",
+  "abiVersion": 1,
+  "permissions": ["app.info"],
+  "category": "System",
+  "commands": [],
+  "slashCommands": [
+    {
+      "id": "wl.system_info.sysinfo",
+      "command": "sysinfo",
+      "title": "System Info",
+      "description": "Comprehensive system overview: OS, CPU, GPU, memory, disk, display, uptime, hostname.",
+      "usage": "/sysinfo",
+      "keywords": ["system", "info", "about", "cpu", "memory", "disk", "uptime", "系统信息", "版本", "处理器", "内存", "硬盘"]
+    }
+  ],
+  "settings": []
+}

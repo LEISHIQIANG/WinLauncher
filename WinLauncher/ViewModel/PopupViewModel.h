@@ -88,8 +88,8 @@ public:
         if (pageIndex < 0 || pageIndex >= (int)m_pages.size()) return;
         auto& page = m_pages[pageIndex];
         if (shortcutIndex < 0 || shortcutIndex >= (int)page.shortcuts.size()) return;
-        if (m_ctx && m_ctx->pluginHost)
-            m_ctx->pluginHost->NotifyShortcutLaunched(page.shortcuts[shortcutIndex]);
+        if (m_ctx && m_ctx->pluginManager)
+            m_ctx->pluginManager->NotifyShortcutLaunched(page.shortcuts[shortcutIndex]);
     }
 
     bool UpdateAnimation()
@@ -144,14 +144,14 @@ public:
 
     void NotifyPopupShown()
     {
-        if (m_ctx && m_ctx->pluginHost)
-            m_ctx->pluginHost->NotifyPopupShown();
+        if (m_ctx && m_ctx->pluginManager)
+            m_ctx->pluginManager->NotifyPopupShown();
     }
 
     void NotifyPopupHidden()
     {
-        if (m_ctx && m_ctx->pluginHost)
-            m_ctx->pluginHost->NotifyPopupHidden();
+        if (m_ctx && m_ctx->pluginManager)
+            m_ctx->pluginManager->NotifyPopupHidden();
     }
 
 private:

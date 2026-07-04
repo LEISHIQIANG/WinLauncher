@@ -74,6 +74,7 @@ private:
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);
     void DrawDock(ID2D1HwndRenderTarget* rt);
     void LaunchShortcut(const RendShortcutInfo& sc);
+    void ExecuteSearchResult(int index);
     void StartPageAnimationLoop();
     void StepPageAnimationFrame(HWND hWnd);
     void ResetPressedShortcut();
@@ -129,10 +130,23 @@ private:
 
     struct SearchResultItem
     {
+        enum class Kind
+        {
+            LocalShortcut,
+            PluginCommand,
+            PluginSearchResult,
+            SlashCommand
+        };
+
+        Kind kind = Kind::LocalShortcut;
         RendShortcutInfo shortcut;
         ID2D1Bitmap* bitmap = nullptr;
         int originalPageIndex = -1;
         int originalShortcutIndex = -1;
+        std::wstring pluginId;
+        std::wstring pluginCommandId;
+        std::wstring subtitle;
+        std::wstring iconPath;
     };
     std::vector<SearchResultItem> m_searchResults;
     int m_selectedSearchResult;

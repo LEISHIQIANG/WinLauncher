@@ -1,0 +1,68 @@
+{
+  "id": "wl.text_tools",
+  "name": "Text Tools",
+  "version": "1.0.0",
+  "description": "Text processing utilities: Base64, UUID, hash (MD5/SHA-1/SHA-256), case conversion, character count, and text reversal.",
+  "entry": "text_tools.dll",
+  "abiVersion": 1,
+  "permissions": ["clipboard.read", "clipboard.write", "ui.input"],
+  "category": "Text",
+  "commands": [],
+  "slashCommands": [
+    {
+      "id": "wl.text_tools.base64",
+      "command": "base64",
+      "title": "Base64 Encode/Decode",
+      "description": "Encode or decode text in Base64 format. Copies result to clipboard.",
+      "usage": "/base64 [encode|decode] <text>",
+      "keywords": ["b64", "encode", "decode"],
+      "aliases": ["b64"]
+    },
+    {
+      "id": "wl.text_tools.uuid",
+      "command": "uuid",
+      "title": "Generate UUID",
+      "description": "Generate a random UUID v4 and copy to clipboard.",
+      "usage": "/uuid",
+      "keywords": ["guid", "generate", "random"],
+      "aliases": ["guid"]
+    },
+    {
+      "id": "wl.text_tools.hash",
+      "command": "hash",
+      "title": "Compute Hash",
+      "description": "Compute MD5, SHA-1, or SHA-256 hash of text. Copies result to clipboard.",
+      "usage": "/hash [md5|sha1|sha256] <text>",
+      "keywords": ["md5", "sha1", "sha256", "sha-256", "digest", "checksum"],
+      "aliases": ["md5", "sha1", "sha256"]
+    },
+    {
+      "id": "wl.text_tools.case",
+      "command": "case",
+      "title": "Case Conversion",
+      "description": "Convert text to UPPERCASE or lowercase. Copies result to clipboard.",
+      "usage": "/case upper|lower <text>",
+      "keywords": ["upper", "lower", "uppercase", "lowercase", "convert"],
+      "aliases": ["upper", "lower"]
+    },
+    {
+      "id": "wl.text_tools.count",
+      "command": "count",
+      "title": "Count Text",
+      "description": "Count lines, words, and characters in text.",
+      "usage": "/count <text>",
+      "keywords": ["wc", "wordcount", "统计", "字数"],
+      "aliases": ["wc"]
+    },
+    {
+      "id": "wl.text_tools.reverse",
+      "command": "reverse",
+      "title": "Reverse Text",
+      "description": "Reverse the input text. Copies result to clipboard.",
+      "usage": "/reverse <text>",
+      "keywords": ["flip", "mirror", "反转"],
+      "aliases": ["rev"]
+    }
+  ],
+  "settings": []
+}

@@ -1110,7 +1110,7 @@ size_t ConfigWindow::GetCategoryCount()
 {
     if (m_showSettings)
     {
-        return 5;
+        return 6;
     }
     return m_pages.size();
 }
@@ -1123,7 +1123,8 @@ std::wstring ConfigWindow::GetCategoryName(size_t index)
         if (index == 1) return L"弹窗外观";
         if (index == 2) return L"弹窗交互";
         if (index == 3) return L"配置管理";
-        if (index == 4) return L"关于软件";
+        if (index == 4) return L"插件管理";
+        if (index == 5) return L"关于软件";
         return L"";
     }
     if (index >= m_pages.size()) return L"";
@@ -1143,7 +1144,7 @@ void ConfigWindow::SetCurrentCategoryIndex(int index)
 {
     if (m_showSettings)
     {
-        if (index >= 0 && index < 5)
+        if (index >= 0 && index < 6)
         {
             m_currentSettingsCategory = index;
             m_settingsPage.SetCategory(index);
@@ -1906,6 +1907,7 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
             }
         }
         if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
+        DragFinish(hDrop);
         return 0;
     }
 

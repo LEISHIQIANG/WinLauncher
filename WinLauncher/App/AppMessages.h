@@ -8,6 +8,7 @@ namespace AppMessages
     constexpr UINT ConfigChanged          = WM_APP + 3;
     constexpr UINT ShowConfigWindow       = WM_APP + 4;
     constexpr UINT ShowSettingsWindow     = WM_APP + 5;
+    constexpr UINT ShowPluginsWindow      = WM_APP + 9;
     constexpr UINT TogglePopupPause       = WM_APP + 6;   // 暂停/启用弹窗
     constexpr UINT RestartApp             = WM_APP + 7;   // 重启应用
     constexpr UINT RestartHook            = WM_APP + 8;   // 重启钩子

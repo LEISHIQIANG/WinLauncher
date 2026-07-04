@@ -1,0 +1,28 @@
+{
+  "id": "example.template",
+  "name": "Template Plugin",
+  "version": "1.0.0",
+  "description": "Template WinLauncher plugin.",
+  "entry": "WinLauncherPlugin.dll",
+  "abiVersion": 1,
+  "permissions": ["app.info", "log.write"],
+  "commands": [
+    {
+      "id": "example.template.hello",
+      "title": "Template Command",
+      "description": "Runs a template plugin command."
+    }
+  ],
+  "slashCommands": [
+    {
+      "id": "example.template.hello_slash",
+      "command": "template",
+      "title": "Template",
+      "description": "Runs a template slash command.",
+      "usage": "/template [text]",
+      "keywords": ["sample"],
+      "aliases": ["tpl"]
+    }
+  ]
+}
+

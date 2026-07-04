@@ -1,6 +1,6 @@
 #include "Application.h"
 #include "AppMessages.h"
-#include "PluginHost.h"
+#include "PluginManager.h"
 #include "../AutoStartHelper.h"
 #include "../Config/ConfigWindow.h"
 #include "../Config/ConfirmWindow.h"
@@ -229,6 +229,8 @@ bool Application::InitializeServices()
     m_appCtx->iconService   = std::make_unique<SystemIconService>();
 
     LOG_INFO(m_appCtx->logger, L"WinLauncher starting...");
+    if (m_appCtx->pluginManager)
+        m_appCtx->pluginManager->Initialize();
 
     // Validate autostart configuration and self-check
     AutoStartHelper::ValidateAndSelfCheck();
@@ -322,8 +324,8 @@ void Application::Shutdown()
 
     if (m_appCtx)
     {
-        if (m_appCtx->pluginHost)
-            m_appCtx->pluginHost->UnloadAll();
+        if (m_appCtx->pluginManager)
+            m_appCtx->pluginManager->Shutdown();
 
         m_appCtx->iconService.reset();
         m_appCtx->configService.reset();
@@ -580,6 +582,10 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
     case AppMessages::ShowSettingsWindow:
         ShowSettingsWindow();
+        return 0;
+
+    case AppMessages::ShowPluginsWindow:
+        ShowConfigWindow(); // Opens config with focus on plugins
         return 0;
 
     case AppMessages::ConfigChanged:

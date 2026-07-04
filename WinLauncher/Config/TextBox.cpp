@@ -94,7 +94,7 @@ void TextBox::RecreateTextLayout()
     m_textLayout.Reset();
     if (!m_dwFactory) return;
 
-    DWRITE_WORD_WRAPPING wrapMode = m_multiline ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP;
+    DWRITE_WORD_WRAPPING wrapMode = m_multiline ? DWRITE_WORD_WRAPPING_EMERGENCY_BREAK : DWRITE_WORD_WRAPPING_NO_WRAP;
 
     ComPtr<IDWriteTextFormat> tf;
     HRESULT hr = UIStyle::Typography::CreateTextFormat(

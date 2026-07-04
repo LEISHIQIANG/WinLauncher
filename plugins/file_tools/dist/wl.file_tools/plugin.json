@@ -1,0 +1,30 @@
+{
+  "id": "wl.file_tools",
+  "name": "File Tools",
+  "version": "1.0.0",
+  "description": "File utilities: file info (size/dates/attributes) and file/folder hash (MD5/SHA-1/SHA-256).",
+  "entry": "file_tools.dll",
+  "abiVersion": 1,
+  "permissions": ["file.read"],
+  "category": "File",
+  "commands": [],
+  "slashCommands": [
+    {
+      "id": "wl.file_tools.fileinfo",
+      "command": "fileinfo",
+      "title": "File Info",
+      "description": "Show file size, creation/modification/access times, and attributes for an explicit path or selected files.",
+      "usage": "/fileinfo [path]",
+      "keywords": ["stat", "info", "属性", "文件信息"]
+    },
+    {
+      "id": "wl.file_tools.filehash",
+      "command": "filehash",
+      "title": "File Hash",
+      "description": "Compute MD5, SHA-1, or SHA-256 hash for explicit paths or selected files/folders.",
+      "usage": "/filehash [md5|sha1|sha256] [path]",
+      "keywords": ["checksum", "digest", "md5", "sha", "校验"]
+    }
+  ],
+  "settings": []
+}

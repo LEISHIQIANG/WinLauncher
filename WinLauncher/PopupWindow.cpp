@@ -50,7 +50,9 @@ static const UINT_PTR POPUP_ANIMATION_TIMER_ID = 2;
 static const UINT POPUP_ANIMATION_FRAME_MS = 8;
 static const UINT_PTR TIMELINE_ANIMATION_TIMER_ID = 3;
 static const UINT_PTR CLICK_CLOSE_TIMER_ID = 4;
+static const UINT_PTR PLUGIN_SEARCH_TIMER_ID = 5;
 static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
+static const UINT PLUGIN_SEARCH_REFRESH_MS = 120;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
 static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
@@ -634,6 +636,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
                 KillTimer(oldHwnd, CLICK_CLOSE_TIMER_ID);
                 KillTimer(oldHwnd, POPUP_ANIMATION_TIMER_ID);
                 KillTimer(oldHwnd, TIMELINE_ANIMATION_TIMER_ID);
+                KillTimer(oldHwnd, PLUGIN_SEARCH_TIMER_ID);
                 DestroyWindow(oldHwnd);
             }
             delete oldWindow;
@@ -907,6 +910,7 @@ void PopupWindow::HideSelf()
         KillTimer(h, CLICK_CLOSE_TIMER_ID);
         KillTimer(h, POPUP_ANIMATION_TIMER_ID);
         KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+        KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
         m_animating = false;
     }
 
@@ -954,6 +958,7 @@ void PopupWindow::DestroySelf()
         KillTimer(h, CLICK_CLOSE_TIMER_ID);
         KillTimer(h, POPUP_ANIMATION_TIMER_ID);
         KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+        KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
         m_animating = false;
     }
 
@@ -1009,6 +1014,7 @@ void PopupWindow::Release()
             KillTimer(h, CLICK_CLOSE_TIMER_ID);
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+            KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
             DestroyWindow(h);
         }
         delete extra;
@@ -1026,6 +1032,7 @@ void PopupWindow::Release()
             KillTimer(h, CLICK_CLOSE_TIMER_ID);
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
+            KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
             DestroyWindow(h);
         }
 
@@ -1102,63 +1109,135 @@ void PopupWindow::UpdateSearch()
 {
     m_searchResults.clear();
     m_selectedSearchResult = -1;
-    if (m_searchQuery.empty()) return;
+    if (m_searchQuery.empty())
+    {
+        if (m_appCtx && m_appCtx->pluginManager)
+            m_appCtx->pluginManager->RequestSearch(L"");
+        KillTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID);
+        return;
+    }
 
     std::wstring queryLower = m_searchQuery;
     std::transform(queryLower.begin(), queryLower.end(), queryLower.begin(), [](wchar_t c) {
         return (wchar_t)towlower(c);
     });
 
-    for (size_t pIndex = 0; pIndex < m_pages.size(); pIndex++)
+    bool slashMode = !m_searchQuery.empty() && m_searchQuery.front() == L'/';
+    if (slashMode)
     {
-        const auto& page = m_pages[pIndex];
-        for (size_t sIndex = 0; sIndex < page.shortcuts.size(); sIndex++)
+        if (m_appCtx && m_appCtx->pluginManager)
         {
-            const auto& sc = page.shortcuts[sIndex];
+            m_appCtx->pluginManager->RequestSearch(L"");
+            auto slashCommands = m_appCtx->pluginManager->SearchSlashCommands(m_searchQuery);
+            for (const auto& command : slashCommands)
+            {
+                SearchResultItem item;
+                item.kind = SearchResultItem::Kind::SlashCommand;
+                item.shortcut.name = L"/" + command.commandName;
+                item.originalPageIndex = -1;
+                item.originalShortcutIndex = -1;
+                item.pluginId = command.pluginId;
+                item.pluginCommandId = command.commandId;
+                item.subtitle = command.usage.empty() ? command.description : command.usage;
+                item.iconPath = command.icon;
+                m_searchResults.push_back(item);
+            }
+        }
+        KillTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID);
+    }
+    else
+    {
+        for (size_t pIndex = 0; pIndex < m_pages.size(); pIndex++)
+        {
+            const auto& page = m_pages[pIndex];
+            for (size_t sIndex = 0; sIndex < page.shortcuts.size(); sIndex++)
+            {
+                const auto& sc = page.shortcuts[sIndex];
+                std::wstring nameLower = sc.name;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](wchar_t c) {
+                    return (wchar_t)towlower(c);
+                });
+
+                if (nameLower.find(queryLower) != std::wstring::npos)
+                {
+                    SearchResultItem item;
+                    item.shortcut = sc;
+                    if (sIndex < page.iconBitmaps.size())
+                    {
+                        item.bitmap = page.iconBitmaps[sIndex];
+                    }
+                    item.originalPageIndex = ToModelPageIndex((int)pIndex);
+                    item.originalShortcutIndex = (int)sIndex;
+                    m_searchResults.push_back(item);
+                }
+            }
+        }
+
+        // Also search dock page shortcuts
+        for (size_t sIndex = 0; sIndex < m_dockPage.shortcuts.size(); sIndex++)
+        {
+            const auto& sc = m_dockPage.shortcuts[sIndex];
             std::wstring nameLower = sc.name;
             std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](wchar_t c) {
                 return (wchar_t)towlower(c);
             });
-
             if (nameLower.find(queryLower) != std::wstring::npos)
             {
                 SearchResultItem item;
                 item.shortcut = sc;
-                if (sIndex < page.iconBitmaps.size())
-                {
-                    item.bitmap = page.iconBitmaps[sIndex];
-                }
-                item.originalPageIndex = ToModelPageIndex((int)pIndex);
+                if (sIndex < m_dockPage.iconBitmaps.size())
+                    item.bitmap = m_dockPage.iconBitmaps[sIndex];
+                item.originalPageIndex = -2; // Sentinel: dock page
                 item.originalShortcutIndex = (int)sIndex;
                 m_searchResults.push_back(item);
             }
         }
-    }
 
-    // Also search dock page shortcuts
-    for (size_t sIndex = 0; sIndex < m_dockPage.shortcuts.size(); sIndex++)
-    {
-        const auto& sc = m_dockPage.shortcuts[sIndex];
-        std::wstring nameLower = sc.name;
-        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](wchar_t c) {
-            return (wchar_t)towlower(c);
-        });
-        if (nameLower.find(queryLower) != std::wstring::npos)
+        if (m_appCtx && m_appCtx->pluginManager)
         {
-            SearchResultItem item;
-            item.shortcut = sc;
-            if (sIndex < m_dockPage.iconBitmaps.size())
-                item.bitmap = m_dockPage.iconBitmaps[sIndex];
-            item.originalPageIndex = -2; // Sentinel: dock page
-            item.originalShortcutIndex = (int)sIndex;
-            m_searchResults.push_back(item);
+            m_appCtx->pluginManager->RequestSearch(m_searchQuery);
+
+            auto pluginCommands = m_appCtx->pluginManager->SearchCommands(m_searchQuery);
+            for (const auto& command : pluginCommands)
+            {
+                SearchResultItem item;
+                item.kind = SearchResultItem::Kind::PluginCommand;
+                item.shortcut.name = command.title;
+                item.originalPageIndex = -1;
+                item.originalShortcutIndex = -1;
+            item.pluginId = command.pluginId;
+            item.pluginCommandId = command.commandId;
+            item.subtitle = command.description;
+            item.iconPath = command.icon;
+            m_searchResults.push_back(std::move(item));
+            }
+
+            auto pluginResults = m_appCtx->pluginManager->GetCachedSearchResults(m_searchQuery);
+            for (const auto& result : pluginResults)
+            {
+                SearchResultItem item;
+                item.kind = SearchResultItem::Kind::PluginSearchResult;
+                item.shortcut.name = result.title;
+                item.originalPageIndex = -1;
+                item.originalShortcutIndex = -1;
+                item.pluginId = result.pluginId;
+                item.pluginCommandId = result.commandId;
+                item.subtitle = result.description;
+                item.iconPath = result.icon;
+                m_searchResults.push_back(std::move(item));
+            }
+
+            if (m_appCtx->pluginManager->IsSearchRunning(m_searchQuery))
+                SetTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID, PLUGIN_SEARCH_REFRESH_MS, nullptr);
+            else
+                KillTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID);
         }
     }
 
     int sortMode = (m_appCtx && m_appCtx->configService)
         ? m_appCtx->configService->GetSortMode()
         : 0;
-    if (sortMode == 1)
+    if (sortMode == 1 && !slashMode)
     {
         std::stable_sort(m_searchResults.begin(), m_searchResults.end(), [&](const SearchResultItem& a, const SearchResultItem& b) {
             auto score = [&](const SearchResultItem& item) {
@@ -1172,6 +1251,125 @@ void PopupWindow::UpdateSearch()
             };
             return score(a) < score(b);
         });
+    }
+}
+
+void PopupWindow::ExecuteSearchResult(int index)
+{
+    if (index < 0 || index >= (int)m_searchResults.size())
+        return;
+
+    auto& item = m_searchResults[index];
+    if (item.kind == SearchResultItem::Kind::SlashCommand)
+    {
+        if (!m_appCtx || !m_appCtx->pluginManager)
+            return;
+
+        if (item.pluginId.empty() &&
+            item.pluginCommandId == L"winlauncher.settings")
+        {
+            if (m_appCtx->hMainWnd)
+                PostMessageW(m_appCtx->hMainWnd, AppMessages::ShowConfigWindow, 0, 0);
+            return;
+        }
+
+        std::vector<std::wstring> files;
+        for (int wait = 0; wait < 25; ++wait)
+        {
+            bool pending = false;
+            {
+                std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+                pending = m_selectedFilesCtx.isPending;
+            }
+            if (!pending)
+                break;
+            Sleep(10);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+            double now = GetTimeInSeconds();
+            if (!m_selectedFilesCtx.isPending &&
+                !m_selectedFilesCtx.filePaths.empty() &&
+                (now - m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
+            {
+                files = m_selectedFilesCtx.filePaths;
+                m_selectedFilesCtx.filePaths.clear();
+            }
+        }
+
+        std::wstring message;
+        bool ok = m_appCtx->pluginManager->ExecuteSlashCommand(item.pluginId, item.pluginCommandId, m_searchQuery, files, message);
+        LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: slash command plugin=%s command=%s result=%d",
+            item.pluginId.c_str(),
+            item.pluginCommandId.c_str(),
+            ok ? 1 : 0);
+
+        if (!message.empty())
+        {
+            std::wstring panelTitle = (ok ? L"/ 命令输出 - " : L"/ 命令错误 - ") + item.shortcut.name;
+            std::wstring pluginId = item.pluginId;
+            std::wstring commandId = item.pluginCommandId;
+            std::wstring rawInput = m_searchQuery;
+            auto selectedFiles = files;
+            AppContext* appCtx = m_appCtx;
+            auto refreshWorker = [pluginId, commandId, rawInput, selectedFiles, appCtx](HWND panelHwnd) {
+                if (!appCtx || !appCtx->pluginManager)
+                    return;
+                std::wstring refreshed;
+                bool refreshOk = appCtx->pluginManager->ExecuteSlashCommand(pluginId, commandId, rawInput, selectedFiles, refreshed);
+                if (refreshed.empty())
+                    refreshed = refreshOk ? L"命令已重新执行，无输出。" : L"命令重新执行失败，无错误详情。";
+                CommandPanelWindow::PostAppend(panelHwnd, refreshed);
+            };
+            CommandPanelWindow::Show(GetHWND(), panelTitle.c_str(), message.c_str(), m_appCtx, refreshWorker);
+        }
+        return;
+    }
+
+    if (item.kind == SearchResultItem::Kind::PluginCommand ||
+        item.kind == SearchResultItem::Kind::PluginSearchResult)
+    {
+        if (!m_appCtx || !m_appCtx->pluginManager)
+            return;
+
+        std::wstring message;
+        bool ok = m_appCtx->pluginManager->ExecuteCommand(item.pluginId, item.pluginCommandId, m_searchQuery, message);
+        LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: plugin command plugin=%s command=%s result=%d",
+            item.pluginId.c_str(),
+            item.pluginCommandId.c_str(),
+            ok ? 1 : 0);
+
+        if (!message.empty())
+        {
+            std::wstring panelTitle = (ok ? L"插件输出 - " : L"插件错误 - ") + item.shortcut.name;
+            std::wstring pluginId = item.pluginId;
+            std::wstring commandId = item.pluginCommandId;
+            std::wstring rawInput = m_searchQuery;
+            AppContext* appCtx = m_appCtx;
+            auto refreshWorker = [pluginId, commandId, rawInput, appCtx](HWND panelHwnd) {
+                if (!appCtx || !appCtx->pluginManager)
+                    return;
+                std::wstring refreshed;
+                bool refreshOk = appCtx->pluginManager->ExecuteCommand(pluginId, commandId, rawInput, refreshed);
+                if (refreshed.empty())
+                    refreshed = refreshOk ? L"命令已重新执行，无输出。" : L"命令重新执行失败，无错误详情。";
+                CommandPanelWindow::PostAppend(panelHwnd, refreshed);
+            };
+            CommandPanelWindow::Show(GetHWND(), panelTitle.c_str(), message.c_str(), m_appCtx, refreshWorker);
+        }
+        return;
+    }
+
+    auto& sc = item.shortcut;
+    if (HasLaunchAction(sc))
+    {
+        LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: launching search result shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+        LaunchShortcut(sc);
+    }
+    if (m_viewModel)
+    {
+        m_viewModel->NotifyShortcutLaunched(item.originalPageIndex, item.originalShortcutIndex);
     }
 }
 
@@ -1362,7 +1560,31 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
     {
         float ix = (float)(wndPad + (i % cols) * cw);
         float iy = (float)(wndPad + (i / cols) * ch + topBarHeight);
-        auto* bmp = m_searchResults[i].bitmap;
+        const auto& item = m_searchResults[i];
+        auto* bmp = item.bitmap;
+        ComPtr<ID2D1Bitmap> generatedBitmap;
+        bool commandLike =
+            item.kind == SearchResultItem::Kind::PluginCommand ||
+            item.kind == SearchResultItem::Kind::PluginSearchResult ||
+            item.kind == SearchResultItem::Kind::SlashCommand;
+        if (!bmp && commandLike)
+        {
+            HICON hIcon = nullptr;
+            if (!item.iconPath.empty())
+            {
+                ExtractIconExW(item.iconPath.c_str(), 0, &hIcon, nullptr, 1);
+            }
+            if (hIcon)
+            {
+                generatedBitmap = IconRenderer::HicontoD2D(rt, hIcon, IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(iconSize)));
+                DestroyIcon(hIcon);
+            }
+            if (!generatedBitmap)
+            {
+                generatedBitmap = IconRenderer::CreateDefaultIcon(rt, GetDWFactory(), item.shortcut.name, IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(iconSize)));
+            }
+            bmp = generatedBitmap.Get();
+        }
         if (bmp)
         {
             float iconX = ix + cellMarginX;
@@ -1379,6 +1601,9 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
         {
             int col = i % cols, row = i / cols;
             float lx = (float)(wndPad + col * cw);
+            bool commandLike = (m_searchResults[i].kind == SearchResultItem::Kind::PluginCommand ||
+                m_searchResults[i].kind == SearchResultItem::Kind::PluginSearchResult ||
+                m_searchResults[i].kind == SearchResultItem::Kind::SlashCommand);
             float ly = (float)(wndPad + row * ch + cellMarginY + iconSize + 2 + topBarHeight);
             auto& nm = m_searchResults[i].shortcut.name;
             
@@ -1388,6 +1613,19 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
                 rt->DrawTextW(nm.c_str(), (UINT32)nm.size(), m_popupTextFormat.Get(),
                     D2D1::RectF(lx + 2, ly, lx + cw - iconGap - 2, ly + GetLabelHeight()),
                     tb.Get());
+            }
+            if (commandLike &&
+                m_searchResults[i].kind != SearchResultItem::Kind::SlashCommand &&
+                !m_searchResults[i].subtitle.empty())
+            {
+                auto subBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextMuted().d2d);
+                if (subBrush)
+                {
+                    const auto& subtitle = m_searchResults[i].subtitle;
+                    rt->DrawTextW(subtitle.c_str(), (UINT32)subtitle.size(), m_popupTextFormat.Get(),
+                        D2D1::RectF(lx + 2, ly + GetLabelHeight() + 2, lx + cw - iconGap - 2, ly + GetLabelHeight() * 2 + 4),
+                        subBrush.Get());
+                }
             }
         }
     }
@@ -2205,6 +2443,21 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
+        if (wParam == PLUGIN_SEARCH_TIMER_ID)
+        {
+            if (!m_searchActive || m_searchQuery.empty() || !m_appCtx || !m_appCtx->pluginManager)
+            {
+                KillTimer(hWnd, PLUGIN_SEARCH_TIMER_ID);
+                return 0;
+            }
+
+            bool wasRunning = m_appCtx->pluginManager->IsSearchRunning(m_searchQuery);
+            UpdateSearch();
+            InvalidateRect(hWnd, nullptr, FALSE);
+            if (!wasRunning && !m_appCtx->pluginManager->IsSearchRunning(m_searchQuery))
+                KillTimer(hWnd, PLUGIN_SEARCH_TIMER_ID);
+            return 0;
+        }
         break;
     }
 
@@ -2578,20 +2831,8 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int hit = HitTest(pt);
                 if (hit == pressedIndex && hit >= 0 && hit < (int)m_searchResults.size())
                 {
-                    auto& sc = m_searchResults[hit].shortcut;
                     if (!m_pinned) HideSelf();
-                    if (HasLaunchAction(sc))
-                    {
-                        LOG_G_INFO(L"PopupWindow::LButtonUp: launching search result shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                        LaunchShortcut(sc);
-                    }
-                    if (m_viewModel)
-                    {
-                        m_viewModel->NotifyShortcutLaunched(
-                            m_searchResults[hit].originalPageIndex,
-                            m_searchResults[hit].originalShortcutIndex
-                        );
-                    }
+                    ExecuteSearchResult(hit);
                 }
             }
             else if (pressedKind == PressedShortcutKind::Dock)
@@ -2723,19 +2964,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             {
                 if (m_selectedSearchResult >= 0 && m_selectedSearchResult < (int)m_searchResults.size())
                 {
-                    auto& sc = m_searchResults[m_selectedSearchResult].shortcut;
-                    if (HasLaunchAction(sc))
-                    {
-                        LOG_G_INFO(L"PopupWindow::OnKeyDown (Enter): launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
-                        LaunchShortcut(sc);
-                    }
-                    if (m_viewModel)
-                    {
-                        m_viewModel->NotifyShortcutLaunched(
-                            m_searchResults[m_selectedSearchResult].originalPageIndex,
-                            m_searchResults[m_selectedSearchResult].originalShortcutIndex
-                        );
-                    }
+                    ExecuteSearchResult(m_selectedSearchResult);
                     if (!m_pinned) HideSelf();
                 }
             }
@@ -2844,6 +3073,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_DESTROY:
         KillTimer(hWnd, POPUP_ANIMATION_TIMER_ID);
+        KillTimer(hWnd, PLUGIN_SEARCH_TIMER_ID);
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         // s_instance is managed by Release()
         return 0;

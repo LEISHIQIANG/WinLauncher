@@ -1,0 +1,41 @@
+{
+  "id": "wl.time_tools",
+  "name": "Time Tools",
+  "version": "1.0.0",
+  "description": "Time utilities: Unix timestamp conversion, countdown timer, and world clock.",
+  "entry": "time_tools.dll",
+  "abiVersion": 1,
+  "permissions": ["clipboard.write", "ui.input"],
+  "category": "Tools",
+  "commands": [],
+  "slashCommands": [
+    {
+      "id": "wl.time_tools.timestamp",
+      "command": "timestamp",
+      "title": "Timestamp Converter",
+      "description": "Convert Unix timestamps to/from human-readable dates.",
+      "usage": "/timestamp [seconds-or-milliseconds]",
+      "keywords": ["unix", "epoch", "时间戳", "date"],
+      "aliases": ["ts"]
+    },
+    {
+      "id": "wl.time_tools.countdown",
+      "command": "countdown",
+      "title": "Countdown",
+      "description": "Calculate a countdown end time.",
+      "usage": "/countdown <seconds> [message]",
+      "keywords": ["timer", "倒计时", "remind"],
+      "aliases": ["timer"]
+    },
+    {
+      "id": "wl.time_tools.worldclock",
+      "command": "worldclock",
+      "title": "World Clock",
+      "description": "Show current time in major cities around the world.",
+      "usage": "/worldclock",
+      "keywords": ["timezone", "时区", "时差", "utc"],
+      "aliases": ["wclock", "tz"]
+    }
+  ],
+  "settings": []
+}

@@ -19,6 +19,7 @@ public:
     virtual void OnLButtonDown(POINT pt, bool& repaint) override;
     virtual void OnLButtonUp(POINT pt, bool& repaint) override;
     virtual void OnLButtonDblClk(POINT pt, bool& repaint) override;
+    virtual void OnDropFiles(HDROP hDrop, bool& repaint) override;
     virtual bool IsAnimating() const override { return m_selectionAnimating; }
     virtual void UpdateAnimation(float dt, bool& repaint) override;
 
@@ -56,6 +57,14 @@ private:
     bool HitTestHideTrayIcon(POINT pt);
     bool HitTestCheckUpdate(POINT pt);
     bool HitTestApplyUpdate(POINT pt);
+    bool HitTestPluginInstall(POINT pt);
+    bool HitTestPluginOpenDir(POINT pt);
+    bool HitTestPluginRefresh(POINT pt);
+    int HitTestPluginConfigure(POINT pt);
+    int HitTestPluginToggle(POINT pt);
+    int HitTestPluginUninstall(POINT pt);
+    bool InstallPluginPackageFromPath(const std::wstring& filePath, bool showSuccessMessage, std::wstring* errorMessage = nullptr);
+    bool IsPluginPackagePath(const std::wstring& filePath) const;
 
     struct SelectionVisual
     {
@@ -111,6 +120,12 @@ private:
     int m_pendingGlobalScalePercent = 0;
     bool m_hoveredApplyUpdate = false;
     bool m_hoveredCheckUpdate = false;
+    bool m_hoveredPluginInstall = false;
+    bool m_hoveredPluginOpenDir = false;
+    bool m_hoveredPluginRefresh = false;
+    int m_hoveredPluginConfigure = -1;
+    int m_hoveredPluginToggle = -1;
+    int m_hoveredPluginUninstall = -1;
 
     bool m_selectionAnimating = false;
     SelectionVisual m_themeSelection;

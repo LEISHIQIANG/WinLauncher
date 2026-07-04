@@ -18,6 +18,18 @@
     <ClCompile Include="App\Application.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="App\PluginInstaller.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="App\PluginManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="App\PluginManifest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="App\PluginStateStore.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -147,6 +159,18 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="App\Application.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\PluginInstaller.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\PluginManager.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\PluginManifest.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\PluginStateStore.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="MouseHook.h">
@@ -279,6 +303,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\BatchLaunchService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginABI.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginCpp.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\MacroDialog.h">

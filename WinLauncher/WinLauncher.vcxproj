@@ -135,6 +135,10 @@
   <ItemGroup>
     <ClCompile Include="App\Application.cpp" />
     <ClCompile Include="App\Logger.cpp" />
+    <ClCompile Include="App\PluginInstaller.cpp" />
+    <ClCompile Include="App\PluginManager.cpp" />
+    <ClCompile Include="App\PluginManifest.cpp" />
+    <ClCompile Include="App\PluginStateStore.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MouseHook.cpp" />
     <ClCompile Include="KeyboardHook.cpp" />
@@ -203,7 +207,10 @@
     <ClInclude Include="App\AppContext.h" />
     <ClInclude Include="App\EventBus.h" />
     <ClInclude Include="App\Logger.h" />
-    <ClInclude Include="App\PluginHost.h" />
+    <ClInclude Include="App\PluginInstaller.h" />
+    <ClInclude Include="App\PluginManager.h" />
+    <ClInclude Include="App\PluginManifest.h" />
+    <ClInclude Include="App\PluginStateStore.h" />
     <!-- Model Layer -->
     <ClInclude Include="Model\AppearanceSettings.h" />
     <ClInclude Include="Model\ShortcutInfo.h" />
@@ -263,6 +270,8 @@
     <ClInclude Include="Config\SystemIconEditForm.h" />
     <ClInclude Include="Services\MacroService.h" />
     <ClInclude Include="Services\BatchLaunchService.h" />
+    <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginABI.h" />
+    <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginCpp.h" />
     <ClInclude Include="Config\MacroDialog.h" />
     <ClInclude Include="Config\MacroEditForm.h" />
     <ClInclude Include="Config\BatchLaunchDialog.h" />

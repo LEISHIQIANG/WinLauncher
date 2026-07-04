@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "CommandPanelWindow.h"
 #include "UIStyle.h"
+#include "DropDownMenu.h"
 #include "../DpiHelper.h"
 #include "../App/Logger.h"
 #include <windowsx.h>
@@ -12,6 +13,7 @@
 
 static CommandPanelWindow* g_cmdPanelInstance = nullptr;
 static const UINT WM_COMMAND_PANEL_APPEND = WM_APP + 0x310;
+static const UINT WM_COMMAND_PANEL_REFRESH_DONE = WM_APP + 0x311;
 
 static void ClampWindowToWorkArea(int& x, int& y, int w, int h, const RECT& workArea)
 {
@@ -36,16 +38,22 @@ static void ClampWindowToWorkArea(int& x, int& y, int w, int h, const RECT& work
     }
 }
 
-CommandPanelWindow::CommandPanelWindow(const wchar_t* title, const wchar_t* outputText, AppContext* ctx)
+CommandPanelWindow::CommandPanelWindow(const wchar_t* title, const wchar_t* outputText, AppContext* ctx, std::function<void(HWND)> refreshWorker)
     : GlassWindow()
     , m_title(title)
     , m_outputText(outputText ? outputText : L"")
+    , m_initialText(outputText ? outputText : L"")
+    , m_refreshWorker(std::move(refreshWorker))
     , m_hoveredOk(false)
     , m_hoveredCopy(false)
+    , m_hoveredRefresh(false)
+    , m_hoveredMore(false)
     , m_hoveredClose(false)
     , m_trackMouse(false)
+    , m_refreshRunning(false)
 {
     m_appCtx = ctx;
+    RegisterBuiltinActions();
 }
 
 CommandPanelWindow::~CommandPanelWindow()
@@ -63,9 +71,9 @@ void CommandPanelWindow::ClearOutput(const wchar_t* initialText)
     }
 }
 
-void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* outputText, AppContext* ctx)
+void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* outputText, AppContext* ctx, std::function<void(HWND)> refreshWorker)
 {
-    ShowLive(parent, title, outputText, nullptr, ctx);
+    ShowLive(parent, title, outputText, nullptr, ctx, std::move(refreshWorker));
 }
 
 bool CommandPanelWindow::PostAppend(HWND hwnd, const std::wstring& text)
@@ -82,8 +90,11 @@ bool CommandPanelWindow::PostAppend(HWND hwnd, const std::wstring& text)
     return true;
 }
 
-void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar_t* initialText, std::function<void(HWND)> worker, AppContext* ctx)
+void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar_t* initialText, std::function<void(HWND)> worker, AppContext* ctx, std::function<void(HWND)> refreshWorker)
 {
+    if (!refreshWorker && worker)
+        refreshWorker = worker;
+
     if (g_cmdPanelInstance)
     {
         HWND existing = g_cmdPanelInstance->GetHWND();
@@ -93,6 +104,10 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             GetWindowRect(existing, &rc);
             LOG_G_INFO(L"CommandPanelWindow::ShowLive: existing panel hwnd=%p visible=%d rect=(%ld,%ld,%ld,%ld)",
                        existing, IsWindowVisible(existing) ? 1 : 0, rc.left, rc.top, rc.right, rc.bottom);
+            g_cmdPanelInstance->m_title = title ? title : L"";
+            g_cmdPanelInstance->m_initialText = initialText ? initialText : L"";
+            g_cmdPanelInstance->m_refreshWorker = std::move(refreshWorker);
+            g_cmdPanelInstance->m_refreshRunning = false;
             g_cmdPanelInstance->ClearOutput(initialText);
             ShowWindow(existing, SW_SHOWNORMAL);
             SetWindowPos(existing, HWND_TOPMOST, 0, 0, 0, 0,
@@ -112,7 +127,7 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
         return;
     }
 
-    CommandPanelWindow* win = new CommandPanelWindow(title, initialText, ctx);
+    CommandPanelWindow* win = new CommandPanelWindow(title, initialText, ctx, std::move(refreshWorker));
     HWND owner = (parent && IsWindowVisible(parent)) ? parent : nullptr;
 
     int w = 310;
@@ -193,6 +208,12 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
             AppendOutput(*payload);
             delete payload;
         }
+        return 0;
+    }
+    case WM_COMMAND_PANEL_REFRESH_DONE:
+    {
+        m_refreshRunning = false;
+        InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
     }
     case WM_CREATE:
@@ -319,6 +340,12 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         bool hCopy = HitTestCopyButton(pt);
         if (hCopy != m_hoveredCopy) { m_hoveredCopy = hCopy; repaint = true; }
 
+        bool hRefresh = HitTestRefreshButton(pt);
+        if (hRefresh != m_hoveredRefresh) { m_hoveredRefresh = hRefresh; repaint = true; }
+
+        bool hMore = HitTestMoreButton(pt);
+        if (hMore != m_hoveredMore) { m_hoveredMore = hMore; repaint = true; }
+
         bool hc = HitTestCloseButton(pt);
         if (hc != m_hoveredClose) { m_hoveredClose = hc; repaint = true; }
 
@@ -332,6 +359,8 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     {
         m_hoveredOk = false;
         m_hoveredCopy = false;
+        m_hoveredRefresh = false;
+        m_hoveredMore = false;
         m_hoveredClose = false;
         m_trackMouse = false;
         InvalidateRect(hWnd, nullptr, FALSE);
@@ -351,6 +380,18 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         if (HitTestCopyButton(pt))
         {
             CopyOutputToClipboard();
+            return 0;
+        }
+
+        if (HitTestRefreshButton(pt))
+        {
+            RunRefresh();
+            return 0;
+        }
+
+        if (HitTestMoreButton(pt))
+        {
+            ShowMoreDropdown();
             return 0;
         }
 
@@ -418,6 +459,22 @@ void CommandPanelWindow::AppendOutput(const std::wstring& text)
     {
         InvalidateRect(GetHWND(), nullptr, FALSE);
     }
+}
+
+void CommandPanelWindow::RunRefresh()
+{
+    HWND hwnd = GetHWND();
+    if (!hwnd || !m_refreshWorker || m_refreshRunning)
+        return;
+
+    m_refreshRunning = true;
+    ClearOutput(L"");
+
+    auto worker = m_refreshWorker;
+    std::thread([worker, hwnd]() {
+        worker(hwnd);
+        PostMessageW(hwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, 0);
+    }).detach();
 }
 
 void CommandPanelWindow::UpdateChildLayout()
@@ -500,47 +557,87 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     // 3. Paint Textbox
     m_textBox.Paint(rt, scale);
 
-    // 4. Footer Buttons
+    // 4. Footer Buttons — 4 equal-width buttons filling the full width
     {
-        D2D1_RECT_F copyRect = D2D1::RectF(w - 160, h - 40, w - 85, h - 16);
-        D2D1_ROUNDED_RECT roundedCopy = D2D1::RoundedRect(copyRect, 5.0f, 5.0f);
+        const float barPad = 10.0f;
+        const float barTop = h - 40.0f;
+        const float barH = 24.0f;
+        const float barW = w - barPad * 2;
+        const float btnGap = 6.0f;
+        const int numButtons = 4;
+        const float btnW = (barW - btnGap * (numButtons - 1)) / (float)numButtons;
+        const float btnRadius = 5.0f;
 
-        D2D1_COLOR_F copyBg = m_hoveredCopy
-            ? UIStyle::ThemeColor::ButtonBgHover().d2d
-            : UIStyle::ThemeColor::ButtonBgNormal().d2d;
-        auto copyBgBrush = GetOrCreateBrush(copyBg);
-        if (copyBgBrush) rt->FillRoundedRectangle(roundedCopy, copyBgBrush.Get());
+        struct BtnInfo {
+            const wchar_t* label;
+            bool* hovered;
+            bool accent;
+            bool disabled;
+        };
+        BtnInfo btns[] = {
+            { L"更多",  &m_hoveredMore,   false, false },
+            { nullptr,  &m_hoveredRefresh, false, !m_refreshWorker || m_refreshRunning },
+            { L"复制",  &m_hoveredCopy,   false, false },
+            { L"确定",  &m_hoveredOk,     true,  false },
+        };
 
-        D2D1_COLOR_F copyBorder = m_hoveredCopy
-            ? UIStyle::ThemeColor::ButtonBorderHover().d2d
-            : UIStyle::ThemeColor::ButtonBorderNormal().d2d;
-        auto copyBorderBrush = GetOrCreateBrush(copyBorder);
-        if (copyBorderBrush) rt->DrawRoundedRectangle(roundedCopy, copyBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
-
-        if (m_tfBtn)
+        for (int i = 0; i < numButtons; i++)
         {
-            auto copyTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-            if (copyTextBrush) rt->DrawTextW(L"复制", 2, m_tfBtn.Get(), copyRect, copyTextBrush.Get());
-        }
-    }
+            float bx = barPad + i * (btnW + btnGap);
+            D2D1_RECT_F rect = D2D1::RectF(bx, barTop, bx + btnW, barTop + barH);
+            D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(rect, btnRadius, btnRadius);
 
-    {
-        D2D1_RECT_F okRect = D2D1::RectF(w - 75, h - 40, w - 10, h - 16);
-        D2D1_ROUNDED_RECT roundedOk = D2D1::RoundedRect(okRect, 5.0f, 5.0f);
+            bool isHovered = *btns[i].hovered && !btns[i].disabled;
+            D2D1_COLOR_F bg, border, text;
 
-        float okAlpha = m_hoveredOk ? 0.80f : 0.64f;
-        D2D1_COLOR_F okBg = UIStyle::ThemeColor::Accent().d2d;
-        okBg.a = okAlpha;
-        auto okBgBrush = GetOrCreateBrush(okBg);
-        if (okBgBrush) rt->FillRoundedRectangle(roundedOk, okBgBrush.Get());
+            if (btns[i].disabled)
+            {
+                bg = UIStyle::ThemeColor::ButtonBgNormal().d2d;
+                bg.a *= 0.55f;
+                border = UIStyle::ThemeColor::ButtonBorderNormal().d2d;
+                border.a *= 0.55f;
+                text = UIStyle::ThemeColor::TextNormal().d2d;
+                text.a *= 0.55f;
+            }
+            else if (isHovered)
+            {
+                bg = btns[i].accent ? UIStyle::ThemeColor::AccentHover().d2d : UIStyle::ThemeColor::ButtonBgHover().d2d;
+                border = btns[i].accent ? UIStyle::ThemeColor::AccentHover().d2d : UIStyle::ThemeColor::ButtonBorderHover().d2d;
+                text = UIStyle::ThemeColor::TextNormal().d2d;
+            }
+            else
+            {
+                bg = btns[i].accent ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::ButtonBgNormal().d2d;
+                if (btns[i].accent) bg.a = 0.64f;
+                border = btns[i].accent ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d;
+                text = btns[i].accent ? UIStyle::ThemeColor::TextOnAccent().d2d : UIStyle::ThemeColor::TextNormal().d2d;
+            }
 
-        auto okBorderBrush = GetOrCreateBrush(UIStyle::ThemeColor::Accent().d2d);
-        if (okBorderBrush) rt->DrawRoundedRectangle(roundedOk, okBorderBrush.Get(), UIStyle::Metrics::ControlStroke());
+            auto bgBrush = GetOrCreateBrush(bg);
+            if (bgBrush) rt->FillRoundedRectangle(rounded, bgBrush.Get());
+            auto borderBrush = GetOrCreateBrush(border);
+            if (borderBrush) rt->DrawRoundedRectangle(rounded, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
 
-        if (m_tfBtn)
-        {
-            auto okTextBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextOnAccent().d2d);
-            if (okTextBrush) rt->DrawTextW(L"确定", 2, m_tfBtn.Get(), okRect, okTextBrush.Get());
+            if (m_tfBtn)
+            {
+                auto textBrush = GetOrCreateBrush(text);
+                if (textBrush)
+                {
+                    const wchar_t* label = nullptr;
+                    UINT32 labelLen = 0;
+                    if (i == 1) // 刷新 (index 1) — dynamic label
+                    {
+                        label = m_refreshRunning ? L"执行中" : L"刷新";
+                        labelLen = m_refreshRunning ? 3 : 2;
+                    }
+                    else
+                    {
+                        label = btns[i].label;
+                        labelLen = (UINT32)wcslen(label);
+                    }
+                    if (label) rt->DrawTextW(label, labelLen, m_tfBtn.Get(), rect, textBrush.Get());
+                }
+            }
         }
     }
 }
@@ -558,22 +655,118 @@ bool CommandPanelWindow::HitTestCloseButton(POINT pt)
     return HitTestRect(pt, D2D1::RectF(w - 25, 8, w - 9, 24));
 }
 
-bool CommandPanelWindow::HitTestCopyButton(POINT pt)
+D2D1_RECT_F CommandPanelWindow::GetFooterButtonRect(int index) const
 {
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 160, h - 40, w - 85, h - 16));
+    const float barPad = 10.0f;
+    const float barTop = h - 40.0f;
+    const float barH = 24.0f;
+    const float barW = w - barPad * 2;
+    const float btnGap = 6.0f;
+    const int numButtons = 4;
+    const float btnW = (barW - btnGap * (numButtons - 1)) / (float)numButtons;
+    float bx = barPad + index * (btnW + btnGap);
+    return D2D1::RectF(bx, barTop, bx + btnW, barTop + barH);
+}
+
+bool CommandPanelWindow::HitTestRefreshButton(POINT pt)
+{
+    return HitTestRect(pt, GetFooterButtonRect(1));
+}
+
+bool CommandPanelWindow::HitTestCopyButton(POINT pt)
+{
+    return HitTestRect(pt, GetFooterButtonRect(2));
 }
 
 bool CommandPanelWindow::HitTestOkButton(POINT pt)
 {
-    RECT cr; GetClientRect(GetHWND(), &cr);
-    float scale = GetWindowScale(GetHWND());
+    return HitTestRect(pt, GetFooterButtonRect(3));
+}
+
+bool CommandPanelWindow::HitTestMoreButton(POINT pt)
+{
+    return HitTestRect(pt, GetFooterButtonRect(0));
+}
+
+void CommandPanelWindow::RegisterBuiltinPopupAction(const std::wstring& title, std::function<void()> callback)
+{
+    m_builtinActions.push_back({ title, std::move(callback) });
+}
+
+void CommandPanelWindow::RegisterBuiltinActions()
+{
+    // Reserved for future built-in actions in the "More" dropdown.
+    // Example:
+    //   RegisterBuiltinPopupAction(L"刷新图标", [this]() { ... });
+}
+
+void CommandPanelWindow::ShowMoreDropdown()
+{
+    HWND hwnd = GetHWND();
+    if (!hwnd)
+        return;
+
+    RECT cr; GetClientRect(hwnd, &cr);
+    float scale = GetWindowScale(hwnd);
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
-    return HitTestRect(pt, D2D1::RectF(w - 75, h - 40, w - 10, h - 16));
+
+    D2D1_RECT_F btnRect = GetFooterButtonRect(0); // 更多 is at index 0
+    float dropWidth = btnRect.right - btnRect.left;
+
+    int px = (int)(btnRect.left * scale);
+    int py = (int)((btnRect.bottom + 2) * scale);
+    POINT pt{ px, py };
+    ClientToScreen(hwnd, &pt);
+
+    // Collect built-in actions
+    auto& builtinActions = m_builtinActions;
+
+    // Collect plugin-registered actions
+    std::vector<PopupActionInfo> pluginActions;
+    if (m_appCtx && m_appCtx->pluginManager)
+        pluginActions = m_appCtx->pluginManager->GetPopupActions();
+
+    bool hasAny = !builtinActions.empty() || !pluginActions.empty();
+
+    if (!hasAny)
+    {
+        std::vector<DropDownMenu::Item> items;
+        items.push_back({ L"无", nullptr, true });
+        DropDownMenu::Show(hwnd, pt, items, m_appCtx, dropWidth, true);
+        return;
+    }
+
+    std::vector<DropDownMenu::Item> items;
+
+    // Built-in actions come first
+    for (const auto& action : builtinActions)
+    {
+        items.push_back({ action.title, action.callback, false });
+    }
+
+    // Visual separator
+    if (!builtinActions.empty() && !pluginActions.empty())
+    {
+        items.push_back({ L"────────", nullptr, true });
+    }
+
+    // Plugin actions follow
+    for (const auto& action : pluginActions)
+    {
+        std::wstring displayText = action.title;
+        items.push_back({ displayText, [pluginId = action.pluginId, commandId = action.actionId, ctx = m_appCtx]() {
+            std::wstring msg;
+            if (ctx->pluginManager)
+                ctx->pluginManager->ExecuteCommand(pluginId, commandId, L"", msg);
+        }, false });
+    }
+
+    DropDownMenu::Show(hwnd, pt, items, m_appCtx, dropWidth, true);
 }
 
 void CommandPanelWindow::CopyOutputToClipboard()

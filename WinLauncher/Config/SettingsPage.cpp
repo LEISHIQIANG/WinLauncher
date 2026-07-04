@@ -2,13 +2,19 @@
 #include "IConfigWindow.h"
 #include "UIStyle.h"
 #include "ConfirmWindow.h"
+#include "PromptWindow.h"
 #include "DropDownMenu.h"
 #include "../DpiHelper.h"
+#include "../App/PluginManager.h"
+#include "../Services/ConfigPath.h"
 #include "../Services/UpdateService.h"
 #include "..\version.h"
+#include <commdlg.h>
 #include <cwchar>
 #include <cmath>
 #include <vector>
+#include <algorithm>
+#include <shellapi.h>
 
 namespace
 {
@@ -84,6 +90,14 @@ namespace
         case 7: return L"Ctrl + 侧键 5";
         default: return L"未知预设";
         }
+    }
+
+    std::wstring ToLowerCopy(std::wstring value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+            return (wchar_t)towlower(ch);
+        });
+        return value;
     }
 }
 
@@ -293,6 +307,12 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_draggingGlobalScaleSlider = false;
     m_hoveredApplyUpdate = false;
     m_hoveredCheckUpdate = false;
+    m_hoveredPluginInstall = false;
+    m_hoveredPluginOpenDir = false;
+    m_hoveredPluginRefresh = false;
+    m_hoveredPluginConfigure = -1;
+    m_hoveredPluginToggle = -1;
+    m_hoveredPluginUninstall = -1;
     m_pendingGlobalScalePercent = m_owner ? m_owner->GetGlobalScalePercent() : 100;
 }
 
@@ -321,7 +341,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             case 1: title = L"弹窗外观"; break;
             case 2: title = L"弹窗交互"; break;
             case 3: title = L"配置管理"; break;
-            case 4: title = L"关于软件"; break;
+            case 4: title = L"插件管理"; break;
+            case 5: title = L"关于软件"; break;
             default: title = L"系统设置"; break;
             }
             rt->DrawTextW(title.c_str(), (UINT32)title.size(), tfTitle,
@@ -1319,7 +1340,173 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             if (cardBorder) cardBorder->Release();
         }
     }
-    else if (m_categoryIndex == 4) // 关于软件
+    else if (m_categoryIndex == 4) // 插件管理
+    {
+        if (tfDefault)
+        {
+            ID2D1SolidColorBrush* tbNormal = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
+            ID2D1SolidColorBrush* tbMuted = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &tbMuted);
+            ID2D1SolidColorBrush* cardBg = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.026f), &cardBg);
+            ID2D1SolidColorBrush* cardBorder = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.08f), &cardBorder);
+
+            auto appCtx = m_owner ? m_owner->GetAppContext() : nullptr;
+            auto plugins = (appCtx && appCtx->pluginManager) ? appCtx->pluginManager->GetPlugins() : std::vector<PluginInfo>{};
+
+            D2D1_RECT_F rootRect = D2D1::RectF(160.0f, 82.0f, CONTENT_RIGHT, 132.0f);
+            D2D1_ROUNDED_RECT rootRounded = D2D1::RoundedRect(rootRect, 6.0f, 6.0f);
+            if (cardBg) rt->FillRoundedRectangle(rootRounded, cardBg);
+            if (cardBorder) rt->DrawRoundedRectangle(rootRounded, cardBorder, UIStyle::Metrics::ControlStroke());
+
+            if (tbNormal && tbMuted)
+            {
+                rt->DrawTextW(L"安装目录", 4, tfDefault, D2D1::RectF(172, 92, 250, 112), tbMuted);
+                std::wstring dirText = ConfigPath::GetUserPluginInstalledDirectory();
+                rt->DrawTextW(dirText.c_str(), (UINT32)dirText.size(), tfDefault, D2D1::RectF(172, 112, 340, 130), tbNormal);
+                std::wstring dropHint = L"可将 .wlplugin 文件直接拖入此页面安装";
+                rt->DrawTextW(dropHint.c_str(), (UINT32)dropHint.size(), tfDefault, D2D1::RectF(172, 134, CONTENT_RIGHT, 150), tbMuted);
+            }
+
+            auto drawSmallButton = [&](D2D1_RECT_F buttonRect, const wchar_t* text, bool hovered, bool accent)
+            {
+                D2D1_COLOR_F bg = accent ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                bg.a = accent ? (hovered ? 0.28f : 0.18f) : (hovered ? 0.08f : 0.04f);
+                ID2D1SolidColorBrush* bgBrush = nullptr;
+                rt->CreateSolidColorBrush(bg, &bgBrush);
+                if (bgBrush)
+                {
+                    rt->FillRoundedRectangle(D2D1::RoundedRect(buttonRect, 5.0f, 5.0f), bgBrush);
+                    bgBrush->Release();
+                }
+                if (tbNormal)
+                {
+                    DWRITE_TEXT_ALIGNMENT old = tfDefault->GetTextAlignment();
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(text, (UINT32)wcslen(text), tfDefault, buttonRect, tbNormal);
+                    tfDefault->SetTextAlignment(old);
+                }
+            };
+
+            drawSmallButton(D2D1::RectF(348.0f, 96.0f, 396.0f, 122.0f), L"安装", m_hoveredPluginInstall, true);
+            drawSmallButton(D2D1::RectF(402.0f, 96.0f, 450.0f, 122.0f), L"打开", m_hoveredPluginOpenDir, false);
+            drawSmallButton(D2D1::RectF(456.0f, 96.0f, 504.0f, 122.0f), L"刷新", m_hoveredPluginRefresh, false);
+
+            if (plugins.empty())
+            {
+                if (tbMuted)
+                {
+                    std::wstring emptyText = L"暂无已安装插件。将包含 plugin.json 和 DLL 的插件目录放入 installed 后刷新即可显示。";
+                    rt->DrawTextW(emptyText.c_str(), (UINT32)emptyText.size(),
+                        tfDefault, D2D1::RectF(160, 158, CONTENT_RIGHT, 210), tbMuted);
+                }
+            }
+            else
+            {
+                size_t visibleCount = (std::min)(plugins.size(), (size_t)6);
+                for (size_t i = 0; i < visibleCount; ++i)
+                {
+                    const auto& plugin = plugins[i];
+                    float top = 152.0f + (float)i * 48.0f;
+                    D2D1_RECT_F rowRect = D2D1::RectF(160.0f, top, CONTENT_RIGHT, top + 38.0f);
+                    D2D1_ROUNDED_RECT rowRounded = D2D1::RoundedRect(rowRect, 6.0f, 6.0f);
+                    bool hovered = ((int)i == m_hoveredPluginConfigure) || ((int)i == m_hoveredPluginToggle) || ((int)i == m_hoveredPluginUninstall);
+
+                    ID2D1SolidColorBrush* rowBg = nullptr;
+                    rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, hovered ? 0.06f : 0.022f), &rowBg);
+                    if (rowBg)
+                    {
+                        rt->FillRoundedRectangle(rowRounded, rowBg);
+                        rowBg->Release();
+                    }
+                    if (cardBorder) rt->DrawRoundedRectangle(rowRounded, cardBorder, UIStyle::Metrics::ControlStroke());
+
+                    if (tbNormal && tbMuted)
+                    {
+                        std::wstring title = plugin.name + (plugin.version.empty() ? L"" : (L"  v" + plugin.version));
+                        rt->DrawTextW(title.c_str(), (UINT32)title.size(), tfDefault, D2D1::RectF(172, top + 4, 340, top + 22), tbNormal);
+
+                        std::wstring status = plugin.statusText;
+                        if (!plugin.lastError.empty())
+                            status += L" - " + plugin.lastError;
+                        else if (!plugin.permissionSummary.empty())
+                            status += L" - " + plugin.permissionSummary;
+                        if (plugin.settingCount > 0)
+                            status += L" - 配置项 " + std::to_wstring(plugin.settingCount);
+                        if (status.empty())
+                            status = plugin.enabled ? L"已启用" : L"已禁用";
+                        rt->DrawTextW(status.c_str(), (UINT32)status.size(), tfDefault, D2D1::RectF(172, top + 22, 340, top + 39), tbMuted);
+                    }
+
+                    if (plugin.settingCount > 0)
+                    {
+                        D2D1_RECT_F configRect = D2D1::RectF(346.0f, top + 8.0f, 392.0f, top + 30.0f);
+                        D2D1_COLOR_F configBg = baseClr;
+                        configBg.a = ((int)i == m_hoveredPluginConfigure) ? 0.08f : 0.04f;
+                        ID2D1SolidColorBrush* configBgBrush = nullptr;
+                        rt->CreateSolidColorBrush(configBg, &configBgBrush);
+                        if (configBgBrush)
+                        {
+                            rt->FillRoundedRectangle(D2D1::RoundedRect(configRect, 5.0f, 5.0f), configBgBrush);
+                            configBgBrush->Release();
+                        }
+                        if (tbNormal)
+                        {
+                            DWRITE_TEXT_ALIGNMENT old = tfDefault->GetTextAlignment();
+                            tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                            rt->DrawTextW(L"配置", 2, tfDefault, configRect, tbNormal);
+                            tfDefault->SetTextAlignment(old);
+                        }
+                    }
+
+                    D2D1_RECT_F toggleRect = D2D1::RectF(398.0f, top + 8.0f, 450.0f, top + 30.0f);
+                    D2D1_COLOR_F toggleBg = plugin.enabled ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+                    toggleBg.a = plugin.enabled ? (((int)i == m_hoveredPluginToggle) ? 0.32f : 0.22f) : (((int)i == m_hoveredPluginToggle) ? 0.08f : 0.04f);
+                    ID2D1SolidColorBrush* toggleBgBrush = nullptr;
+                    rt->CreateSolidColorBrush(toggleBg, &toggleBgBrush);
+                    if (toggleBgBrush)
+                    {
+                        rt->FillRoundedRectangle(D2D1::RoundedRect(toggleRect, 5.0f, 5.0f), toggleBgBrush);
+                        toggleBgBrush->Release();
+                    }
+                    if (tbNormal)
+                    {
+                        const wchar_t* label = plugin.enabled ? L"禁用" : L"启用";
+                        DWRITE_TEXT_ALIGNMENT old = tfDefault->GetTextAlignment();
+                        tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                        rt->DrawTextW(label, 2, tfDefault, toggleRect, tbNormal);
+                        tfDefault->SetTextAlignment(old);
+                    }
+
+                    D2D1_RECT_F uninstallRect = D2D1::RectF(456.0f, top + 8.0f, 502.0f, top + 30.0f);
+                    D2D1_COLOR_F removeBg = UIStyle::ThemeColor::DangerRed().d2d;
+                    removeBg.a = ((int)i == m_hoveredPluginUninstall) ? 0.24f : 0.12f;
+                    ID2D1SolidColorBrush* removeBgBrush = nullptr;
+                    rt->CreateSolidColorBrush(removeBg, &removeBgBrush);
+                    if (removeBgBrush)
+                    {
+                        rt->FillRoundedRectangle(D2D1::RoundedRect(uninstallRect, 5.0f, 5.0f), removeBgBrush);
+                        removeBgBrush->Release();
+                    }
+                    if (tbNormal)
+                    {
+                        DWRITE_TEXT_ALIGNMENT old = tfDefault->GetTextAlignment();
+                        tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                        rt->DrawTextW(L"卸载", 2, tfDefault, uninstallRect, tbNormal);
+                        tfDefault->SetTextAlignment(old);
+                    }
+                }
+            }
+
+            if (tbNormal) tbNormal->Release();
+            if (tbMuted) tbMuted->Release();
+            if (cardBg) cardBg->Release();
+            if (cardBorder) cardBorder->Release();
+        }
+    }
+    else if (m_categoryIndex == 5) // 关于软件
     {
         if (tfDefault)
         {
@@ -1557,11 +1744,35 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             repaint = true;
         }
     }
+    else if (m_categoryIndex == 4)
+    {
+        bool install = HitTestPluginInstall(pt);
+        bool openDir = HitTestPluginOpenDir(pt);
+        bool refresh = HitTestPluginRefresh(pt);
+        int configure = HitTestPluginConfigure(pt);
+        int toggle = HitTestPluginToggle(pt);
+        int uninstall = HitTestPluginUninstall(pt);
+        if (install != m_hoveredPluginInstall ||
+            openDir != m_hoveredPluginOpenDir ||
+            refresh != m_hoveredPluginRefresh ||
+            configure != m_hoveredPluginConfigure ||
+            toggle != m_hoveredPluginToggle ||
+            uninstall != m_hoveredPluginUninstall)
+        {
+            m_hoveredPluginInstall = install;
+            m_hoveredPluginOpenDir = openDir;
+            m_hoveredPluginRefresh = refresh;
+            m_hoveredPluginConfigure = configure;
+            m_hoveredPluginToggle = toggle;
+            m_hoveredPluginUninstall = uninstall;
+            repaint = true;
+        }
+    }
 }
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider)
+    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
     {
         m_hoveredAutoStart = false;
         m_hoveredHideTrayIcon = false;
@@ -1595,6 +1806,12 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredGlobalScaleSlider = false;
         m_hoveredGlobalScaleApply = false;
         m_draggingGlobalScaleSlider = false;
+        m_hoveredPluginInstall = false;
+        m_hoveredPluginOpenDir = false;
+        m_hoveredPluginRefresh = false;
+        m_hoveredPluginConfigure = -1;
+        m_hoveredPluginToggle = -1;
+        m_hoveredPluginUninstall = -1;
         repaint = true;
     }
 }
@@ -1954,6 +2171,144 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             repaint = true;
         }
     }
+    else if (m_categoryIndex == 4)
+    {
+        auto appCtx = m_owner ? m_owner->GetAppContext() : nullptr;
+        if (!appCtx || !appCtx->pluginManager)
+            return;
+
+        HWND hwnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+        if (HitTestPluginInstall(pt))
+        {
+            wchar_t filePath[MAX_PATH]{};
+            OPENFILENAMEW ofn{};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFilter = L"WinLauncher 插件包 (*.wlplugin)\0*.wlplugin\0ZIP 包 (*.zip)\0*.zip\0所有文件\0*.*\0";
+            ofn.lpstrFile = filePath;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+            ofn.lpstrTitle = L"安装插件包";
+            if (GetOpenFileNameW(&ofn))
+            {
+                InstallPluginPackageFromPath(filePath, false);
+                repaint = true;
+            }
+        }
+        else if (HitTestPluginOpenDir(pt))
+        {
+            ConfigPath::PrepareUserPluginInstalledDirectory();
+            ShellExecuteW(hwnd, L"open", ConfigPath::GetUserPluginInstalledDirectory().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            repaint = true;
+        }
+        else if (HitTestPluginRefresh(pt))
+        {
+            appCtx->pluginManager->Rescan();
+            repaint = true;
+        }
+        else
+        {
+            auto plugins = appCtx->pluginManager->GetPlugins();
+            int configIdx = HitTestPluginConfigure(pt);
+            if (configIdx >= 0 && configIdx < (int)plugins.size())
+            {
+                const auto& plugin = plugins[configIdx];
+                auto settings = appCtx->pluginManager->GetPluginSettings(plugin.id);
+                if (settings.empty())
+                {
+                    ConfirmWindow::Show(hwnd, L"插件配置", L"该插件没有声明可编辑配置项。", appCtx, false);
+                    return;
+                }
+
+                PluginSettingInfo setting = settings.front();
+                if (settings.size() > 1)
+                {
+                    std::vector<std::wstring> options;
+                    options.reserve(settings.size());
+                    for (const auto& item : settings)
+                        options.push_back(item.title + L" (" + item.key + L")");
+
+                    std::wstring selected;
+                    if (!PromptWindow::ShowChoose(hwnd, L"插件配置", L"选择要编辑的配置项:", options, selected, appCtx))
+                        return;
+
+                    for (size_t i = 0; i < options.size(); ++i)
+                    {
+                        if (options[i] == selected)
+                        {
+                            setting = settings[i];
+                            break;
+                        }
+                    }
+                }
+
+                std::wstring newValue = setting.currentValue.empty() ? setting.defaultValue : setting.currentValue;
+                bool accepted = false;
+                if (setting.type == L"boolean")
+                {
+                    std::wstring selected;
+                    std::vector<std::wstring> booleanOptions = { L"true", L"false" };
+                    accepted = PromptWindow::ShowChoose(hwnd, setting.title.c_str(), L"选择配置值:", booleanOptions, selected, appCtx);
+                    if (accepted)
+                        newValue = selected;
+                }
+                else
+                {
+                    std::wstring prompt = setting.title + L"\r\nKey: " + setting.key;
+                    if (setting.type == L"integer")
+                    {
+                        if (setting.hasMin)
+                            prompt += L"\r\nMin: " + std::to_wstring(setting.minValue);
+                        if (setting.hasMax)
+                            prompt += L"\r\nMax: " + std::to_wstring(setting.maxValue);
+                    }
+                    accepted = PromptWindow::Show(hwnd, L"插件配置", prompt.c_str(), newValue, newValue.c_str(), appCtx);
+                }
+
+                if (accepted)
+                {
+                    if (!appCtx->pluginManager->SetPluginSettingValue(plugin.id, setting.key, newValue))
+                    {
+                        ConfirmWindow::Show(hwnd, L"插件配置失败", L"配置值无效或无法写入插件私有配置。", appCtx, false);
+                    }
+                    repaint = true;
+                }
+            }
+            else
+            {
+                int uninstallIdx = HitTestPluginUninstall(pt);
+                if (uninstallIdx >= 0 && uninstallIdx < (int)plugins.size())
+                {
+                    const auto& plugin = plugins[uninstallIdx];
+                    std::wstring prompt = L"确定要卸载插件 \"" + plugin.name + L"\" 吗？";
+                    if (ConfirmWindow::Show(hwnd, L"卸载插件", prompt.c_str(), appCtx, true))
+                    {
+                        std::wstring message;
+                        if (!appCtx->pluginManager->UninstallPlugin(plugin.id, message))
+                        {
+                            ConfirmWindow::Show(hwnd, L"插件卸载失败", message.c_str(), appCtx, false);
+                        }
+                        repaint = true;
+                    }
+                }
+                else
+                {
+                    int idx = HitTestPluginToggle(pt);
+                    if (idx >= 0 && idx < (int)plugins.size())
+                    {
+                        std::wstring message;
+                        bool ok = appCtx->pluginManager->SetPluginEnabled(plugins[idx].id, !plugins[idx].enabled);
+                        if (!ok)
+                        {
+                            message = L"插件状态切换失败，请查看插件错误状态和日志。";
+                            ConfirmWindow::Show(hwnd, L"插件操作失败", message.c_str(), appCtx, false);
+                        }
+                        repaint = true;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
@@ -1970,6 +2325,106 @@ void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
 void SettingsPage::OnLButtonDblClk(POINT pt, bool& repaint)
 {
     OnLButtonDown(pt, repaint);
+}
+
+void SettingsPage::OnDropFiles(HDROP hDrop, bool& repaint)
+{
+    if (m_categoryIndex != 4 || !hDrop)
+        return;
+
+    auto appCtx = m_owner ? m_owner->GetAppContext() : nullptr;
+    if (!appCtx || !appCtx->pluginManager)
+        return;
+
+    UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+    int installedCount = 0;
+    int skippedCount = 0;
+    std::wstring failedMessages;
+
+    for (UINT i = 0; i < fileCount; ++i)
+    {
+        wchar_t filePath[MAX_PATH]{};
+        if (!DragQueryFileW(hDrop, i, filePath, MAX_PATH))
+            continue;
+
+        if (!IsPluginPackagePath(filePath))
+        {
+            skippedCount++;
+            continue;
+        }
+
+        std::wstring errorMessage;
+        if (InstallPluginPackageFromPath(filePath, false, &errorMessage))
+        {
+            installedCount++;
+        }
+        else
+        {
+            if (!failedMessages.empty())
+                failedMessages += L"\r\n";
+            failedMessages += filePath;
+            if (!errorMessage.empty())
+                failedMessages += L": " + errorMessage;
+        }
+    }
+
+    HWND hwnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+    if (!failedMessages.empty())
+    {
+        std::wstring message = L"以下插件包安装失败，请检查插件包格式或错误日志:\r\n" + failedMessages;
+        ConfirmWindow::Show(hwnd, L"插件安装失败", message.c_str(), appCtx, false);
+    }
+    else if (installedCount > 0)
+    {
+        std::wstring message = installedCount == 1
+            ? L"插件已安装。"
+            : (L"已安装 " + std::to_wstring(installedCount) + L" 个插件。");
+        if (skippedCount > 0)
+            message += L"\r\n已忽略非插件包文件。";
+        ConfirmWindow::Show(hwnd, L"插件安装完成", message.c_str(), appCtx, false);
+    }
+    else if (skippedCount > 0)
+    {
+        ConfirmWindow::Show(hwnd, L"未找到插件包", L"请拖入 .wlplugin 插件包文件。", appCtx, false);
+    }
+
+    if (installedCount > 0)
+        repaint = true;
+}
+
+bool SettingsPage::InstallPluginPackageFromPath(const std::wstring& filePath, bool showSuccessMessage, std::wstring* errorMessage)
+{
+    auto appCtx = m_owner ? m_owner->GetAppContext() : nullptr;
+    if (!appCtx || !appCtx->pluginManager)
+        return false;
+
+    HWND hwnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+    std::wstring message;
+    if (!appCtx->pluginManager->InstallPackage(filePath, message))
+    {
+        if (errorMessage)
+        {
+            *errorMessage = message;
+        }
+        else
+        {
+            ConfirmWindow::Show(hwnd, L"插件安装失败", message.c_str(), appCtx, false);
+        }
+        return false;
+    }
+
+    if (showSuccessMessage)
+        ConfirmWindow::Show(hwnd, L"插件安装完成", message.c_str(), appCtx, false);
+    return true;
+}
+
+bool SettingsPage::IsPluginPackagePath(const std::wstring& filePath) const
+{
+    size_t dot = filePath.find_last_of(L'.');
+    if (dot == std::wstring::npos)
+        return false;
+    std::wstring ext = ToLowerCopy(filePath.substr(dot));
+    return ext == L".wlplugin" || ext == L".zip";
 }
 
 bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
@@ -2292,4 +2747,61 @@ bool SettingsPage::HitTestGlobalScaleApply(POINT pt)
         pt.x <= (int)GLOBAL_SCALE_APPLY_RIGHT &&
         pt.y >= (int)GLOBAL_SCALE_APPLY_TOP &&
         pt.y <= (int)GLOBAL_SCALE_APPLY_BOTTOM;
+}
+
+bool SettingsPage::HitTestPluginInstall(POINT pt)
+{
+    if (m_categoryIndex != 4) return false;
+    return pt.x >= 348 && pt.x <= 396 && pt.y >= 96 && pt.y <= 122;
+}
+
+bool SettingsPage::HitTestPluginOpenDir(POINT pt)
+{
+    if (m_categoryIndex != 4) return false;
+    return pt.x >= 402 && pt.x <= 450 && pt.y >= 96 && pt.y <= 122;
+}
+
+bool SettingsPage::HitTestPluginRefresh(POINT pt)
+{
+    if (m_categoryIndex != 4) return false;
+    return pt.x >= 456 && pt.x <= 504 && pt.y >= 96 && pt.y <= 122;
+}
+
+int SettingsPage::HitTestPluginConfigure(POINT pt)
+{
+    if (m_categoryIndex != 4) return -1;
+    if (pt.x < 346 || pt.x > 392) return -1;
+    for (int i = 0; i < 6; ++i)
+    {
+        float top = 152.0f + (float)i * 48.0f;
+        if (pt.y >= (int)(top + 8.0f) && pt.y <= (int)(top + 30.0f))
+            return i;
+    }
+    return -1;
+}
+
+int SettingsPage::HitTestPluginToggle(POINT pt)
+{
+    if (m_categoryIndex != 4) return -1;
+    if (pt.x < 398 || pt.x > 450) return -1;
+    for (int i = 0; i < 6; ++i)
+    {
+        float top = 152.0f + (float)i * 48.0f;
+        if (pt.y >= (int)(top + 8.0f) && pt.y <= (int)(top + 30.0f))
+            return i;
+    }
+    return -1;
+}
+
+int SettingsPage::HitTestPluginUninstall(POINT pt)
+{
+    if (m_categoryIndex != 4) return -1;
+    if (pt.x < 456 || pt.x > 502) return -1;
+    for (int i = 0; i < 6; ++i)
+    {
+        float top = 152.0f + (float)i * 48.0f;
+        if (pt.y >= (int)(top + 8.0f) && pt.y <= (int)(top + 30.0f))
+            return i;
+    }
+    return -1;
 }
