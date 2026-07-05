@@ -15,6 +15,7 @@
       "title": "Base64 Encode/Decode",
       "description": "Encode or decode text in Base64 format. Copies result to clipboard.",
       "usage": "/base64 [encode|decode] <text>",
+      "icon": "icons/base64.ico",
       "keywords": ["b64", "encode", "decode"],
       "aliases": ["b64"]
     },
@@ -24,6 +25,7 @@
       "title": "Generate UUID",
       "description": "Generate a random UUID v4 and copy to clipboard.",
       "usage": "/uuid",
+      "icon": "icons/uuid.ico",
       "keywords": ["guid", "generate", "random"],
       "aliases": ["guid"]
     },
@@ -33,6 +35,7 @@
       "title": "Compute Hash",
       "description": "Compute MD5, SHA-1, or SHA-256 hash of text. Copies result to clipboard.",
       "usage": "/hash [md5|sha1|sha256] <text>",
+      "icon": "icons/hash.ico",
       "keywords": ["md5", "sha1", "sha256", "sha-256", "digest", "checksum"],
       "aliases": ["md5", "sha1", "sha256"]
     },
@@ -42,6 +45,7 @@
       "title": "Case Conversion",
       "description": "Convert text to UPPERCASE or lowercase. Copies result to clipboard.",
       "usage": "/case upper|lower <text>",
+      "icon": "icons/case.ico",
       "keywords": ["upper", "lower", "uppercase", "lowercase", "convert"],
       "aliases": ["upper", "lower"]
     },
@@ -51,6 +55,7 @@
       "title": "Count Text",
       "description": "Count lines, words, and characters in text.",
       "usage": "/count <text>",
+      "icon": "icons/count.ico",
       "keywords": ["wc", "wordcount", "统计", "字数"],
       "aliases": ["wc"]
     },
@@ -60,6 +65,7 @@
       "title": "Reverse Text",
       "description": "Reverse the input text. Copies result to clipboard.",
       "usage": "/reverse <text>",
+      "icon": "icons/reverse.ico",
       "keywords": ["flip", "mirror", "反转"],
       "aliases": ["rev"]
     }

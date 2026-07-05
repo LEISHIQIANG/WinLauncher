@@ -131,6 +131,9 @@ struct WLHostApiV1
 
     // Plugin extension point: register an action that appears in the PopupWindow "More" dropdown
     bool (WL_CALL* registerPopupAction)(void* hostContext, const WLPopupActionDescriptorV1* action);
+
+    // Append text to the currently running command output panel, when the host command is panel-backed.
+    bool (WL_CALL* appendResultToPanel)(void* hostContext, const wchar_t* text);
 };
 
 struct WLPluginInstanceV1

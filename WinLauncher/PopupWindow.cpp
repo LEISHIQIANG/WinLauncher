@@ -1308,32 +1308,31 @@ void PopupWindow::ExecuteSearchResult(int index)
             }
         }
 
-        std::wstring message;
-        bool ok = m_appCtx->pluginManager->ExecuteSlashCommand(item.pluginId, item.pluginCommandId, m_searchQuery, files, message);
-        LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: slash command plugin=%s command=%s result=%d",
-            item.pluginId.c_str(),
-            item.pluginCommandId.c_str(),
-            ok ? 1 : 0);
+        std::wstring panelTitle = L"/ 命令输出 - " + item.shortcut.name;
+        std::wstring pluginId = item.pluginId;
+        std::wstring commandId = item.pluginCommandId;
+        std::wstring rawInput = m_searchQuery;
+        auto selectedFiles = files;
+        PluginManager* pluginManager = m_appCtx->pluginManager.get();
+        HWND mainHwnd = m_appCtx->hMainWnd;
+        auto worker = [pluginId, commandId, rawInput, selectedFiles, pluginManager, mainHwnd](HWND panelHwnd) {
+            if (!pluginManager || (mainHwnd && !IsWindow(mainHwnd)))
+                return;
 
-        if (!message.empty())
-        {
-            std::wstring panelTitle = (ok ? L"/ 命令输出 - " : L"/ 命令错误 - ") + item.shortcut.name;
-            std::wstring pluginId = item.pluginId;
-            std::wstring commandId = item.pluginCommandId;
-            std::wstring rawInput = m_searchQuery;
-            auto selectedFiles = files;
-            AppContext* appCtx = m_appCtx;
-            auto refreshWorker = [pluginId, commandId, rawInput, selectedFiles, appCtx](HWND panelHwnd) {
-                if (!appCtx || !appCtx->pluginManager)
-                    return;
-                std::wstring refreshed;
-                bool refreshOk = appCtx->pluginManager->ExecuteSlashCommand(pluginId, commandId, rawInput, selectedFiles, refreshed);
-                if (refreshed.empty())
-                    refreshed = refreshOk ? L"命令已重新执行，无输出。" : L"命令重新执行失败，无错误详情。";
-                CommandPanelWindow::PostAppend(panelHwnd, refreshed);
-            };
-            CommandPanelWindow::Show(GetHWND(), panelTitle.c_str(), message.c_str(), m_appCtx, refreshWorker);
-        }
+            std::wstring message;
+            bool ok = pluginManager->ExecuteSlashCommand(pluginId, commandId, rawInput, selectedFiles, message, panelHwnd);
+            LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: slash command plugin=%s command=%s result=%d",
+                pluginId.c_str(),
+                commandId.c_str(),
+                ok ? 1 : 0);
+
+            if (message.empty())
+                message = ok ? L"命令已执行，无输出。" : L"命令执行失败，无错误详情。";
+            if (!ok)
+                message = L"执行失败：\r\n" + message;
+            CommandPanelWindow::PostAppend(panelHwnd, message);
+        };
+        CommandPanelWindow::ShowLive(GetHWND(), panelTitle.c_str(), L"", worker, m_appCtx, worker);
         return;
     }
 
@@ -1343,31 +1342,30 @@ void PopupWindow::ExecuteSearchResult(int index)
         if (!m_appCtx || !m_appCtx->pluginManager)
             return;
 
-        std::wstring message;
-        bool ok = m_appCtx->pluginManager->ExecuteCommand(item.pluginId, item.pluginCommandId, m_searchQuery, message);
-        LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: plugin command plugin=%s command=%s result=%d",
-            item.pluginId.c_str(),
-            item.pluginCommandId.c_str(),
-            ok ? 1 : 0);
+        std::wstring panelTitle = L"插件输出 - " + item.shortcut.name;
+        std::wstring pluginId = item.pluginId;
+        std::wstring commandId = item.pluginCommandId;
+        std::wstring rawInput = m_searchQuery;
+        PluginManager* pluginManager = m_appCtx->pluginManager.get();
+        HWND mainHwnd = m_appCtx->hMainWnd;
+        auto worker = [pluginId, commandId, rawInput, pluginManager, mainHwnd](HWND panelHwnd) {
+            if (!pluginManager || (mainHwnd && !IsWindow(mainHwnd)))
+                return;
 
-        if (!message.empty())
-        {
-            std::wstring panelTitle = (ok ? L"插件输出 - " : L"插件错误 - ") + item.shortcut.name;
-            std::wstring pluginId = item.pluginId;
-            std::wstring commandId = item.pluginCommandId;
-            std::wstring rawInput = m_searchQuery;
-            AppContext* appCtx = m_appCtx;
-            auto refreshWorker = [pluginId, commandId, rawInput, appCtx](HWND panelHwnd) {
-                if (!appCtx || !appCtx->pluginManager)
-                    return;
-                std::wstring refreshed;
-                bool refreshOk = appCtx->pluginManager->ExecuteCommand(pluginId, commandId, rawInput, refreshed);
-                if (refreshed.empty())
-                    refreshed = refreshOk ? L"命令已重新执行，无输出。" : L"命令重新执行失败，无错误详情。";
-                CommandPanelWindow::PostAppend(panelHwnd, refreshed);
-            };
-            CommandPanelWindow::Show(GetHWND(), panelTitle.c_str(), message.c_str(), m_appCtx, refreshWorker);
-        }
+            std::wstring message;
+            bool ok = pluginManager->ExecuteCommand(pluginId, commandId, rawInput, message, panelHwnd);
+            LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: plugin command plugin=%s command=%s result=%d",
+                pluginId.c_str(),
+                commandId.c_str(),
+                ok ? 1 : 0);
+
+            if (message.empty())
+                message = ok ? L"命令已执行，无输出。" : L"命令执行失败，无错误详情。";
+            if (!ok)
+                message = L"执行失败：\r\n" + message;
+            CommandPanelWindow::PostAppend(panelHwnd, message);
+        };
+        CommandPanelWindow::ShowLive(GetHWND(), panelTitle.c_str(), L"", worker, m_appCtx, worker);
         return;
     }
 

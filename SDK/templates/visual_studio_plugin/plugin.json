@@ -20,9 +20,9 @@
       "title": "Template",
       "description": "Runs a template slash command.",
       "usage": "/template [text]",
+      "icon": "icons/hello.ico",
       "keywords": ["sample"],
       "aliases": ["tpl"]
     }
   ]
 }
-

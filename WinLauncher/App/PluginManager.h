@@ -90,8 +90,8 @@ public:
     void RequestSearch(const std::wstring& query);
     std::vector<PluginCommandInfo> GetCachedSearchResults(const std::wstring& query) const;
     bool IsSearchRunning(const std::wstring& query) const;
-    bool ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message);
-    bool ExecuteSlashCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& rawInput, const std::vector<std::wstring>& selectedFiles, std::wstring& message);
+    bool ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message, HWND outputPanelHwnd = nullptr);
+    bool ExecuteSlashCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& rawInput, const std::vector<std::wstring>& selectedFiles, std::wstring& message, HWND outputPanelHwnd = nullptr);
     std::vector<PluginSettingInfo> GetPluginSettings(const std::wstring& pluginId) const;
     bool SetPluginSettingValue(const std::wstring& pluginId, const std::wstring& key, const std::wstring& value);
 
@@ -248,6 +248,7 @@ private:
     static bool WL_CALL HostHttpRequest(void* hostContext, const wchar_t* method, const wchar_t* url, const wchar_t* headers, const wchar_t* body, uint32_t timeoutMs, WLStringResultV1* outResponse);
     static bool WL_CALL HostRunProcess(void* hostContext, const wchar_t* command, const wchar_t* workingDir, bool captureOutput, uint32_t timeoutMs, WLStringResultV1* outOutput, uint32_t* outExitCode);
     static bool WL_CALL HostGetScreenInfo(void* hostContext, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outDpi, WLStringResultV1* outTheme);
+    static bool WL_CALL HostAppendResultToPanel(void* hostContext, const wchar_t* text);
     static bool WL_CALL HostAddSearchResult(void* hostContext, const WLSearchResultV1* result);
 
     std::shared_ptr<EventBus> m_eventBus;

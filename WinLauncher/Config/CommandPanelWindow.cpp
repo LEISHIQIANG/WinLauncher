@@ -6,6 +6,9 @@
 #include "../App/Logger.h"
 #include <windowsx.h>
 #include <commctrl.h>
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <cstring>
 #include <thread>
 
@@ -14,6 +17,17 @@
 static CommandPanelWindow* g_cmdPanelInstance = nullptr;
 static const UINT WM_COMMAND_PANEL_APPEND = WM_APP + 0x310;
 static const UINT WM_COMMAND_PANEL_REFRESH_DONE = WM_APP + 0x311;
+static const UINT_PTR COMMAND_PANEL_CARET_TIMER_ID = 0x999;
+static const UINT_PTR COMMAND_PANEL_LOADING_TIMER_ID = 0x998;
+static const UINT COMMAND_PANEL_LOADING_FRAME_MS = 16;
+static std::atomic<uint64_t> g_commandPanelGeneration{ 1 };
+static thread_local uint64_t t_commandPanelGeneration = 0;
+
+struct CommandPanelAppendPayload
+{
+    uint64_t generation = 0;
+    std::wstring text;
+};
 
 static void ClampWindowToWorkArea(int& x, int& y, int w, int h, const RECT& workArea)
 {
@@ -51,6 +65,9 @@ CommandPanelWindow::CommandPanelWindow(const wchar_t* title, const wchar_t* outp
     , m_hoveredClose(false)
     , m_trackMouse(false)
     , m_refreshRunning(false)
+    , m_loadingFrame(0)
+    , m_loadingStartedTick(0)
+    , m_workerGeneration(0)
 {
     m_appCtx = ctx;
     RegisterBuiltinActions();
@@ -78,10 +95,12 @@ void CommandPanelWindow::Show(HWND parent, const wchar_t* title, const wchar_t* 
 
 bool CommandPanelWindow::PostAppend(HWND hwnd, const std::wstring& text)
 {
-    if (!hwnd || text.empty())
+    if (!hwnd || text.empty() || !IsWindow(hwnd))
         return false;
 
-    std::wstring* payload = new std::wstring(text);
+    CommandPanelAppendPayload* payload = new CommandPanelAppendPayload();
+    payload->generation = t_commandPanelGeneration;
+    payload->text = text;
     if (!PostMessageW(hwnd, WM_COMMAND_PANEL_APPEND, 0, reinterpret_cast<LPARAM>(payload)))
     {
         delete payload;
@@ -107,8 +126,15 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             g_cmdPanelInstance->m_title = title ? title : L"";
             g_cmdPanelInstance->m_initialText = initialText ? initialText : L"";
             g_cmdPanelInstance->m_refreshWorker = std::move(refreshWorker);
-            g_cmdPanelInstance->m_refreshRunning = false;
+            g_cmdPanelInstance->m_refreshRunning = worker != nullptr;
+            g_cmdPanelInstance->m_loadingFrame = 0;
+            g_cmdPanelInstance->m_loadingStartedTick = worker ? GetTickCount64() : 0;
+            g_cmdPanelInstance->m_workerGeneration = worker ? g_commandPanelGeneration.fetch_add(1) : 0;
             g_cmdPanelInstance->ClearOutput(initialText);
+            if (worker)
+                SetTimer(existing, COMMAND_PANEL_LOADING_TIMER_ID, COMMAND_PANEL_LOADING_FRAME_MS, nullptr);
+            else
+                KillTimer(existing, COMMAND_PANEL_LOADING_TIMER_ID);
             ShowWindow(existing, SW_SHOWNORMAL);
             SetWindowPos(existing, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
@@ -119,8 +145,13 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             if (worker)
             {
                 HWND workerHwnd = existing;
-                std::thread([worker, workerHwnd]() {
+                uint64_t generation = g_cmdPanelInstance->m_workerGeneration;
+                std::thread([worker, workerHwnd, generation]() {
+                    t_commandPanelGeneration = generation;
                     worker(workerHwnd);
+                    if (IsWindow(workerHwnd))
+                        PostMessageW(workerHwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
+                    t_commandPanelGeneration = 0;
                 }).detach();
             }
         }
@@ -190,8 +221,19 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
     if (worker)
     {
         HWND workerHwnd = win->GetHWND();
-        std::thread([worker, workerHwnd]() {
+        win->m_refreshRunning = true;
+        win->m_loadingFrame = 0;
+        win->m_loadingStartedTick = GetTickCount64();
+        win->m_workerGeneration = g_commandPanelGeneration.fetch_add(1);
+        SetTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID, COMMAND_PANEL_LOADING_FRAME_MS, nullptr);
+        InvalidateRect(workerHwnd, nullptr, FALSE);
+        uint64_t generation = win->m_workerGeneration;
+        std::thread([worker, workerHwnd, generation]() {
+            t_commandPanelGeneration = generation;
             worker(workerHwnd);
+            if (IsWindow(workerHwnd))
+                PostMessageW(workerHwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
+            t_commandPanelGeneration = 0;
         }).detach();
     }
 }
@@ -202,17 +244,23 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     {
     case WM_COMMAND_PANEL_APPEND:
     {
-        std::wstring* payload = reinterpret_cast<std::wstring*>(lParam);
+        CommandPanelAppendPayload* payload = reinterpret_cast<CommandPanelAppendPayload*>(lParam);
         if (payload)
         {
-            AppendOutput(*payload);
+            if (payload->generation == 0 || payload->generation == m_workerGeneration)
+                AppendOutput(payload->text);
             delete payload;
         }
         return 0;
     }
     case WM_COMMAND_PANEL_REFRESH_DONE:
     {
+        uint64_t generation = (uint64_t)lParam;
+        if (generation != 0 && generation != m_workerGeneration)
+            return 0;
         m_refreshRunning = false;
+        m_workerGeneration = 0;
+        KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
     }
@@ -224,6 +272,7 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         float cw = (float)cr.right / s;
         float ch = (float)cr.bottom / s;
         UIStyle::TextBoxStyle style;
+        style.fontFamily = L"Consolas";
         style.fontSize = 10;
         style.paddingTop = 6.0f;
         style.paddingBottom = 6.0f;
@@ -231,7 +280,9 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         m_textBox.SetMultiline(true);
         m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(10.0f, 44.0f, cw - 10.0f, ch - 55.0f), m_outputText);
         m_textBox.SetFocus(true);
-        SetTimer(hWnd, 0x999, GetCaretBlinkTime(), nullptr);
+        SetTimer(hWnd, COMMAND_PANEL_CARET_TIMER_ID, GetCaretBlinkTime(), nullptr);
+        if (m_refreshRunning)
+            SetTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID, COMMAND_PANEL_LOADING_FRAME_MS, nullptr);
         return 0;
     }
     case WM_NCHITTEST:
@@ -288,9 +339,20 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     }
     case WM_TIMER:
     {
-        if (wParam == 0x999)
+        if (wParam == COMMAND_PANEL_CARET_TIMER_ID)
         {
             m_textBox.BlinkCaret();
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+        if (wParam == COMMAND_PANEL_LOADING_TIMER_ID)
+        {
+            if (!m_refreshRunning)
+            {
+                KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
+                return 0;
+            }
+            m_loadingFrame = (m_loadingFrame + 1) % 60;
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
@@ -438,6 +500,8 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         return 0;
     }
     case WM_DESTROY:
+        KillTimer(hWnd, COMMAND_PANEL_CARET_TIMER_ID);
+        KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
         break;
 
     case WM_NCDESTROY:
@@ -468,12 +532,20 @@ void CommandPanelWindow::RunRefresh()
         return;
 
     m_refreshRunning = true;
+    m_loadingFrame = 0;
+    m_loadingStartedTick = GetTickCount64();
+    m_workerGeneration = g_commandPanelGeneration.fetch_add(1);
     ClearOutput(L"");
+    SetTimer(hwnd, COMMAND_PANEL_LOADING_TIMER_ID, COMMAND_PANEL_LOADING_FRAME_MS, nullptr);
 
     auto worker = m_refreshWorker;
-    std::thread([worker, hwnd]() {
+    uint64_t generation = m_workerGeneration;
+    std::thread([worker, hwnd, generation]() {
+        t_commandPanelGeneration = generation;
         worker(hwnd);
-        PostMessageW(hwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, 0);
+        if (IsWindow(hwnd))
+            PostMessageW(hwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
+        t_commandPanelGeneration = 0;
     }).detach();
 }
 
@@ -556,6 +628,44 @@ void CommandPanelWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
     // 3. Paint Textbox
     m_textBox.Paint(rt, scale);
+
+    if (m_refreshRunning && m_outputText.empty())
+    {
+        D2D1_RECT_F box = m_textBox.GetBounds();
+        D2D1_POINT_2F center = D2D1::Point2F((box.left + box.right) * 0.5f, (box.top + box.bottom) * 0.5f);
+        const int dotCount = 12;
+        const float radius = 15.0f;
+        const float minDotRadius = 1.55f;
+        const float maxDotRadius = 2.75f;
+        const float rotationMs = 760.0f;
+        constexpr float pi = 3.14159265f;
+        ULONGLONG startedTick = m_loadingStartedTick ? m_loadingStartedTick : GetTickCount64();
+        float elapsed = (float)(GetTickCount64() - startedTick);
+        float headAngle = std::fmod(elapsed / rotationMs, 1.0f) * 2.0f * pi - pi * 0.5f;
+        for (int i = 0; i < dotCount; ++i)
+        {
+            float angle = ((float)i / (float)dotCount) * 2.0f * pi - pi * 0.5f;
+            float trailDistance = headAngle - angle;
+            while (trailDistance < 0.0f)
+                trailDistance += 2.0f * pi;
+            while (trailDistance >= 2.0f * pi)
+                trailDistance -= 2.0f * pi;
+
+            float intensity = 1.0f - std::min(trailDistance / (2.0f * pi * 0.70f), 1.0f);
+            intensity = intensity * intensity;
+            D2D1_COLOR_F dot = UIStyle::ThemeColor::Accent().d2d;
+            dot.a = 0.16f + intensity * 0.72f;
+            auto dotBrush = GetOrCreateBrush(dot);
+            if (!dotBrush)
+                continue;
+
+            D2D1_POINT_2F p = D2D1::Point2F(
+                center.x + std::cos(angle) * radius,
+                center.y + std::sin(angle) * radius);
+            float dotRadius = minDotRadius + intensity * (maxDotRadius - minDotRadius);
+            rt->FillEllipse(D2D1::Ellipse(p, dotRadius, dotRadius), dotBrush.Get());
+        }
+    }
 
     // 4. Footer Buttons — 4 equal-width buttons filling the full width
     {

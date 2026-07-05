@@ -1,5 +1,6 @@
 #include "PluginManager.h"
 #include "PluginInstaller.h"
+#include "../Config/CommandPanelWindow.h"
 #include "../Config/PromptWindow.h"
 #include "../Services/ConfigPath.h"
 #include "../Services/JsonImportHelper.h"
@@ -23,6 +24,24 @@
 
 namespace
 {
+    thread_local HWND t_currentPluginOutputPanel = nullptr;
+
+    struct ScopedPluginOutputPanel
+    {
+        explicit ScopedPluginOutputPanel(HWND hwnd)
+            : previous(t_currentPluginOutputPanel)
+        {
+            t_currentPluginOutputPanel = hwnd;
+        }
+
+        ~ScopedPluginOutputPanel()
+        {
+            t_currentPluginOutputPanel = previous;
+        }
+
+        HWND previous = nullptr;
+    };
+
     std::wstring JoinPath(const std::wstring& base, const std::wstring& name)
     {
         if (base.empty()) return name;
@@ -35,6 +54,46 @@ namespace
     {
         DWORD attrs = GetFileAttributesW(path.c_str());
         return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    bool FileExists(const std::wstring& path)
+    {
+        DWORD attrs = GetFileAttributesW(path.c_str());
+        return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    }
+
+    std::wstring ParentDirectory(const std::wstring& path)
+    {
+        size_t pos = path.find_last_of(L"\\/");
+        if (pos == std::wstring::npos)
+            return L"";
+        return path.substr(0, pos);
+    }
+
+    std::wstring ResolveAssetIconPath(const std::wstring& fileName)
+    {
+        wchar_t exePath[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring exeDir = ParentDirectory(exePath);
+        std::vector<std::wstring> bases;
+        if (!exeDir.empty())
+        {
+            bases.push_back(JoinPath(exeDir, L"assets"));
+            bases.push_back(JoinPath(ParentDirectory(exeDir), L"assets"));
+            bases.push_back(JoinPath(ParentDirectory(ParentDirectory(exeDir)), L"assets"));
+        }
+
+        wchar_t cwd[MAX_PATH]{};
+        if (GetCurrentDirectoryW(MAX_PATH, cwd) > 0)
+            bases.push_back(JoinPath(cwd, L"assets"));
+
+        for (const auto& base : bases)
+        {
+            std::wstring candidate = JoinPath(base, fileName);
+            if (FileExists(candidate))
+                return candidate;
+        }
+        return JoinPath(L"assets", fileName);
     }
 
     std::wstring CurrentHostVersion()
@@ -650,7 +709,7 @@ bool PluginManager::IsSearchRunning(const std::wstring& query) const
     return !query.empty() && query == m_searchQuery && m_searchRunning;
 }
 
-bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message)
+bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message, HWND outputPanelHwnd)
 {
     std::shared_ptr<LoadedPlugin> loaded;
     {
@@ -671,11 +730,11 @@ bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstr
         return false;
     }
 
-    wchar_t buffer[1024]{};
+    std::vector<wchar_t> buffer(32768, L'\0');
     WLStringResultV1 result{};
     result.size = sizeof(result);
-    result.buffer = buffer;
-    result.bufferLength = (uint32_t)_countof(buffer);
+    result.buffer = buffer.data();
+    result.bufferLength = (uint32_t)buffer.size();
 
     WLCommandContextV1 context{};
     context.size = sizeof(context);
@@ -683,6 +742,7 @@ bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstr
     context.query = query.c_str();
 
     bool ok = false;
+    ScopedPluginOutputPanel outputPanel(outputPanelHwnd);
     try
     {
         ok = instance->executeCommand(instance->userData, &context, &result);
@@ -694,7 +754,7 @@ bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstr
         return false;
     }
 
-    message = buffer;
+    message = buffer.data();
     if (!ok)
     {
         RecordError(pluginId, L"execute", message.empty() ? L"插件命令执行失败" : message);
@@ -702,15 +762,10 @@ bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstr
     return ok;
 }
 
-bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& rawInput, const std::vector<std::wstring>& selectedFiles, std::wstring& message)
+bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& rawInput, const std::vector<std::wstring>& selectedFiles, std::wstring& message, HWND outputPanelHwnd)
 {
     if (pluginId.empty())
     {
-        if (commandId == L"winlauncher.help")
-        {
-            message = L"可用内置 / 命令:\r\n/settings 打开设置\r\n/reload 重新加载插件\r\n/about 显示版本信息\r\n/help 显示帮助";
-            return true;
-        }
         if (commandId == L"winlauncher.about")
         {
             message = L"WinLauncher " + CurrentHostVersion();
@@ -761,11 +816,11 @@ bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std:
 
     std::wstring args = SlashArgsFromInput(rawInput);
     std::wstring selectedFilesText = JoinLines(selectedFiles);
-    wchar_t buffer[1024]{};
+    std::vector<wchar_t> buffer(32768, L'\0');
     WLStringResultV1 result{};
     result.size = sizeof(result);
-    result.buffer = buffer;
-    result.bufferLength = (uint32_t)_countof(buffer);
+    result.buffer = buffer.data();
+    result.bufferLength = (uint32_t)buffer.size();
 
     WLSlashCommandContextV1 context{};
     context.size = sizeof(context);
@@ -776,6 +831,7 @@ bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std:
     context.selectedFiles = selectedFilesText.c_str();
 
     bool ok = false;
+    ScopedPluginOutputPanel outputPanel(outputPanelHwnd);
     try
     {
         ok = instance->executeSlashCommand(instance->userData, &context, &result);
@@ -787,7 +843,7 @@ bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std:
         return false;
     }
 
-    message = buffer;
+    message = buffer.data();
     if (!ok)
     {
         RecordError(pluginId, L"slash.execute", message.empty() ? L"/ 命令执行失败" : message);
@@ -1131,6 +1187,7 @@ bool PluginManager::LoadPlugin(const std::wstring& pluginId)
     loaded->hostApi.runProcess = &PluginManager::HostRunProcess;
     loaded->hostApi.getScreenInfo = &PluginManager::HostGetScreenInfo;
     loaded->hostApi.registerPopupAction = &PluginManager::HostRegisterPopupAction;
+    loaded->hostApi.appendResultToPanel = &PluginManager::HostAppendResultToPanel;
 
     HMODULE module = LoadLibraryW(record.manifest.entryPath.c_str());
     if (!module)
@@ -1347,23 +1404,23 @@ void PluginManager::RegisterBuiltinSlashCommands()
     if (!m_builtinSlashCommands.empty())
         return;
 
-    auto add = [&](const wchar_t* id, const wchar_t* command, const wchar_t* title, const wchar_t* description, const wchar_t* usage, std::vector<std::wstring> aliases = {}, std::vector<std::wstring> keywords = {}) {
+    auto add = [&](const wchar_t* id, const wchar_t* command, const wchar_t* title, const wchar_t* description, const wchar_t* usage, const wchar_t* iconFile, std::vector<std::wstring> aliases = {}, std::vector<std::wstring> keywords = {}) {
         PluginCommandInfo info;
         info.commandId = id;
         info.commandName = command;
         info.title = title;
         info.description = description;
         info.usage = usage;
+        info.icon = ResolveAssetIconPath(iconFile);
         info.aliases = std::move(aliases);
         info.keywords = std::move(keywords);
         info.slashCommand = true;
         m_builtinSlashCommands.push_back(std::move(info));
     };
 
-    add(L"winlauncher.settings", L"settings", L"设置", L"打开 WinLauncher 设置窗口", L"/settings", { L"config" }, { L"preferences", L"options" });
-    add(L"winlauncher.reload", L"reload", L"重新加载", L"重新扫描和加载插件", L"/reload", {}, { L"refresh", L"rescan" });
-    add(L"winlauncher.about", L"about", L"关于", L"显示 WinLauncher 版本信息", L"/about", {}, { L"version" });
-    add(L"winlauncher.help", L"help", L"帮助", L"显示可用 / 命令", L"/help", {}, { L"commands" });
+    add(L"winlauncher.settings", L"settings", L"设置", L"打开 WinLauncher 设置窗口", L"/settings", L"slash_settings.ico", { L"config" }, { L"preferences", L"options" });
+    add(L"winlauncher.reload", L"reload", L"重新加载", L"重新扫描和加载插件", L"/reload", L"slash_reload.ico", {}, { L"refresh", L"rescan" });
+    add(L"winlauncher.about", L"about", L"关于", L"显示 WinLauncher 版本信息", L"/about", L"slash_about.ico", {}, { L"version" });
 }
 
 void PluginManager::RecordError(const std::wstring& pluginId, const std::wstring& stage, const std::wstring& error)
@@ -2266,6 +2323,14 @@ bool WL_CALL PluginManager::HostGetScreenInfo(void* hostContext, uint32_t* outWi
     DWORD size = sizeof(lightTheme);
     RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &lightTheme, &size);
     return CopyStringResult(lightTheme ? L"light" : L"dark", outTheme);
+}
+
+bool WL_CALL PluginManager::HostAppendResultToPanel(void* hostContext, const wchar_t* text)
+{
+    auto* ctx = reinterpret_cast<HostContext*>(hostContext);
+    if (!ctx || !ctx->manager || !text || !*text || !t_currentPluginOutputPanel)
+        return false;
+    return CommandPanelWindow::PostAppend(t_currentPluginOutputPanel, text);
 }
 
 bool WL_CALL PluginManager::HostAddSearchResult(void* hostContext, const WLSearchResultV1* result)

@@ -97,16 +97,23 @@ void TextBox::RecreateTextLayout()
     DWRITE_WORD_WRAPPING wrapMode = m_multiline ? DWRITE_WORD_WRAPPING_EMERGENCY_BREAK : DWRITE_WORD_WRAPPING_NO_WRAP;
 
     ComPtr<IDWriteTextFormat> tf;
-    HRESULT hr = UIStyle::Typography::CreateTextFormat(
-        m_dwFactory,
-        &tf,
+    HRESULT hr = m_dwFactory->CreateTextFormat(
+        m_style.fontFamily.c_str(),
+        nullptr,
+        UIStyle::Typography::NormalizeWeight(m_style.fontWeight),
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
         m_style.fontSize,
-        m_style.fontWeight,
-        DWRITE_TEXT_ALIGNMENT_LEADING,
-        DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-        wrapMode);
+        UIStyle::Typography::LocaleName(),
+        &tf);
     if (SUCCEEDED(hr))
     {
+        tf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        tf->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        tf->SetWordWrapping(wrapMode);
+        DWRITE_TRIMMING trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+        tf->SetTrimming(&trimming, nullptr);
+
         float maxW = m_bounds.right - m_bounds.left - (m_style.paddingLeft + m_style.paddingRight);
         // For multiline, use a very large height so the layout measures full content
         float maxH = m_multiline ? 1e6f : (m_bounds.bottom - m_bounds.top - (m_style.paddingTop + m_style.paddingBottom));

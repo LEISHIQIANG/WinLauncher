@@ -2,7 +2,7 @@
   "id": "wl.network_tools",
   "name": "Network Tools",
   "version": "1.0.0",
-  "description": "Network diagnostics: ping, DNS lookup, local IP addresses, and TCP port checker.",
+  "description": "Network diagnostics: ping, DNS leak detection, local IP addresses, and TCP port checker.",
   "entry": "network_tools.dll",
   "abiVersion": 1,
   "permissions": ["network.request", "ui.input"],
@@ -15,15 +15,17 @@
       "title": "Ping Host",
       "description": "Ping a hostname or IP address (4 packets, 3s timeout).",
       "usage": "/ping <hostname-or-IP>",
+      "icon": "icons/ping.ico",
       "keywords": ["latency", "rtt", "connectivity", "延迟"]
     },
     {
       "id": "wl.network_tools.dns",
       "command": "dns",
-      "title": "DNS Lookup",
-      "description": "Resolve a hostname to IPv4 and IPv6 addresses.",
-      "usage": "/dns <hostname>",
-      "keywords": ["nslookup", "resolve", "域名解析", "lookup"]
+      "title": "DNS Leak Test",
+      "description": "Detect visible DNS resolver servers and show their IP, country, and provider.",
+      "usage": "/dns",
+      "icon": "icons/dns.ico",
+      "keywords": ["leak", "resolver", "privacy", "DNS泄露", "dns leak"]
     },
     {
       "id": "wl.network_tools.ip",
@@ -31,6 +33,7 @@
       "title": "Local IP Addresses",
       "description": "Show all active local IP addresses and adapter names.",
       "usage": "/ip",
+      "icon": "icons/ip.ico",
       "keywords": ["address", "network", "本机IP", "ifconfig"]
     },
     {
@@ -39,6 +42,7 @@
       "title": "Port Check",
       "description": "Check if a TCP port is open on a remote host.",
       "usage": "/port <host> <port>",
+      "icon": "icons/port.ico",
       "keywords": ["tcp", "scan", "端扫描", "check"]
     }
   ],

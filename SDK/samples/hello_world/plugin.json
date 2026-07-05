@@ -20,6 +20,7 @@
       "title": "Hello",
       "description": "Slash command sample.",
       "usage": "/hello [text]",
+      "icon": "icons/hello.ico",
       "keywords": ["sample"],
       "aliases": ["hi"]
     }

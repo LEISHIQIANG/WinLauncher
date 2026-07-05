@@ -1,6 +1,7 @@
 #pragma once
 #include "../GlassWindow.h"
 #include "TextBox.h"
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -58,6 +59,9 @@ private:
     bool m_hoveredClose;
     bool m_trackMouse;
     bool m_refreshRunning;
+    int m_loadingFrame;
+    ULONGLONG m_loadingStartedTick;
+    uint64_t m_workerGeneration;
 
     ComPtr<IDWriteTextFormat> m_tfTitle;
     ComPtr<IDWriteTextFormat> m_tfBtn;

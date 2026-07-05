@@ -201,6 +201,13 @@ namespace WinLauncher::Plugin
                 : false;
         }
 
+        bool AppendResultToPanel(const std::wstring& text) const
+        {
+            return HasApiField(offsetof(WLHostApiV1, appendResultToPanel) + sizeof(m_api->appendResultToPanel)) && m_api->appendResultToPanel
+                ? m_api->appendResultToPanel(m_api->hostContext, text.c_str())
+                : false;
+        }
+
         std::wstring HttpRequest(const std::wstring& method, const std::wstring& url, const std::wstring& headers = L"", const std::wstring& body = L"", uint32_t timeoutMs = 30000) const
         {
             return ReadHostResult([&](WLStringResultV1* result) {

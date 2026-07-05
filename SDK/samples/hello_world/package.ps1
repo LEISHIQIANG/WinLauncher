@@ -25,10 +25,12 @@ New-Item -ItemType Directory -Path $stagingRoot | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sampleRoot "plugin.json") -Destination (Join-Path $stagingRoot "plugin.json")
 Copy-Item -LiteralPath $dllPath -Destination (Join-Path $stagingRoot "hello_world.dll")
+if (Test-Path -LiteralPath (Join-Path $sampleRoot "icons")) {
+    Copy-Item -LiteralPath (Join-Path $sampleRoot "icons") -Destination (Join-Path $stagingRoot "icons") -Recurse
+}
 
 if (Test-Path -LiteralPath $packagePath) {
     Remove-Item -LiteralPath $packagePath -Force
 }
 Compress-Archive -Path (Join-Path $stagingRoot "*") -DestinationPath $packagePath -Force
 Write-Host "Created $packagePath"
-

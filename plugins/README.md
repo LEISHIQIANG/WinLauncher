@@ -29,6 +29,7 @@ Get-ChildItem . -Directory | ForEach-Object {
 
 - 编译 Release x64 DLL
 - 复制 `plugin.json`
+- 复制 `icons\` 图标目录（如果存在）
 - 复制 DLL 到 `dist\<plugin_id>\`
 - 生成 `dist\<plugin_id>.wlplugin`
 

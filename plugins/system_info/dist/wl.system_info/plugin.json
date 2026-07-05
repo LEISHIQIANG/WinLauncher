@@ -15,6 +15,7 @@
       "title": "System Info",
       "description": "Comprehensive system overview: OS, CPU, GPU, memory, disk, display, uptime, hostname.",
       "usage": "/sysinfo",
+      "icon": "icons/sysinfo.ico",
       "keywords": ["system", "info", "about", "cpu", "memory", "disk", "uptime", "系统信息", "版本", "处理器", "内存", "硬盘"]
     }
   ],

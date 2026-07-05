@@ -15,6 +15,7 @@
       "title": "File Info",
       "description": "Show file size, creation/modification/access times, and attributes for an explicit path or selected files.",
       "usage": "/fileinfo [path]",
+      "icon": "icons/fileinfo.ico",
       "keywords": ["stat", "info", "属性", "文件信息"]
     },
     {
@@ -23,6 +24,7 @@
       "title": "File Hash",
       "description": "Compute MD5, SHA-1, or SHA-256 hash for explicit paths or selected files/folders.",
       "usage": "/filehash [md5|sha1|sha256] [path]",
+      "icon": "icons/filehash.ico",
       "keywords": ["checksum", "digest", "md5", "sha", "校验"]
     }
   ],

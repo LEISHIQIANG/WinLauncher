@@ -228,6 +228,7 @@ struct WLStringResultV1
 - `id` 必须全局唯一，建议使用 `wl.<name>` 或反向域名。
 - 命令 ID 必须以 `<plugin_id>.` 开头。
 - `/` 命令的 `command` 不包含 `/`，只允许小写字母、数字和连字符。
+- `/` 命令的 `icon` 可使用插件包内的安全相对 `.ico` 路径，例如 `icons/my-command.ico`。
 - `entry` 必须是安全相对 DLL 路径，不能包含 `..`、盘符、UNC 或绝对路径。
 - `settings` 支持 `string`、`integer`、`boolean`。
 
@@ -276,6 +277,7 @@ Slash 命令：
 - 执行入口是 `executeSlashCommand`。
 - `WLSlashCommandContextV1.args` 是命令名后的参数文本。
 - `WLSlashCommandContextV1.selectedFiles` 是 WinLauncher 捕获到的选中文件，多个路径以换行分隔；只支持单文件的命令可以取第一项，支持多文件的命令可以遍历全部。
+- 插件 `/` 命令的图标由 `plugin.json` 的 `icon` 字段独立配置，图标文件应随插件一起放在插件目录内并打包。
 
 动态搜索：
 

@@ -2,16 +2,23 @@
 #include <WinLauncher/WinLauncherPluginABI.h>
 #include <cstddef>
 #include <cwchar>
+#include <algorithm>
+#include <atomic>
+#include <future>
+#include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <winhttp.h>
+#include <windns.h>
 #include <iphlpapi.h>
 #include <icmpapi.h>
 
+#pragma comment(lib, "dnsapi.lib")
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "winhttp.lib")
@@ -19,6 +26,7 @@
 namespace
 {
     using namespace std;
+    atomic<int> g_activeDnsProbeThreads = 0;
 
     void WriteResult(WLStringResultV1* out, const wstring& text)
     {
@@ -40,6 +48,120 @@ namespace
         return host && host->size >= fieldEnd;
     }
 
+    bool AppendPanel(const WLHostApiV1* host, const wstring& text)
+    {
+        return HasHostField(host, offsetof(WLHostApiV1, appendResultToPanel) + sizeof(host->appendResultToPanel)) &&
+            host->appendResultToPanel &&
+            host->appendResultToPanel(host->hostContext, text.c_str());
+    }
+
+    bool ToUtf8Z(const wstring& text, string& out)
+    {
+        out.clear();
+        if (text.empty())
+            return false;
+        int len = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (len <= 1)
+            return false;
+        out.assign((size_t)len, '\0');
+        return WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, out.data(), len, nullptr, nullptr) > 0;
+    }
+
+    bool ToWideZ(const char* text, wstring& out)
+    {
+        out.clear();
+        if (!text || !*text)
+            return false;
+        int len = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+        if (len <= 1)
+            return false;
+        vector<wchar_t> buffer((size_t)len);
+        if (MultiByteToWideChar(CP_UTF8, 0, text, -1, buffer.data(), len) <= 0)
+            return false;
+        out.assign(buffer.data());
+        return true;
+    }
+
+    wstring ToWideUtf8(const string& text)
+    {
+        if (text.empty())
+            return L"";
+        int len = MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0);
+        if (len <= 0)
+            return L"";
+        wstring out((size_t)len, L'\0');
+        if (MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), out.data(), len) <= 0)
+            return L"";
+        return out;
+    }
+
+    wstring Trim(const wstring& value)
+    {
+        size_t first = value.find_first_not_of(L" \t\r\n");
+        if (first == wstring::npos)
+            return L"";
+        size_t last = value.find_last_not_of(L" \t\r\n");
+        return value.substr(first, last - first + 1);
+    }
+
+    vector<wstring> Split(const wstring& value, wchar_t delimiter)
+    {
+        vector<wstring> parts;
+        size_t start = 0;
+        while (start <= value.size())
+        {
+            size_t pos = value.find(delimiter, start);
+            if (pos == wstring::npos)
+            {
+                parts.push_back(value.substr(start));
+                break;
+            }
+            parts.push_back(value.substr(start, pos - start));
+            start = pos + 1;
+        }
+        return parts;
+    }
+
+    wstring PadRight(const wstring& value, size_t width)
+    {
+        if (value.size() >= width)
+            return value + L" ";
+        return value + wstring(width - value.size() + 1, L' ');
+    }
+
+    bool AddrInfoToIpString(const addrinfo* info, wstring& family, wstring& ip)
+    {
+        family.clear();
+        ip.clear();
+        if (!info || !info->ai_addr)
+            return false;
+
+        char buffer[INET6_ADDRSTRLEN]{};
+        const void* addr = nullptr;
+        if (info->ai_family == AF_INET)
+        {
+            if (info->ai_addrlen < sizeof(sockaddr_in))
+                return false;
+            addr = &reinterpret_cast<const sockaddr_in*>(info->ai_addr)->sin_addr;
+            family = L"IPv4";
+        }
+        else if (info->ai_family == AF_INET6)
+        {
+            if (info->ai_addrlen < sizeof(sockaddr_in6))
+                return false;
+            addr = &reinterpret_cast<const sockaddr_in6*>(info->ai_addr)->sin6_addr;
+            family = L"IPv6";
+        }
+        else
+        {
+            return false;
+        }
+
+        if (!inet_ntop(info->ai_family, addr, buffer, sizeof(buffer)))
+            return false;
+        return ToWideZ(buffer, ip);
+    }
+
     wstring PromptText(const WLHostApiV1* host, const wchar_t* title, const wchar_t* prompt, const wchar_t* defaultText = L"")
     {
         if (!HasHostField(host, offsetof(WLHostApiV1, showInputDialog) + sizeof(host->showInputDialog)) || !host->showInputDialog)
@@ -52,37 +174,41 @@ namespace
         out.bufferLength = (uint32_t)result.size();
         if (!host->showInputDialog(host->hostContext, title, prompt, defaultText, &out))
             return L"";
-        if (!result.empty() && result.back() == L'\0')
-            result.pop_back();
+        result.assign(result.c_str());
         return result;
     }
 
+    wstring HttpGet(const wstring& url);
+
     // ── Ping ────────────────────────────────────────────────────────
 
-    wstring DoPing(const wstring& target)
+    wstring DoPing(const wstring& target, const WLHostApiV1* host)
     {
         if (target.empty()) return L"Usage: /ping <hostname-or-IP>";
 
-        // Resolve hostname to IP
-        ULONG ipAddr = inet_addr(nullptr);
-        {
-            int len = WideCharToMultiByte(CP_UTF8, 0, target.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            string mb(len, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, target.c_str(), -1, mb.data(), len, nullptr, nullptr);
-            ipAddr = inet_addr(mb.c_str());
-        }
+        string mb;
+        if (!ToUtf8Z(target, mb))
+            return L"Error: Invalid host name: " + target;
 
-        if (ipAddr == INADDR_NONE)
+        // Resolve hostname to an IPv4 address because IcmpSendEcho is IPv4-only.
+        ULONG ipAddr = INADDR_NONE;
+        in_addr parsed{};
+        if (inet_pton(AF_INET, mb.c_str(), &parsed) == 1)
+        {
+            ipAddr = parsed.S_un.S_addr;
+        }
+        else
         {
             addrinfo hints{}, *result = nullptr;
             hints.ai_family = AF_INET;
-            int len = WideCharToMultiByte(CP_UTF8, 0, target.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            string mb(len, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, target.c_str(), -1, mb.data(), len, nullptr, nullptr);
             if (getaddrinfo(mb.c_str(), nullptr, &hints, &result) != 0 || !result)
                 return L"Error: Could not resolve host: " + target;
-            ipAddr = ((sockaddr_in*)result->ai_addr)->sin_addr.S_un.S_addr;
+            bool ok = result->ai_addr && result->ai_addrlen >= sizeof(sockaddr_in);
+            if (ok)
+                ipAddr = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr.S_un.S_addr;
             freeaddrinfo(result);
+            if (!ok || ipAddr == INADDR_NONE)
+                return L"Error: Could not resolve host: " + target;
         }
 
         // Open ICMP handle
@@ -91,20 +217,19 @@ namespace
             return L"Error: IcmpCreateFile failed (requires admin?)";
 
         wstring result;
-        wchar_t ipStr[16]{};
         in_addr ia;
         ia.S_un.S_addr = ipAddr;
-        WCHAR* ipw = nullptr;
+        char ipBuf[INET_ADDRSTRLEN]{};
+        wstring ipText = target;
+        if (inet_ntop(AF_INET, &ia, ipBuf, sizeof(ipBuf)))
         {
-            char ipBuf[16]{};
-            inet_ntop(AF_INET, &ia, ipBuf, sizeof(ipBuf));
-            int wlen = MultiByteToWideChar(CP_UTF8, 0, ipBuf, -1, nullptr, 0);
-            ipw = new WCHAR[wlen];
-            MultiByteToWideChar(CP_UTF8, 0, ipBuf, -1, ipw, wlen);
+            wstring convertedIp;
+            if (ToWideZ(ipBuf, convertedIp))
+                ipText = convertedIp;
         }
 
-        result = L"Pinging " + target + L" [" + wstring(ipw) + L"]\n";
-        delete[] ipw;
+        result = L"Pinging " + target + L" [" + ipText + L"]\n";
+        bool streaming = AppendPanel(host, result);
 
         // Send 4 pings
         int sent = 0, recv = 0;
@@ -141,6 +266,8 @@ namespace
             }
             result += line;
             result += L"\n";
+            if (streaming)
+                AppendPanel(host, wstring(line) + L"\n");
 
             if (i < 3) Sleep(500);
         }
@@ -153,59 +280,245 @@ namespace
         swprintf_s(stats, L"\nPing statistics: Sent=%d, Received=%d, Lost=%d (%d%% loss)",
             sent, recv, sent - recv, loss);
         result += stats;
+        if (streaming)
+        {
+            AppendPanel(host, stats);
+            AppendPanel(host, L"\n");
+            return L"Ping completed.";
+        }
 
         return result;
     }
 
-    // ── DNS ─────────────────────────────────────────────────────────
+    // ── DNS leak test ───────────────────────────────────────────────
 
-    wstring DoDNS(const wstring& host)
+    struct DnsLeakRecord
     {
-        if (host.empty()) return L"Usage: /dns <hostname>";
+        wstring ip;
+        wstring countryCode;
+        wstring country;
+        wstring provider;
+        wstring type;
+    };
 
-        addrinfo hints{}, *result = nullptr;
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
+    wstring FormatDnsLeakHeader()
+    {
+        return L"  " + PadRight(L"#", 3) + PadRight(L"IP", 17) + L"Country\n" +
+            L"  " + wstring(49, L'-') + L"\n";
+    }
 
-        int len = WideCharToMultiByte(CP_UTF8, 0, host.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        string mb(len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, host.c_str(), -1, mb.data(), len, nullptr, nullptr);
+    wstring FormatDnsLeakRow(size_t index, const DnsLeakRecord& row)
+    {
+        return L"  " +
+            PadRight(to_wstring(index) + L".", 3) +
+            PadRight(row.ip, 17) +
+            (row.country.empty() ? L"-" : row.country) +
+            L"\n";
+    }
 
-        if (getaddrinfo(mb.c_str(), nullptr, &hints, &result) != 0)
-            return L"Error: Could not resolve: " + host;
-
-        wstring output = L"DNS lookup for: " + host + L"\n";
-
-        for (addrinfo* ptr = result; ptr; ptr = ptr->ai_next)
+    void TriggerDnsLeakProbe(const wstring& id, int index)
+    {
+        wstring host = to_wstring(index) + L"." + id + L".bash.ws";
+        PDNS_RECORDW records = nullptr;
+        DNS_STATUS status = DnsQuery_W(
+            host.c_str(),
+            DNS_TYPE_A,
+            DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE,
+            nullptr,
+            &records,
+            nullptr);
+        if (records)
+            DnsRecordListFree(records, DnsFreeRecordList);
+        if (status != ERROR_SUCCESS)
         {
-            wchar_t ipStr[64]{};
-            void* addr;
-            const wchar_t* family;
+            records = nullptr;
+            DnsQuery_W(
+                host.c_str(),
+                DNS_TYPE_AAAA,
+                DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE,
+                nullptr,
+                &records,
+                nullptr);
+            if (records)
+                DnsRecordListFree(records, DnsFreeRecordList);
+        }
+    }
 
-            if (ptr->ai_family == AF_INET)
-            {
-                addr = &((sockaddr_in*)ptr->ai_addr)->sin_addr;
-                family = L"IPv4";
-                char buf4[16]{};
-                inet_ntop(ptr->ai_family, addr, buf4, sizeof(buf4));
-                MultiByteToWideChar(CP_UTF8, 0, buf4, -1, ipStr, 64);
-            }
-            else if (ptr->ai_family == AF_INET6)
-            {
-                addr = &((sockaddr_in6*)ptr->ai_addr)->sin6_addr;
-                family = L"IPv6";
-                char buf6[64]{};
-                inet_ntop(ptr->ai_family, addr, buf6, sizeof(buf6));
-                MultiByteToWideChar(CP_UTF8, 0, buf6, -1, ipStr, 64);
-            }
-            else { continue; }
+    void LaunchDnsLeakProbe(const wstring& id, int index)
+    {
+        g_activeDnsProbeThreads.fetch_add(1);
+        thread([id, index]() {
+            TriggerDnsLeakProbe(id, index);
+            g_activeDnsProbeThreads.fetch_sub(1);
+        }).detach();
+    }
 
-            wchar_t line[128]{};
-            swprintf_s(line, L"  %-6s %s\n", family, ipStr);
-            output += line;
+    vector<DnsLeakRecord> ParseDnsLeakRows(const wstring& text)
+    {
+        vector<DnsLeakRecord> records;
+        size_t start = 0;
+        while (start < text.size())
+        {
+            size_t end = text.find(L'\n', start);
+            wstring line = Trim(text.substr(start, end == wstring::npos ? wstring::npos : end - start));
+            start = end == wstring::npos ? text.size() : end + 1;
+            if (line.empty())
+                continue;
+
+            vector<wstring> fields = Split(line, L'|');
+            if (fields.size() < 5)
+                continue;
+
+            DnsLeakRecord record;
+            record.ip = Trim(fields[0]);
+            record.countryCode = Trim(fields[1]);
+            record.country = Trim(fields[2]);
+            record.provider = Trim(fields[3]);
+            record.type = Trim(fields[4]);
+            records.push_back(std::move(record));
+        }
+        return records;
+    }
+
+    wstring DoDNSLeakTest(const WLHostApiV1* host)
+    {
+        wstring id = HttpGet(L"https://bash.ws/id");
+        id = Trim(id);
+        if (id.empty())
+            return L"DNS Leak Test failed: could not create a bash.ws test session.";
+
+        bool streaming = AppendPanel(host,
+            L"DNS Leak Test (bash.ws)\n"
+            L"Session: " + id + L"\n\n"
+            L"Detecting DNS servers...\n\n");
+
+        for (int i = 1; i <= 10; ++i)
+            LaunchDnsLeakProbe(id, i);
+
+        vector<DnsLeakRecord> rows;
+        vector<DnsLeakRecord> streamedDnsRows;
+        set<wstring> streamedDns;
+        bool streamedPublicIp = false;
+        bool streamedHeader = false;
+        DWORD startTick = GetTickCount();
+        DWORD lastDnsCount = 0;
+        DWORD stablePolls = 0;
+        while (GetTickCount() - startTick < 7000)
+        {
+            wstring rowsText = HttpGet(L"https://bash.ws/dnsleak/test/" + id + L"?txt");
+            vector<DnsLeakRecord> polledRows = ParseDnsLeakRows(rowsText);
+            DWORD dnsCount = 0;
+            bool hasConclusion = false;
+            for (const auto& row : polledRows)
+            {
+                if (row.type == L"dns")
+                    ++dnsCount;
+                else if (row.type == L"conclusion")
+                    hasConclusion = true;
+            }
+
+            if (!polledRows.empty())
+                rows = std::move(polledRows);
+
+            if (streaming)
+            {
+                for (const auto& row : rows)
+                {
+                    if (!streamedPublicIp && row.type == L"ip")
+                    {
+                        wstring line = L"Your public IP:\n  " + row.ip;
+                        if (!row.country.empty())
+                            line += L"  [" + row.country + L"]";
+                        line += L"\n\n";
+                        AppendPanel(host, line);
+                        streamedPublicIp = true;
+                    }
+                    else if (row.type == L"dns" && streamedDns.insert(row.ip).second)
+                    {
+                        if (!streamedHeader)
+                        {
+                            AppendPanel(host, L"Detected DNS servers:\n" + FormatDnsLeakHeader());
+                            streamedHeader = true;
+                        }
+                        streamedDnsRows.push_back(row);
+                        AppendPanel(host, FormatDnsLeakRow(streamedDnsRows.size(), row));
+                    }
+                }
+            }
+
+            if (dnsCount > 0 && dnsCount == lastDnsCount)
+                ++stablePolls;
+            else
+                stablePolls = 0;
+            lastDnsCount = dnsCount;
+
+            if (dnsCount > 0 && (hasConclusion || stablePolls >= 2))
+                break;
+            Sleep(700);
         }
 
-        freeaddrinfo(result);
+        if (rows.empty())
+            return L"DNS Leak Test failed: no result was returned for session " + id + L".";
+
+        vector<DnsLeakRecord> dnsRows;
+        vector<DnsLeakRecord> ipRows;
+        wstring conclusion;
+        set<wstring> seenDns;
+        for (const auto& row : rows)
+        {
+            if (row.type == L"dns" && seenDns.insert(row.ip).second)
+                dnsRows.push_back(row);
+            else if (row.type == L"ip")
+                ipRows.push_back(row);
+            else if (row.type == L"conclusion" && !row.ip.empty())
+                conclusion = row.ip;
+        }
+
+        sort(dnsRows.begin(), dnsRows.end(), [](const DnsLeakRecord& left, const DnsLeakRecord& right) {
+            if (left.country != right.country)
+                return left.country < right.country;
+            if (left.provider != right.provider)
+                return left.provider < right.provider;
+            return left.ip < right.ip;
+        });
+
+        wstring output = L"DNS Leak Test (bash.ws)\n";
+        output += L"Session: " + id + L"\n\n";
+
+        if (!ipRows.empty())
+        {
+            const auto& row = ipRows.front();
+            output += L"Your public IP:\n";
+            output += L"  " + row.ip;
+            if (!row.country.empty())
+                output += L"  [" + row.country + L"]";
+            output += L"\n\n";
+        }
+
+        output += L"Detected DNS servers: " + to_wstring(dnsRows.size()) + L"\n";
+        if (dnsRows.empty())
+        {
+            output += L"  No DNS servers were detected. Try running the test again.\n";
+        }
+        else
+        {
+            output += FormatDnsLeakHeader();
+            for (size_t i = 0; i < dnsRows.size(); ++i)
+                output += FormatDnsLeakRow(i + 1, dnsRows[i]);
+        }
+
+        if (!conclusion.empty())
+            output += L"\nService conclusion: " + conclusion + L"\n";
+        output += L"\nNote: \"may be leaking\" means the detected DNS resolvers do not clearly match the current public network or expected VPN/proxy path. Public DNS, secure DNS, proxy/TUN routing, and resolver anycast can also trigger this warning.";
+        if (streaming)
+        {
+            wstring summary;
+            if (!conclusion.empty())
+                summary += L"\nService conclusion: " + conclusion + L"\n";
+            summary += L"\nDone. Detected " + to_wstring(dnsRows.size()) + L" DNS server(s).\n";
+            AppendPanel(host, summary);
+            return L"DNS leak test completed.";
+        }
         return output;
     }
 
@@ -215,9 +528,10 @@ namespace
     {
         URL_COMPONENTS uc{};
         uc.dwStructSize = sizeof(uc);
-        wchar_t host[256]{}, path[1024]{L"/"};
+        wchar_t host[256]{}, path[1024]{L"/"}, extra[512]{};
         uc.lpszHostName = host; uc.dwHostNameLength = 256;
         uc.lpszUrlPath = path; uc.dwUrlPathLength = 1024;
+        uc.lpszExtraInfo = extra; uc.dwExtraInfoLength = 512;
 
         if (!WinHttpCrackUrl(url.c_str(), 0, 0, &uc)) return L"";
 
@@ -232,7 +546,8 @@ namespace
         if (!hConnect) { WinHttpCloseHandle(hSession); return L""; }
 
         DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-        HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", path, nullptr,
+        wstring objectName = wstring(path) + extra;
+        HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", objectName.c_str(), nullptr,
             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
         if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return L""; }
 
@@ -242,21 +557,21 @@ namespace
 
         if (!ok) { WinHttpCloseHandle(hRequest); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return L""; }
 
-        wstring result;
+        string bytes;
         DWORD avail = 0;
         while (WinHttpQueryDataAvailable(hRequest, &avail) && avail > 0)
         {
             DWORD read = 0;
             vector<char> buf((size_t)avail + 1);
             if (!WinHttpReadData(hRequest, buf.data(), avail, &read)) break;
-            result.append(buf.begin(), buf.begin() + read);
+            bytes.append(buf.data(), buf.data() + read);
         }
 
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
 
-        // Trim whitespace/line endings from IP-only responses
+        wstring result = ToWideUtf8(bytes);
         while (!result.empty() && (result.back() == L'\n' || result.back() == L'\r' || result.back() == L' '))
             result.pop_back();
         return result;
@@ -412,6 +727,9 @@ namespace
     void WL_CALL OnUnload(void* userData)
     {
         auto* p = static_cast<Plugin*>(userData);
+        DWORD start = GetTickCount();
+        while (g_activeDnsProbeThreads.load() > 0 && GetTickCount() - start < 6000)
+            Sleep(50);
         if (p && p->winsockStarted)
         {
             WSACleanup();
@@ -431,13 +749,11 @@ namespace
         {
             if (args.empty())
                 args = PromptText(p->host, L"Ping Host", L"Enter hostname or IP address:", L"google.com");
-            WriteResult(out, DoPing(args));
+            WriteResult(out, DoPing(args, p->host));
         }
         else if (cmd == L"dns")
         {
-            if (args.empty())
-                args = PromptText(p->host, L"DNS Lookup", L"Enter hostname:", L"example.com");
-            WriteResult(out, DoDNS(args));
+            WriteResult(out, DoDNSLeakTest(p->host));
         }
         else if (cmd == L"ip")         WriteResult(out, DoLocalIP());
         else if (cmd == L"port")
