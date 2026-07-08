@@ -92,6 +92,8 @@ public:
         std::wstring content = ReadFile(m_configFilePath);
         if (content.empty())
         {
+            m_triggerBlacklist = DefaultTriggerBlacklist();
+
             Model::PopupPage dockPage;
             dockPage.name = L"DOCK";
             pages.push_back(std::move(dockPage));
@@ -107,6 +109,7 @@ public:
         Model::PopupPage* currentPage = nullptr;
         Model::ShortcutInfo* currentItem = nullptr;
         bool inSettings = false;
+        bool triggerBlacklistSeen = false;
         int currentPageIndex = -1;
         int currentItemIndex = -1;
 
@@ -204,6 +207,11 @@ public:
                     if (key == L"TriggerType")
                     {
                         try { m_triggerType = std::stoi(val); } catch (...) { m_triggerType = 0; }
+                    }
+                    else if (key == L"TriggerBlacklist")
+                    {
+                        triggerBlacklistSeen = true;
+                        m_triggerBlacklist = ParseListValue(val);
                     }
                     else if (key == L"PopupColumns")
                     {
@@ -597,6 +605,11 @@ public:
             pages.insert(pages.begin(), std::move(dockPage));
         }
 
+        if (!triggerBlacklistSeen)
+        {
+            m_triggerBlacklist = DefaultTriggerBlacklist();
+        }
+
         LOG_INFO(m_logger, L"Loaded %zu pages from config", pages.size());
         return pages;
     }
@@ -606,6 +619,7 @@ public:
         std::wstring content;
         content += L"[Settings]\r\n";
         content += L"TriggerType=" + std::to_wstring(m_triggerType) + L"\r\n";
+        content += L"TriggerBlacklist=" + EscapeValue(JoinListValue(m_triggerBlacklist)) + L"\r\n";
         content += L"PopupColumns=" + std::to_wstring(m_popupColumns) + L"\r\n";
         content += L"PopupRows=" + std::to_wstring(m_popupRows) + L"\r\n";
         content += L"PopupIconSize=" + std::to_wstring(m_popupIconSize) + L"\r\n";
@@ -857,6 +871,8 @@ public:
 
     virtual int GetTriggerType() override { return m_triggerType; }
     virtual void SetTriggerType(int type) override { m_triggerType = type; }
+    virtual std::vector<std::wstring> GetTriggerBlacklist() override { return m_triggerBlacklist; }
+    virtual void SetTriggerBlacklist(const std::vector<std::wstring>& processNames) override { m_triggerBlacklist = processNames; }
 
     virtual int GetPopupColumns() override { return m_popupColumns; }
     virtual void SetPopupColumns(int columns) override { m_popupColumns = columns; }
@@ -1001,6 +1017,86 @@ private:
         return result;
     }
 
+    static std::wstring JoinListValue(const std::vector<std::wstring>& values)
+    {
+        std::wstring result;
+        for (const auto& value : values)
+        {
+            if (!result.empty())
+                result += L";";
+            result += value;
+        }
+        return result;
+    }
+
+    static std::vector<std::wstring> ParseListValue(const std::wstring& value)
+    {
+        std::vector<std::wstring> result;
+        std::wstring current;
+        auto pushCurrent = [&]()
+        {
+            Trim(current);
+            if (!current.empty())
+            {
+                bool exists = false;
+                std::wstring currentLower = current;
+                std::transform(currentLower.begin(), currentLower.end(), currentLower.begin(), [](wchar_t ch) {
+                    return static_cast<wchar_t>(towlower(ch));
+                });
+                for (const auto& item : result)
+                {
+                    std::wstring itemLower = item;
+                    std::transform(itemLower.begin(), itemLower.end(), itemLower.begin(), [](wchar_t ch) {
+                        return static_cast<wchar_t>(towlower(ch));
+                    });
+                    if (itemLower == currentLower)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                    result.push_back(current);
+            }
+            current.clear();
+        };
+
+        for (wchar_t ch : value)
+        {
+            if (ch == L';' || ch == L',' || ch == L'\xFF1B' || ch == L'\xFF0C' || ch == L'\x3001' || ch == L'\r' || ch == L'\n')
+            {
+                pushCurrent();
+            }
+            else
+            {
+                current.push_back(ch);
+            }
+        }
+        pushCurrent();
+        return result;
+    }
+
+    static std::vector<std::wstring> DefaultTriggerBlacklist()
+    {
+        return {
+            L"acad.exe",
+            L"acadlt.exe",
+            L"revit.exe",
+            L"inventor.exe",
+            L"fusion360.exe",
+            L"sketchup.exe",
+            L"rhino.exe",
+            L"sldworks.exe",
+            L"blender.exe",
+            L"3dsmax.exe",
+            L"maya.exe",
+            L"cinema4d.exe",
+            L"houdini.exe",
+            L"houdinifx.exe",
+            L"zbrush.exe"
+        };
+    }
+
     static std::wstring UnescapeValue(const std::wstring& value)
     {
         std::wstring result;
@@ -1068,6 +1164,7 @@ private:
         commonPage.name = L"常用";
         pages.push_back(std::move(commonPage));
 
+        m_triggerBlacklist = DefaultTriggerBlacklist();
         SaveConfig(pages);
         LOG_INFO(m_logger, L"Created default config at %s", m_configFilePath.c_str());
         return pages;
@@ -1077,6 +1174,7 @@ private:
     {
         m_appearance = Model::AppearanceSettings{};
         m_triggerType = 0;
+        m_triggerBlacklist = DefaultTriggerBlacklist();
         m_popupColumns = 6;
         m_popupRows = 4;
         m_popupIconSize = 24;
@@ -1340,6 +1438,7 @@ private:
     UINT m_notifyMessage = 0;
     Model::AppearanceSettings m_appearance;
     int m_triggerType = 0;
+    std::vector<std::wstring> m_triggerBlacklist = DefaultTriggerBlacklist();
     int m_popupColumns = 6;
     int m_popupRows = 4;
     int m_popupIconSize = 24;

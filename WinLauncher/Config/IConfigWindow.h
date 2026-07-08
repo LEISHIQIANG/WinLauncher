@@ -3,6 +3,7 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
+#include <vector>
 
 struct AppContext;
 struct RendPopupPage;
@@ -49,6 +50,8 @@ public:
     virtual bool IsDraggingShortcut() = 0;
     virtual int GetTriggerType() = 0;
     virtual void SetTriggerType(int type) = 0;
+    virtual std::vector<std::wstring> GetTriggerBlacklist() = 0;
+    virtual void SetTriggerBlacklist(const std::vector<std::wstring>& processNames) = 0;
     virtual bool GetAutoStart() = 0;
     virtual void SetAutoStart(bool enable) = 0;
     virtual bool GetHideTrayIcon() = 0;

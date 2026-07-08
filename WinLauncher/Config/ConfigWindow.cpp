@@ -821,6 +821,7 @@ void ConfigWindow::ReloadAfterConfigFileOperation()
     {
         UIStyle::ApplyAppearanceSettings(m_appCtx->configService->GetAppearanceSettings());
         MouseHook::SetTriggerType(m_appCtx->configService->GetTriggerType());
+        MouseHook::SetTriggerBlacklist(m_appCtx->configService->GetTriggerBlacklist());
         UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
         UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
         UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
@@ -1175,6 +1176,24 @@ void ConfigWindow::SetTriggerType(int type)
     {
         m_appCtx->configService->SetTriggerType(type);
         MouseHook::SetTriggerType(type);
+    }
+}
+
+std::vector<std::wstring> ConfigWindow::GetTriggerBlacklist()
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        return m_appCtx->configService->GetTriggerBlacklist();
+    }
+    return {};
+}
+
+void ConfigWindow::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetTriggerBlacklist(processNames);
+        MouseHook::SetTriggerBlacklist(processNames);
     }
 }
 

@@ -41,6 +41,13 @@ bool PromptWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt
                         defaultText, ctx, 240, 135);
 }
 
+bool PromptWindow::ShowMultiline(HWND parent, const wchar_t* title, const wchar_t* prompt,
+                                 std::wstring& outResult, const wchar_t* defaultText, AppContext* ctx)
+{
+    return ShowInternal(parent, Mode::Input, title, prompt, outResult, {},
+                        defaultText, ctx, 240, 260, true);
+}
+
 bool PromptWindow::ShowPassword(HWND parent, const wchar_t* title, const wchar_t* prompt,
                                 std::wstring& outResult, AppContext* ctx)
 {
@@ -102,11 +109,12 @@ bool PromptWindow::ShowConfirm(HWND parent, const wchar_t* title, const wchar_t*
 bool PromptWindow::ShowInternal(HWND parent, Mode mode, const wchar_t* title, const wchar_t* prompt,
                                 std::wstring& outResult, const std::vector<std::wstring>& chooseOptions,
                                 const wchar_t* defaultText, AppContext* ctx,
-                                int w, int h)
+                                int w, int h, bool multilineInput)
 {
     if (g_promptInstance) return false;
 
     PromptWindow* win = new PromptWindow(mode, title, prompt, chooseOptions, defaultText, ctx);
+    win->m_multilineInput = multilineInput;
 
     HMONITOR hm = nullptr;
     if (parent)
@@ -199,12 +207,22 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         EnsureD2D();
         if (m_mode == Mode::Input || m_mode == Mode::Password)
         {
+            RECT cr;
+            GetClientRect(hWnd, &cr);
+            float scale = GetWindowScale(hWnd);
+            float w = (float)cr.right / scale;
+            float h = (float)cr.bottom / scale;
+            D2D1_RECT_F textBoxRect = m_multilineInput
+                ? D2D1::RectF(20.0f, 82.0f, w - 20.0f, h - 52.0f)
+                : D2D1::RectF(20.0f, 58.0f, 220.0f, 84.0f);
+
             UIStyle::TextBoxStyle style;
             style.fontSize = 11;
-            style.paddingTop = 4.0f;
-            style.paddingBottom = 4.0f;
+            style.paddingTop = m_multilineInput ? 6.0f : 4.0f;
+            style.paddingBottom = m_multilineInput ? 6.0f : 4.0f;
             m_textBox.SetStyle(style);
-            m_textBox.Create(hWnd, m_dw.Get(), D2D1::RectF(20, 58, 220, 84), m_defaultText);
+            m_textBox.SetMultiline(m_multilineInput);
+            m_textBox.Create(hWnd, m_dw.Get(), textBoxRect, m_defaultText);
             if (m_mode == Mode::Password)
                 m_textBox.SetPasswordMode(true);
             m_textBox.SetFocus(true);
@@ -324,6 +342,19 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
                 m_textBox.BlinkCaret();
                 InvalidateRect(hWnd, nullptr, FALSE);
             }
+            return 0;
+        }
+        break;
+
+    case WM_MOUSEWHEEL:
+        if (m_mode == Mode::Input || m_mode == Mode::Password)
+        {
+            float scale = GetWindowScale(hWnd);
+            POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hWnd, &pt);
+            bool repaint = false;
+            m_textBox.OnMouseWheel(hWnd, GET_WHEEL_DELTA_WPARAM(wParam), pt, scale, repaint);
+            if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
         break;
@@ -592,7 +623,7 @@ void PromptWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
         if (promptBrush)
         {
             float promptTop = 36.0f;
-            float promptH = (m_mode == Mode::Confirm) ? 42.0f : 16.0f; // original: 52-36=16
+            float promptH = (m_mode == Mode::Confirm) ? 42.0f : (m_multilineInput ? 40.0f : 16.0f);
             rt->DrawTextW(m_prompt.c_str(), (UINT32)m_prompt.size(), m_tfPrompt.Get(),
                           D2D1::RectF(20, promptTop, w - 20, promptTop + promptH), promptBrush.Get());
         }

@@ -1,6 +1,8 @@
 #pragma once
 #include <Windows.h>
 #include <atomic>
+#include <string>
+#include <vector>
 
 class MouseHook
 {
@@ -9,6 +11,7 @@ public:
     static void Uninstall();
     static bool IsInstalled();
     static void SetTriggerType(int type);
+    static void SetTriggerBlacklist(const std::vector<std::wstring>& processNames);
 
 private:
     static std::atomic<int>    s_triggerType;

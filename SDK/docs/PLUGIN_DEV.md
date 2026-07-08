@@ -327,6 +327,12 @@ wl.example.wlplugin
 .\package.ps1 -MsBuildPath "E:\Visual Studio 2026\MSBuild\Current\Bin\MSBuild.exe"
 ```
 
+从仓库根目录做发布候选验证时，可以统一构建随附插件和 SDK 示例：
+
+```powershell
+.\scripts\build_plugins.ps1 -Configuration Release -Platform x64 -MsBuildPath "E:\Visual Studio 2026\MSBuild\Current\Bin\MSBuild.exe" -IncludeSamples
+```
+
 打包安全规则：
 
 - 包内不能有绝对路径、UNC 路径或 `..`。

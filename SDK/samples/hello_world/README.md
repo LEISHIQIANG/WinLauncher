@@ -14,5 +14,10 @@ Build and package:
 .\package.ps1
 ```
 
-The package is written to `dist\example.hello_world.wlplugin`. Install it from the WinLauncher plugin settings page.
+From the repository root, release validation can build this sample together with the bundled plugins:
 
+```powershell
+.\scripts\build_plugins.ps1 -IncludeSamples
+```
+
+The package is written to `dist\example.hello_world.wlplugin`. Install it from the WinLauncher plugin settings page.

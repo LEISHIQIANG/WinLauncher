@@ -246,6 +246,7 @@ bool Application::LoadRuntimeSettings()
     m_appCtx->configService->LoadConfig();
     UIStyle::ApplyAppearanceSettings(m_appCtx->configService->GetAppearanceSettings());
     MouseHook::SetTriggerType(m_appCtx->configService->GetTriggerType());
+    MouseHook::SetTriggerBlacklist(m_appCtx->configService->GetTriggerBlacklist());
     UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
     UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
     UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());

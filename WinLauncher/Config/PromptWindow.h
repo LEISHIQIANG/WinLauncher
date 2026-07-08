@@ -19,6 +19,11 @@ public:
                      std::wstring& outResult, const wchar_t* defaultText = L"",
                      AppContext* ctx = nullptr);
 
+    // Multiline input mode for longer editable text.
+    static bool ShowMultiline(HWND parent, const wchar_t* title, const wchar_t* prompt,
+                              std::wstring& outResult, const wchar_t* defaultText = L"",
+                              AppContext* ctx = nullptr);
+
     // Password mode: masked input
     static bool ShowPassword(HWND parent, const wchar_t* title, const wchar_t* prompt,
                              std::wstring& outResult, AppContext* ctx = nullptr);
@@ -51,7 +56,7 @@ private:
     static bool ShowInternal(HWND parent, Mode mode, const wchar_t* title, const wchar_t* prompt,
                              std::wstring& outResult, const std::vector<std::wstring>& chooseOptions,
                              const wchar_t* defaultText, AppContext* ctx,
-                             int windowWidth, int windowHeight);
+                             int windowWidth, int windowHeight, bool multilineInput = false);
 
     Mode m_mode;
     std::wstring m_title;
@@ -61,6 +66,7 @@ private:
     bool m_okPressed;
 
     TextBox m_textBox;
+    bool m_multilineInput = false;
 
     // Choose mode
     std::vector<std::wstring> m_chooseOptions;

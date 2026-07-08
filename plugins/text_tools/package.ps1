@@ -26,5 +26,8 @@ if (Test-Path -LiteralPath (Join-Path $pluginRoot "icons")) {
 }
 
 if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath -Force }
-Compress-Archive -Path (Join-Path $stagingRoot "*") -DestinationPath $packagePath -Force
+$zipPackagePath = "$packagePath.zip"
+if (Test-Path -LiteralPath $zipPackagePath) { Remove-Item -LiteralPath $zipPackagePath -Force }
+Compress-Archive -Path (Join-Path $stagingRoot "*") -DestinationPath $zipPackagePath -Force
+Move-Item -LiteralPath $zipPackagePath -Destination $packagePath -Force
 Write-Host "Created $packagePath"

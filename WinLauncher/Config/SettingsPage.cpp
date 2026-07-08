@@ -11,6 +11,7 @@
 #include "..\version.h"
 #include <commdlg.h>
 #include <cwchar>
+#include <cwctype>
 #include <cmath>
 #include <vector>
 #include <algorithm>
@@ -66,6 +67,16 @@ namespace
         return TwoColumnRect(index, top, 28.0f);
     }
 
+    D2D1_RECT_F TriggerBlacklistRect()
+    {
+        return D2D1::RectF(CONTENT_LEFT, 430.0f, CONTENT_RIGHT, 462.0f);
+    }
+
+    D2D1_RECT_F TriggerBlacklistEditRect()
+    {
+        return D2D1::RectF(438.0f, 436.0f, 502.0f, 456.0f);
+    }
+
     bool PointInRect(const D2D1_RECT_F& rect, POINT pt)
     {
         return pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom;
@@ -98,6 +109,73 @@ namespace
             return (wchar_t)towlower(ch);
         });
         return value;
+    }
+
+    void TrimInPlace(std::wstring& value)
+    {
+        while (!value.empty() && iswspace(value.back()))
+            value.pop_back();
+        size_t start = 0;
+        while (start < value.size() && iswspace(value[start]))
+            ++start;
+        if (start > 0)
+            value.erase(0, start);
+    }
+
+    std::vector<std::wstring> ParseTriggerBlacklistInput(const std::wstring& input)
+    {
+        std::vector<std::wstring> result;
+        std::wstring current;
+        auto pushCurrent = [&]()
+        {
+            TrimInPlace(current);
+            if (!current.empty())
+            {
+                std::wstring lower = ToLowerCopy(current);
+                bool exists = false;
+                for (const auto& item : result)
+                {
+                    if (ToLowerCopy(item) == lower)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                    result.push_back(current);
+            }
+            current.clear();
+        };
+
+        for (wchar_t ch : input)
+        {
+            if (ch == L';' || ch == L',' || ch == L'\xFF1B' || ch == L'\xFF0C' || ch == L'\x3001' || ch == L'\r' || ch == L'\n')
+                pushCurrent();
+            else
+                current.push_back(ch);
+        }
+        pushCurrent();
+        return result;
+    }
+
+    std::wstring JoinTriggerBlacklistInput(const std::vector<std::wstring>& items)
+    {
+        std::wstring result;
+        for (const auto& item : items)
+        {
+            if (!result.empty())
+                result += L"\r\n";
+            result += item;
+        }
+        return result;
+    }
+
+    std::wstring TriggerBlacklistSummary(const std::vector<std::wstring>& items)
+    {
+        if (items.empty())
+            return L"未设置";
+
+        return L"已设置 " + std::to_wstring(items.size()) + L" 项";
     }
 }
 
@@ -179,6 +257,27 @@ void SettingsPage::ShowTriggerPresetMenu()
     POINT menuPt{ (int)presetRect.left, (int)(presetRect.bottom + 6.0f) };
     menuPt = DpiHelper::LogicalClientToScreen(hwnd, menuPt);
     DropDownMenu::Show(hwnd, menuPt, items, m_owner->GetAppContext(), presetRect.right - presetRect.left, true, 10.5f);
+}
+
+void SettingsPage::ShowTriggerBlacklistEditor()
+{
+    if (!m_owner) return;
+
+    std::wstring input = JoinTriggerBlacklistInput(m_owner->GetTriggerBlacklist());
+    const wchar_t* prompt = L"忽略大小写，支持模糊匹配。\n每行一个，也可用中英文逗号/分号分隔。";
+    if (PromptWindow::ShowMultiline(
+        m_owner->GetWindowHWND(),
+        L"触发黑名单",
+        prompt,
+        input,
+        input.c_str(),
+        m_owner->GetAppContext()))
+    {
+        m_owner->SetTriggerBlacklist(ParseTriggerBlacklistInput(input));
+        m_owner->NotifyConfigChanged();
+        if (HWND hwnd = m_owner->GetWindowHWND())
+            InvalidateRect(hwnd, nullptr, FALSE);
+    }
 }
 
 void SettingsPage::DrawSelectionHighlight(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, float radius, float bgAlpha, float borderAlpha)
@@ -1219,6 +1318,55 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         wchar_t animBuf[32];
         swprintf_s(animBuf, L"%dms", m_owner->GetAnimationDuration());
         drawStepperCard(TwoColumnRect(1, 386.0f).left, 386.0f, L"动画时长", animBuf, m_hoveredAnimationDuration, m_hoveredAnimationDurationButton);
+
+        const D2D1_RECT_F blacklistRect = TriggerBlacklistRect();
+        const D2D1_RECT_F editRect = TriggerBlacklistEditRect();
+        D2D1_ROUNDED_RECT blacklistCard = D2D1::RoundedRect(blacklistRect, 6.0f, 6.0f);
+        ID2D1SolidColorBrush* cardBrush = nullptr;
+        rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, m_hoveredTriggerBlacklist ? 0.06f : 0.018f), &cardBrush);
+        if (cardBrush)
+        {
+            rt->FillRoundedRectangle(blacklistCard, cardBrush);
+            cardBrush->Release();
+        }
+        rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, m_hoveredTriggerBlacklist ? 0.105f : 0.045f), &cardBrush);
+        if (cardBrush)
+        {
+            rt->DrawRoundedRectangle(blacklistCard, cardBrush, UIStyle::Metrics::ControlStroke());
+            cardBrush->Release();
+        }
+
+        if (tfDefault)
+        {
+            ID2D1SolidColorBrush* textBrush = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
+            if (textBrush)
+            {
+                std::wstring title = L"触发黑名单";
+                rt->DrawTextW(title.c_str(), (UINT32)title.size(), tfDefault,
+                    D2D1::RectF(blacklistRect.left + 10.0f, blacklistRect.top + 7.0f, blacklistRect.left + 102.0f, blacklistRect.bottom - 6.0f),
+                    textBrush);
+                textBrush->Release();
+            }
+
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &textBrush);
+            if (textBrush)
+            {
+                std::wstring summary = TriggerBlacklistSummary(m_owner->GetTriggerBlacklist());
+                DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
+                DWRITE_WORD_WRAPPING oldWrapping = tfDefault->GetWordWrapping();
+                tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                tfDefault->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                rt->DrawTextW(summary.c_str(), (UINT32)summary.size(), tfDefault,
+                    D2D1::RectF(blacklistRect.left + 104.0f, blacklistRect.top + 7.0f, editRect.left - 8.0f, blacklistRect.bottom - 6.0f),
+                    textBrush);
+                tfDefault->SetWordWrapping(oldWrapping);
+                tfDefault->SetTextAlignment(oldAlignment);
+                textBrush->Release();
+            }
+
+            drawSegmentButton(editRect, L"编辑", false, m_hoveredTriggerBlacklist);
+        }
     }
     else if (m_categoryIndex == 3) // 配置管理
     {
@@ -1710,6 +1858,13 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             m_hoveredAnimationDurationButton = buttonType;
             repaint = true;
         }
+
+        bool hBlacklist = HitTestTriggerBlacklist(pt);
+        if (hBlacklist != m_hoveredTriggerBlacklist)
+        {
+            m_hoveredTriggerBlacklist = hBlacklist;
+            repaint = true;
+        }
     }
     else if (m_categoryIndex == 3)
     {
@@ -1772,7 +1927,7 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
+    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredTriggerBlacklist || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
     {
         m_hoveredAutoStart = false;
         m_hoveredHideTrayIcon = false;
@@ -1790,6 +1945,7 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredPopupAutoClose = -1;
         m_hoveredPopupMultiOpenWhenPinned = -1;
         m_hoveredSortMode = -1;
+        m_hoveredTriggerBlacklist = false;
         m_hoveredHoverLeaveDelay = false;
         m_hoveredHoverLeaveDelayButton = 0;
         m_hoveredTheme = -1;
@@ -2116,6 +2272,11 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 if (current < 1000) m_owner->SetAnimationDuration(current + 50);
                                 repaint = true;
                             }
+                        }
+                        else if (HitTestTriggerBlacklist(pt))
+                        {
+                            ShowTriggerBlacklistEditor();
+                            repaint = true;
                         }
                     }
                 }
@@ -2534,6 +2695,12 @@ int SettingsPage::HitTestSortMode(POINT pt)
         if (PointInRect(PopupBehaviorRect(1, 336.0f), pt)) return 1;
     }
     return -1;
+}
+
+bool SettingsPage::HitTestTriggerBlacklist(POINT pt)
+{
+    if (m_categoryIndex != 2) return false;
+    return PointInRect(TriggerBlacklistRect(), pt);
 }
 
 bool SettingsPage::HitTestHoverLeaveDelay(POINT pt, int& buttonType)

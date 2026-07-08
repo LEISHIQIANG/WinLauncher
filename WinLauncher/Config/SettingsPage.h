@@ -32,6 +32,7 @@ private:
     int HitTestPopupAutoClose(POINT pt);
     int HitTestPopupMultiOpenWhenPinned(POINT pt);
     int HitTestSortMode(POINT pt);
+    bool HitTestTriggerBlacklist(POINT pt);
     bool HitTestHoverLeaveDelay(POINT pt, int& buttonType);
     int HitTestTheme(POINT pt);
     int HitTestThemeColor(POINT pt);
@@ -76,6 +77,7 @@ private:
 
     D2D1_RECT_F GetSelectionRect(SelectionVisual& visual, const D2D1_RECT_F& target);
     void ShowTriggerPresetMenu();
+    void ShowTriggerBlacklistEditor();
     void DrawSelectionHighlight(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, float radius, float bgAlpha = 0.10f, float borderAlpha = 0.34f);
 
     IConfigWindow* m_owner;
@@ -98,6 +100,7 @@ private:
     int m_hoveredPopupAutoClose = -1;
     int m_hoveredPopupMultiOpenWhenPinned = -1;
     int m_hoveredSortMode = -1;
+    bool m_hoveredTriggerBlacklist = false;
     bool m_hoveredHoverLeaveDelay = false;
     int m_hoveredHoverLeaveDelayButton = 0;
     int m_hoveredTheme = -1;   // 0 = dark, 1 = light

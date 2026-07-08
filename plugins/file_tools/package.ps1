@@ -10,5 +10,8 @@ Copy-Item (Join-Path $root "plugin.json") -Destination (Join-Path $stage "plugin
 Copy-Item (Join-Path $root "$Platform\$Configuration\file_tools.dll") -Destination (Join-Path $stage "file_tools.dll")
 if(Test-Path (Join-Path $root "icons")){Copy-Item (Join-Path $root "icons") -Destination (Join-Path $stage "icons") -Recurse}
 if(Test-Path $pkg){Remove-Item $pkg -Force}
-Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $pkg -Force
+$zipPkg="$pkg.zip"
+if(Test-Path $zipPkg){Remove-Item $zipPkg -Force}
+Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPkg -Force
+Move-Item -Path $zipPkg -Destination $pkg -Force
 Write-Host "Created $pkg"

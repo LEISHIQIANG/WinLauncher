@@ -11,6 +11,27 @@
 
 #pragma comment(lib, "wininet.lib")
 
+namespace
+{
+    std::wstring EscapePowerShellSingleQuotedString(const std::wstring& value)
+    {
+        std::wstring escaped;
+        escaped.reserve(value.size());
+        for (wchar_t ch : value)
+        {
+            if (ch == L'\'')
+            {
+                escaped += L"''";
+            }
+            else
+            {
+                escaped += ch;
+            }
+        }
+        return escaped;
+    }
+}
+
 UpdateService& UpdateService::GetInstance()
 {
     static UpdateService instance;
@@ -439,10 +460,27 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
                 char buf[8192];
                 DWORD bytesRead = 0;
                 DWORD totalBytesRead = 0;
+                bool readOk = true;
+                bool writeOk = true;
 
-                while (InternetReadFile(hUrl, buf, sizeof(buf), &bytesRead) && bytesRead > 0)
+                while (true)
                 {
+                    if (!InternetReadFile(hUrl, buf, sizeof(buf), &bytesRead))
+                    {
+                        readOk = false;
+                        break;
+                    }
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+
                     outFile.write(buf, bytesRead);
+                    if (!outFile.good())
+                    {
+                        writeOk = false;
+                        break;
+                    }
                     totalBytesRead += bytesRead;
 
                     if (contentLength > 0)
@@ -466,7 +504,16 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
                     }
                 }
                 outFile.close();
-                downloadSuccess = true;
+                downloadSuccess = readOk && writeOk && (contentLength == 0 || totalBytesRead == contentLength);
+                if (!downloadSuccess)
+                {
+                    DeleteFileW(targetPath.c_str());
+                    if (ctx && ctx->logger)
+                    {
+                        LOG_ERROR(ctx->logger, L"UpdateService: Download incomplete. readOk=%d writeOk=%d bytes=%lu expected=%lu",
+                                  readOk ? 1 : 0, writeOk ? 1 : 0, totalBytesRead, contentLength);
+                    }
+                }
             }
             InternetCloseHandle(hUrl);
         }
@@ -544,11 +591,13 @@ void UpdateService::ApplyUpdate(AppContext* ctx)
     wchar_t tempDir[MAX_PATH];
     GetTempPathW(MAX_PATH, tempDir);
     std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
+    std::wstring currentExePathEscaped = EscapePowerShellSingleQuotedString(currentExePath);
+    std::wstring targetPathEscaped = EscapePowerShellSingleQuotedString(targetPath);
 
-    std::wstring params = L"-WindowStyle Hidden -Command \"Stop-Process -Id " + std::to_wstring(GetCurrentProcessId()) + 
-                          L" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; for ($i=0; $i -lt 10; $i++) { try { Remove-Item -Path '" + currentExePath + 
-                          L"' -Force -ErrorAction Stop; Move-Item -Path '" + targetPath + 
-                          L"' -Destination '" + currentExePath + L"' -Force -ErrorAction Stop; Start-Process -FilePath '" + currentExePath + 
+    std::wstring params = L"-WindowStyle Hidden -Command \"Stop-Process -Id " + std::to_wstring(GetCurrentProcessId()) +
+                          L" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; for ($i=0; $i -lt 10; $i++) { try { Remove-Item -LiteralPath '" + currentExePathEscaped +
+                          L"' -Force -ErrorAction Stop; Move-Item -LiteralPath '" + targetPathEscaped +
+                          L"' -Destination '" + currentExePathEscaped + L"' -Force -ErrorAction Stop; Start-Process -FilePath '" + currentExePathEscaped +
                           L"' -ArgumentList '--updated'; break; } catch { Start-Sleep -Seconds 1; } }\"";
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
@@ -560,7 +609,7 @@ void UpdateService::ApplyUpdate(AppContext* ctx)
 
     if (ctx && ctx->logger)
     {
-        LOG_INFO(ctx->logger, L"UpdateService: Launching cmd.exe directly for replacement.");
+        LOG_INFO(ctx->logger, L"UpdateService: Launching elevated PowerShell for replacement.");
     }
 
     if (ShellExecuteExW(&sei))

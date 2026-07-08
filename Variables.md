@@ -400,15 +400,15 @@ else
 **源码：** `PopupWindow.cpp` 行 59, 2756–2761
 
 ```cpp
-static const double FILE_SELECTION_VALIDITY_DURATION = 5.0;
+static const double FILE_SELECTION_VALIDITY_DURATION = 15.0;
 ```
 
-文件选择有 **5 秒有效期**。超过 5 秒前的选择将被视为过期：
+文件选择有 **15 秒有效期**。超过 15 秒前的选择将被视为过期：
 
 | 条件 | 行为 |
 | :--- | :--- |
-| 选择在 5 秒内 | selectedFiles 正常传入 |
-| 选择超过 5 秒 | selectedFiles 被清空，所有文件变量返回空字符串 |
+| 选择在 15 秒内 | selectedFiles 正常传入 |
+| 选择超过 15 秒 | selectedFiles 被清空，所有文件变量返回空字符串 |
 | 选择状态为 `isPending` | 同样视为无效，不传入 |
 
 这确保用户不会因为旧的、可能已不相关的文件选择而意外执行错误操作。

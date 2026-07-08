@@ -69,6 +69,8 @@ public:
     virtual bool IsDraggingShortcut() override { return m_shortcutPage.IsDragging(); }
     virtual int GetTriggerType() override;
     virtual void SetTriggerType(int type) override;
+    virtual std::vector<std::wstring> GetTriggerBlacklist() override;
+    virtual void SetTriggerBlacklist(const std::vector<std::wstring>& processNames) override;
     virtual bool GetAutoStart() override;
     virtual void SetAutoStart(bool enable) override;
     virtual bool GetHideTrayIcon() override;

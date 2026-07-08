@@ -153,6 +153,24 @@
     <ClCompile Include="Config\BatchLaunchEditForm.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="App\Logger.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\DropDownMenu.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\ShortcutDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Config\ShortcutEditForm.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Services\EnvironmentDetector.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ToastWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App\AppMessages.h">
@@ -323,10 +341,93 @@
     <ClInclude Include="Config\BatchLaunchEditForm.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="App\AppContext.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\EventBus.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\Logger.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\DropDownMenu.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\ShortcutDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\ShortcutEditForm.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DpiHelper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="KeyboardHook.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Model\ShortcutInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\EnvironmentDetector.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\FaviconFetcher.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\IConfigService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\IIconService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\IniConfigRepository.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\SystemIconService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ToastWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Controls\Button.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Controls\IconRenderer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Controls\IControl.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Render\BackgroundLayer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Render\Compositor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Render\IRenderLayer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\Render\OverlayLayer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="version.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ViewModel\ConfigViewModel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ViewModel\PopupViewModel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="WinLauncher.exe.manifest">
+      <Filter>资源文件</Filter>
+    </Manifest>
   </ItemGroup>
 </Project>

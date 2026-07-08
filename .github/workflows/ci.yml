@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  winlauncher:
+    name: WinLauncher source gate
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run maintenance checks, static tests, and Release build
+        shell: pwsh
+        run: .\scripts\ci_check.ps1 -Configuration Release -Platform x64

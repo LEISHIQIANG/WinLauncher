@@ -3,6 +3,11 @@
 #include "App/Logger.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
+#include <algorithm>
+#include <cwctype>
+#include <mutex>
+#include <string>
+#include <vector>
 
 std::atomic<int>    MouseHook::s_triggerType(0);
 std::atomic<HHOOK>  MouseHook::s_hHook       = nullptr;
@@ -19,6 +24,8 @@ namespace
     constexpr DWORD SuppressMiddleUp  = 0x01;
     constexpr DWORD SuppressXButton1Up = 0x02;
     constexpr DWORD SuppressXButton2Up = 0x04;
+    std::mutex g_triggerBlacklistMutex;
+    std::vector<std::wstring> g_triggerBlacklist;
 
     bool IsCtrlDown()
     {
@@ -40,11 +47,136 @@ namespace
             (GetAsyncKeyState(VK_LMENU) & 0x8000) ||
             (GetAsyncKeyState(VK_RMENU) & 0x8000);
     }
+
+    void TrimInPlace(std::wstring& value)
+    {
+        while (!value.empty() && iswspace(value.back()))
+            value.pop_back();
+        size_t start = 0;
+        while (start < value.size() && iswspace(value[start]))
+            ++start;
+        if (start > 0)
+            value.erase(0, start);
+    }
+
+    std::wstring ToLowerCopy(std::wstring value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+            return static_cast<wchar_t>(towlower(ch));
+        });
+        return value;
+    }
+
+    std::wstring FileNameFromPath(const std::wstring& path)
+    {
+        size_t slash = path.find_last_of(L"\\/");
+        if (slash == std::wstring::npos)
+            return path;
+        return path.substr(slash + 1);
+    }
+
+    std::wstring StripExeExtension(std::wstring value)
+    {
+        const std::wstring suffix = L".exe";
+        if (value.size() >= suffix.size() &&
+            value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            value.resize(value.size() - suffix.size());
+        }
+        return value;
+    }
+
+    std::wstring GetForegroundProcessName()
+    {
+        HWND hwnd = GetForegroundWindow();
+        if (!hwnd)
+            return L"";
+
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == 0)
+            return L"";
+
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!process)
+            return L"";
+
+        std::vector<wchar_t> path(32768);
+        DWORD len = static_cast<DWORD>(path.size());
+        std::wstring processName;
+        if (QueryFullProcessImageNameW(process, 0, path.data(), &len) && len > 0)
+            processName = FileNameFromPath(std::wstring(path.data(), len));
+        CloseHandle(process);
+        return ToLowerCopy(processName);
+    }
+
+    bool IsTriggerBlacklistedForForegroundApp()
+    {
+        std::vector<std::wstring> blacklist;
+        {
+            std::lock_guard<std::mutex> lock(g_triggerBlacklistMutex);
+            blacklist = g_triggerBlacklist;
+        }
+
+        if (blacklist.empty())
+            return false;
+
+        std::wstring processName = GetForegroundProcessName();
+        if (processName.empty())
+            return false;
+
+        std::wstring processStem = StripExeExtension(processName);
+        for (const auto& entry : blacklist)
+        {
+            std::wstring item = ToLowerCopy(FileNameFromPath(entry));
+            TrimInPlace(item);
+            if (item.empty())
+                continue;
+
+            std::wstring itemStem = StripExeExtension(item);
+            if (item == processName ||
+                itemStem == processStem ||
+                processName.find(item) != std::wstring::npos ||
+                processStem.find(itemStem) != std::wstring::npos)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 void MouseHook::SetTriggerType(int type)
 {
     s_triggerType.store(type);
+}
+
+void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
+{
+    std::vector<std::wstring> normalized;
+    normalized.reserve(processNames.size());
+    for (auto item : processNames)
+    {
+        item = ToLowerCopy(FileNameFromPath(item));
+        TrimInPlace(item);
+        if (item.empty())
+            continue;
+
+        bool exists = false;
+        for (const auto& existing : normalized)
+        {
+            if (existing == item || StripExeExtension(existing) == StripExeExtension(item))
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+            normalized.push_back(std::move(item));
+    }
+
+    std::lock_guard<std::mutex> lock(g_triggerBlacklistMutex);
+    g_triggerBlacklist = std::move(normalized);
 }
 
 bool MouseHook::Install(HWND hTargetWnd)
@@ -290,6 +422,12 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
 
         if (activated)
         {
+            if (IsTriggerBlacklistedForForegroundApp())
+            {
+                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger passed through because foreground process is blacklisted");
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
+
             if (InputFocusGuard::IsTextInputContextActive())
             {
                 LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger ignored because text input is active");

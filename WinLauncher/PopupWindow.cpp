@@ -59,7 +59,7 @@ static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
 static const double POPUP_SLOW_SHOW_MS = 24.0;
 static const double POPUP_SLOW_FRAME_MS = 16.0;
 static const double POPUP_SLOW_ICON_REFRESH_MS = 40.0;
-static const double FILE_SELECTION_VALIDITY_DURATION = 5.0;
+static const double FILE_SELECTION_VALIDITY_DURATION = 15.0;
 
 static bool ShouldRenderGeneratedDefaultIcon(const RendPopupPage& page, const RendShortcutInfo& shortcut)
 {
