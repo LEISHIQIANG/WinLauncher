@@ -115,6 +115,7 @@ void ShortcutPage::ShowAddShortcutDialog()
             ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
             m_pageData->iconBitmaps.push_back(bmp);
 
+            NotifyShortcutListChanged(false);
             m_owner->NotifyConfigChanged();
             InvalidateRect(hWnd, nullptr, FALSE);
         }
@@ -145,6 +146,7 @@ void ShortcutPage::ShowAddHotkeyDialog()
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -174,6 +176,7 @@ void ShortcutPage::ShowAddUrlDialog()
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -207,6 +210,7 @@ void ShortcutPage::ShowAddCommandDialog()
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -236,6 +240,7 @@ void ShortcutPage::ShowAddMacroDialog()
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -265,6 +270,7 @@ void ShortcutPage::ShowAddBatchDialog()
         ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
         m_pageData->iconBitmaps.push_back(bmp);
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -287,6 +293,7 @@ void ShortcutPage::ShowBuiltinIconDialog()
             m_pageData->iconBitmaps.push_back(bmp);
         }
 
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         InvalidateRect(hWnd, nullptr, FALSE);
     }
@@ -797,13 +804,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
                             m_shortcutStates.erase(m_shortcutStates.begin() + *it);
                         }
 
-                        // Re-calculate target positions for remaining icons to animate them back
-                        int n = (int)m_shortcutStates.size();
-                        for (int i = 0; i < n; i++)
-                        {
-                            m_shortcutStates[i].targetX = (float)(160 + (i % 5) * 72);
-                            m_shortcutStates[i].targetY = (float)(72 + (i / 5) * 72);
-                        }
+                        ResetShortcutTargets(false);
 
                         m_selectionAnchorIndex = -1;
                         m_owner->NotifyConfigChanged();
@@ -892,12 +893,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
                     m_owner->NotifyConfigChanged();
                 }
 
-                // Set target positions of all items to settle in their standard slots
-                for (int i = 0; i < n; i++)
-                {
-                    m_shortcutStates[i].targetX = (float)(160 + (i % 5) * 72);
-                    m_shortcutStates[i].targetY = (float)(72 + (i / 5) * 72);
-                }
+                ResetShortcutTargets(false);
             }
         }
 
@@ -1017,6 +1013,7 @@ void ShortcutPage::OnDropFiles(HDROP hDrop, bool& repaint)
                 AddShortcutFromPath(filePath);
             }
         }
+        NotifyShortcutListChanged(false);
         m_owner->NotifyConfigChanged();
         repaint = true;
     }
@@ -1898,6 +1895,21 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
     ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
     m_pageData->iconBitmaps.push_back(bmp);
 }
+
+void ShortcutPage::NotifyShortcutListChanged(bool snap)
+{
+    EnsureShortcutStates();
+    UpdateAddShortcutTarget(!m_pendingDeleteIndices.empty(), snap);
+    if (!snap)
+    {
+        m_animating = true;
+        if (m_owner)
+        {
+            m_owner->StartAnimation();
+        }
+    }
+}
+
 
 int ShortcutPage::HitTestShortcut(POINT pt)
 {

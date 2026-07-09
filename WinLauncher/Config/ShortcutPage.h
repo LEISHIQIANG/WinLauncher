@@ -62,6 +62,7 @@ private:
     bool ConfirmPendingDeleteShortcuts(const std::vector<int>& indices, bool& repaint);
     void AddShortcutFromPath(const std::wstring& filePath);
     void AddShortcutFromSingleFile(const std::wstring& path);
+    void NotifyShortcutListChanged(bool snap = false);
     ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
 
     int HitTestShortcut(POINT pt);
