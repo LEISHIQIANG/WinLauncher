@@ -1310,6 +1310,17 @@ void ConfigWindow::SetPopupIconSize(int size)
     if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupIconSize(size);
 }
 
+int ConfigWindow::GetPopupIconLabelFontSize()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupIconLabelFontSize();
+    return 9;
+}
+
+void ConfigWindow::SetPopupIconLabelFontSize(int size)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupIconLabelFontSize(size);
+}
+
 int ConfigWindow::GetPopupIconGap()
 {
     if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupIconGap();

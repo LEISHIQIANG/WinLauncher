@@ -838,7 +838,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             style.paddingTop = 4.0f;
             style.paddingBottom = 4.0f;
             style.paddingRight = 8.0f;
-            style.fontSize = this->GetFontSize();
+            style.fontSize = this->GetSearchFontSize();
             this->m_searchTextBox.SetStyle(style);
 
             this->m_searchTextBox.Create(this->GetHWND(), this->m_dw.Get(), topRect, L"");
@@ -1086,7 +1086,14 @@ void PopupWindow::StopAutoHideTimer()
 
 float PopupWindow::GetFontSize() const
 {
-    // Dynamically relate font size to the icon size:
+    if (m_appCtx && m_appCtx->configService)
+        return static_cast<float>(m_appCtx->configService->GetPopupIconLabelFontSize());
+    return 9.0f;
+}
+
+float PopupWindow::GetSearchFontSize() const
+{
+    // Keep the search input independent from the icon-label font preference.
     // Base size is 8.0f at icon size 16.0f, scaling linearly by 0.15f per pixel of icon size.
     // E.g., at default 24px icon size, fontSize = 8.0f + 8 * 0.15f = 9.2f (minimum 9.0f).
     // For 32px icon size, fontSize = 8.0f + 16 * 0.15f = 10.4f.
@@ -1108,6 +1115,7 @@ void PopupWindow::UpdateTextFormat()
     m_searchTextFormat.Reset();
 
     float fontSize = GetFontSize();
+    float searchFontSize = GetSearchFontSize();
 
     UIStyle::Typography::CreateTextFormat(
         m_dw.Get(),
@@ -1120,7 +1128,7 @@ void PopupWindow::UpdateTextFormat()
     UIStyle::Typography::CreateTextFormat(
         m_dw.Get(),
         &m_searchTextFormat,
-        fontSize,
+        searchFontSize,
         DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_TEXT_ALIGNMENT_LEADING,
         DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -3709,6 +3717,8 @@ static bool ExecuteProcessStreaming(
     SECURITY_ATTRIBUTES sa = { sizeof(sa), nullptr, TRUE };
     HANDLE hStdoutRead = nullptr;
     HANDLE hStdoutWrite = nullptr;
+    HANDLE hStderrRead = nullptr;
+    HANDLE hStderrWrite = nullptr;
     if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0))
     {
         DWORD err = GetLastError();
@@ -3717,12 +3727,22 @@ static bool ExecuteProcessStreaming(
         return false;
     }
     SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0);
+    if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(hStdoutRead);
+        CloseHandle(hStdoutWrite);
+        LOG_G_ERRA(L"ExecuteProcessStreaming: CreatePipe for stderr failed, error=%lu", err);
+        if (onOutput) onOutput(L"\r\n命令启动失败: 无法创建错误输出管道，Windows 错误码 " + std::to_wstring(err) + L"\r\n");
+        return false;
+    }
+    SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0);
 
     STARTUPINFOW si = { sizeof(si) };
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = hStdoutWrite;
-    si.hStdError = hStdoutWrite;
+    si.hStdError = hStderrWrite;
 
     std::wstring cmdLine = L"\"" + targetPath + L"\"";
     if (!arguments.empty())
@@ -3748,11 +3768,13 @@ static bool ExecuteProcessStreaming(
     );
 
     CloseHandle(hStdoutWrite);
+    CloseHandle(hStderrWrite);
 
     if (!ok)
     {
         DWORD err = GetLastError();
         CloseHandle(hStdoutRead);
+        CloseHandle(hStderrRead);
         LOG_G_ERRA(L"ExecuteProcessStreaming: CreateProcessW failed, target=%s args=%s error=%lu",
                    targetPath.c_str(), arguments.c_str(), err);
         if (onOutput)
@@ -3779,6 +3801,7 @@ static bool ExecuteProcessStreaming(
     }
 
     std::string capturedBytes;
+    std::string capturedErrorBytes;
     DWORD startTime = GetTickCount();
     DWORD exitCode = 0;
     bool hasExitCode = false;
@@ -3849,6 +3872,28 @@ static bool ExecuteProcessStreaming(
             }
         }
 
+        // Keep stderr separate: tools such as curl write their progress meter there.
+        // It must not pollute successful command output, but we still retain it for failures.
+        while (PeekNamedPipe(hStderrRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+        {
+            std::vector<char> buffer(avail);
+            DWORD read = 0;
+            if (ReadFile(hStderrRead, buffer.data(), avail, &read, nullptr) && read > 0)
+            {
+                readAny = true;
+                constexpr size_t kMaxCapturedErrorBytes = 64 * 1024;
+                if (capturedErrorBytes.size() < kMaxCapturedErrorBytes)
+                {
+                    size_t count = std::min<size_t>(read, kMaxCapturedErrorBytes - capturedErrorBytes.size());
+                    capturedErrorBytes.append(buffer.data(), count);
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+
         if (GetExitCodeProcess(pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
         {
             hasExitCode = true;
@@ -3873,6 +3918,24 @@ static bool ExecuteProcessStreaming(
                     break;
                 }
             }
+            while (PeekNamedPipe(hStderrRead, nullptr, 0, nullptr, &avail, nullptr) && avail > 0)
+            {
+                std::vector<char> buffer(avail);
+                DWORD read = 0;
+                if (ReadFile(hStderrRead, buffer.data(), avail, &read, nullptr) && read > 0)
+                {
+                    constexpr size_t kMaxCapturedErrorBytes = 64 * 1024;
+                    if (capturedErrorBytes.size() < kMaxCapturedErrorBytes)
+                    {
+                        size_t count = std::min<size_t>(read, kMaxCapturedErrorBytes - capturedErrorBytes.size());
+                        capturedErrorBytes.append(buffer.data(), count);
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
             break;
         }
 
@@ -3880,17 +3943,16 @@ static bool ExecuteProcessStreaming(
     }
 
     CloseHandle(hStdoutRead);
+    CloseHandle(hStderrRead);
     CloseHandle(pi.hProcess);
     if (hJob) CloseHandle(hJob);
 
-    if (onOutput)
+    if (onOutput && (timedOut || !hasExitCode || exitCode != 0 || truncated))
     {
-        std::wstring summary = L"\r\n\r\n状态: ";
-        summary += timedOut ? L"超时终止" : ((hasExitCode && exitCode == 0) ? L"成功" : L"失败");
-        if (hasExitCode)
-        {
-            summary += L"\r\n退出码: " + std::to_wstring(exitCode);
-        }
+        std::wstring summary = L"\r\n\r\n[命令";
+        summary += timedOut ? L"超时终止" : L"失败";
+        if (hasExitCode) summary += L"，退出码: " + std::to_wstring(exitCode);
+        summary += L"]";
         if (timedOut)
         {
             summary += L"\r\n提示: 命令超过 " + std::to_wstring(timeoutSeconds) + L" 秒超时时间，进程已终止。";
@@ -3899,7 +3961,12 @@ static bool ExecuteProcessStreaming(
         {
             summary += L"\r\n提示: 输出超过最大字符数，已截断。";
         }
-        if (capturedBytes.empty())
+        std::wstring decodedError = DecodeCommandOutputBytes(capturedErrorBytes);
+        if (!decodedError.empty())
+        {
+            summary += L"\r\n错误输出:\r\n" + decodedError;
+        }
+        if (capturedBytes.empty() && decodedError.empty())
         {
             summary += L"\r\n输出: (命令没有输出)";
         }
@@ -4158,7 +4225,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     {
         maxChars = 0;
         std::wstring panelTitle = L"命令输出 - " + sc.name;
-        std::wstring initialText = L"状态: 正在运行...\r\n\r\n输出:\r\n";
+        std::wstring initialText;
         CommandPanelWindow::ShowLive(parent, panelTitle.c_str(), initialText.c_str(),
             [type, resolvedCmd, timeoutSeconds, maxChars](HWND panelHwnd) {
                 auto append = [panelHwnd](const std::wstring& text) {

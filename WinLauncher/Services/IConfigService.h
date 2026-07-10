@@ -48,6 +48,8 @@ public:
     virtual void SetPopupRows(int rows) = 0;
     virtual int GetPopupIconSize() = 0;
     virtual void SetPopupIconSize(int size) = 0;
+    virtual int GetPopupIconLabelFontSize() = 0;
+    virtual void SetPopupIconLabelFontSize(int size) = 0;
     virtual int GetPopupIconGap() = 0;
     virtual void SetPopupIconGap(int gap) = 0;
     virtual int GetPopupIconRadius() = 0;

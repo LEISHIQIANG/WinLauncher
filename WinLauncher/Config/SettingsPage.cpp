@@ -989,6 +989,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             L"图标列数",
             L"图标行数",
             L"图标大小",
+            L"图标字号",
             L"图标间距",
             L"图标圆角",
             L"窗口边距",
@@ -999,13 +1000,14 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             m_owner->GetPopupColumns(),
             m_owner->GetPopupRows(),
             m_owner->GetPopupIconSize(),
+            m_owner->GetPopupIconLabelFontSize(),
             m_owner->GetPopupIconGap(),
             m_owner->GetPopupIconRadius(),
             m_owner->GetPopupWndPadding(),
             m_owner->GetDockHeight()
         };
 
-        for (int i = 0; i < 7; i++)
+        for (int i = 0; i < 8; i++)
         {
             int col = i % 2;
             int row = i / 2;
@@ -2165,22 +2167,27 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                     int val = m_owner->GetPopupIconSize() + step * 2;
                     if (val >= 16 && val <= 64) m_owner->SetPopupIconSize(val);
                 }
-                else if (settingIdx == 3) // Icon Gap
+                else if (settingIdx == 3) // Icon Label Font Size
+                {
+                    int val = m_owner->GetPopupIconLabelFontSize() + step;
+                    if (val >= 8 && val <= 32) m_owner->SetPopupIconLabelFontSize(val);
+                }
+                else if (settingIdx == 4) // Icon Gap
                 {
                     int val = m_owner->GetPopupIconGap() + step;
                     if (val >= 0 && val <= 30) m_owner->SetPopupIconGap(val);
                 }
-                else if (settingIdx == 4) // Icon Radius
+                else if (settingIdx == 5) // Icon Radius
                 {
                     int val = m_owner->GetPopupIconRadius() + step;
                     if (val >= 0 && val <= 30) m_owner->SetPopupIconRadius(val);
                 }
-                else if (settingIdx == 5) // Window Padding
+                else if (settingIdx == 6) // Window Padding
                 {
                     int val = m_owner->GetPopupWndPadding() + step;
                     if (val >= 0 && val <= 50) m_owner->SetPopupWndPadding(val);
                 }
-                else if (settingIdx == 6) // DOCK Rows
+                else if (settingIdx == 7) // DOCK Rows
                 {
                     int val = m_owner->GetDockHeight() + step;
                     if (val >= 1 && val <= 5) m_owner->SetDockHeight(val);
@@ -2591,7 +2598,7 @@ bool SettingsPage::IsPluginPackagePath(const std::wstring& filePath) const
 bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
 {
     if (m_categoryIndex != 1) return false;
-    for (int i = 0; i < 7; i++)
+    for (int i = 0; i < 8; i++)
     {
         int col = i % 2;
         int row = i / 2;

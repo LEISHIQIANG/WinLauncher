@@ -36,6 +36,7 @@ public:
         , m_popupColumns(6)
         , m_popupRows(4)
         , m_popupIconSize(24)
+        , m_popupIconLabelFontSize(9)
         , m_popupIconGap(4)
         , m_popupIconRadius(6)
         , m_popupWndPadding(8)
@@ -224,6 +225,11 @@ public:
                     else if (key == L"PopupIconSize")
                     {
                         try { m_popupIconSize = std::stoi(val); } catch (...) { m_popupIconSize = 24; }
+                    }
+                    else if (key == L"PopupIconLabelFontSize")
+                    {
+                        try { m_popupIconLabelFontSize = std::stoi(val); } catch (...) { m_popupIconLabelFontSize = 9; }
+                        if (m_popupIconLabelFontSize < 8 || m_popupIconLabelFontSize > 32) m_popupIconLabelFontSize = 9;
                     }
                     else if (key == L"PopupIconGap")
                     {
@@ -623,6 +629,7 @@ public:
         content += L"PopupColumns=" + std::to_wstring(m_popupColumns) + L"\r\n";
         content += L"PopupRows=" + std::to_wstring(m_popupRows) + L"\r\n";
         content += L"PopupIconSize=" + std::to_wstring(m_popupIconSize) + L"\r\n";
+        content += L"PopupIconLabelFontSize=" + std::to_wstring(m_popupIconLabelFontSize) + L"\r\n";
         content += L"PopupIconGap=" + std::to_wstring(m_popupIconGap) + L"\r\n";
         content += L"PopupIconRadius=" + std::to_wstring(m_popupIconRadius) + L"\r\n";
         content += L"PopupWndPadding=" + std::to_wstring(m_popupWndPadding) + L"\r\n";
@@ -880,6 +887,8 @@ public:
     virtual void SetPopupRows(int rows) override { m_popupRows = rows; }
     virtual int GetPopupIconSize() override { return m_popupIconSize; }
     virtual void SetPopupIconSize(int size) override { m_popupIconSize = size; }
+    virtual int GetPopupIconLabelFontSize() override { return m_popupIconLabelFontSize; }
+    virtual void SetPopupIconLabelFontSize(int size) override { m_popupIconLabelFontSize = size; }
     virtual int GetPopupIconGap() override { return m_popupIconGap; }
     virtual void SetPopupIconGap(int gap) override { m_popupIconGap = gap; }
     virtual int GetPopupIconRadius() override { return m_popupIconRadius; }
@@ -1442,6 +1451,7 @@ private:
     int m_popupColumns = 6;
     int m_popupRows = 4;
     int m_popupIconSize = 24;
+    int m_popupIconLabelFontSize = 9;
     int m_popupIconGap = 4;
     int m_popupIconRadius = 6;
     int m_popupWndPadding = 8;

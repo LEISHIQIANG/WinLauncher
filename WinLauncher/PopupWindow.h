@@ -61,6 +61,7 @@ private:
     void StartAutoHideTimer();
     void StopAutoHideTimer();
     float GetFontSize() const;
+    float GetSearchFontSize() const;
     int GetLabelHeight() const;
     void UpdateTextFormat();
 

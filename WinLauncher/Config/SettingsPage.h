@@ -107,7 +107,7 @@ private:
     int m_hoveredThemeColor = -1; // 0 to 9
     int m_hoveredWindowMode = -1; // 0 = glow, 1 = acrylic, 2 = glass
 
-    int m_hoveredAppearanceSetting = -1; // 0 to 5
+    int m_hoveredAppearanceSetting = -1; // 0 to 7
     int m_hoveredAppearanceButton = 0;   // 1 = minus, 2 = plus, 0 = none
 
     int m_hoveredThemeDetailSetting = -1; // 0 to 5

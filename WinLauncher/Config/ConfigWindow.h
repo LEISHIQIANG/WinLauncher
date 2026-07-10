@@ -84,6 +84,8 @@ public:
     virtual void SetPopupRows(int rows) override;
     virtual int GetPopupIconSize() override;
     virtual void SetPopupIconSize(int size) override;
+    virtual int GetPopupIconLabelFontSize() override;
+    virtual void SetPopupIconLabelFontSize(int size) override;
     virtual int GetPopupIconGap() override;
     virtual void SetPopupIconGap(int gap) override;
     virtual int GetPopupIconRadius() override;
