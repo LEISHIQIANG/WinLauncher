@@ -2,9 +2,16 @@
 #include <cwchar>
 #include <cstdarg>
 #include <sstream>
+#include <algorithm>
 
 // Define static members
 Logger* Logger::s_defaultLogger = nullptr;
+
+namespace
+{
+    thread_local uint64_t t_logTaskId = 0;
+    thread_local std::wstring t_logTaskName;
+}
 
 Logger::Logger(const std::wstring& logFile)
     : m_logFilePath(logFile)
@@ -20,7 +27,6 @@ Logger::Logger(const std::wstring& logFile)
         m_file.open(m_logFilePath, std::ios::app);
         m_cleanupThread = std::thread(&Logger::CleanupLoop, this);
     }
-    m_prevFilter = SetUnhandledExceptionFilter(UnhandledCrashHandler);
 }
 
 Logger::~Logger()
@@ -35,10 +41,6 @@ Logger::~Logger()
         m_cleanupThread.join();
     }
 
-    if (m_prevFilter)
-    {
-        SetUnhandledExceptionFilter(m_prevFilter);
-    }
     if (m_file.is_open())
     {
         m_file.close();
@@ -83,6 +85,18 @@ bool Logger::ShouldLogElapsed(ULONGLONG& lastLogTick, double elapsedMs, double t
     return ShouldLogEvery(lastLogTick, intervalMs);
 }
 
+void Logger::SetThreadTaskContext(uint64_t taskId, const std::wstring& taskName)
+{
+    t_logTaskId = taskId;
+    t_logTaskName = taskName;
+}
+
+void Logger::ClearThreadTaskContext()
+{
+    t_logTaskId = 0;
+    t_logTaskName.clear();
+}
+
 Logger*& Logger::GetInstanceRef()
 {
     static Logger* s_instance = nullptr;
@@ -90,8 +104,9 @@ Logger*& Logger::GetInstanceRef()
 }
 
 namespace {
-    constexpr std::streamoff MaxLogFileBytes = 4 * 1024 * 1024;
-    constexpr std::streamoff TargetLogFileBytes = 2 * 1024 * 1024;
+    constexpr std::streamoff MaxLogFileBytes = 8 * 1024 * 1024;
+    constexpr std::streamoff TargetLogFileBytes = 4 * 1024 * 1024;
+    constexpr size_t MaxPendingLogEntries = 4096;
 
     const char* GetFileName(const char* path)
     {
@@ -112,8 +127,6 @@ void Logger::Log(Level level, const char* file, int line, const char* func, cons
 
 void Logger::LogV(Level level, const char* file, int line, const char* func, const wchar_t* format, va_list args)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
     va_list argsCopy;
     va_copy(argsCopy, args);
     int len = _vsnwprintf(nullptr, 0, format, argsCopy);
@@ -138,40 +151,55 @@ void Logger::LogV(Level level, const char* file, int line, const char* func, con
     case ERRA:    levelStr = L"ERROR"; break;
     }
 
-    wchar_t prefix[256];
+    wchar_t prefix[384];
+    DWORD threadId = GetCurrentThreadId();
     if (file && func)
     {
-        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s][%hs:%d (%hs)] ",
+        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s][tid=%lu][task=%llu:%s][%hs:%d (%hs)] ",
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
             tm.tm_hour, tm.tm_min, tm.tm_sec, (int)now_ms.count(),
-            levelStr, GetFileName(file), line, func);
+            levelStr, threadId, static_cast<unsigned long long>(t_logTaskId),
+            t_logTaskName.empty() ? L"-" : t_logTaskName.c_str(), GetFileName(file), line, func);
     }
     else
     {
-        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s] ",
+        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s][tid=%lu][task=%llu:%s] ",
             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
             tm.tm_hour, tm.tm_min, tm.tm_sec, (int)now_ms.count(),
-            levelStr);
+            levelStr, threadId, static_cast<unsigned long long>(t_logTaskId),
+            t_logTaskName.empty() ? L"-" : t_logTaskName.c_str());
     }
 
     std::wstring output = prefix + msg + L"\n";
     OutputDebugStringW(output.c_str());
 
-    if (m_file.is_open())
+    if (!m_logFilePath.empty())
     {
         int clen = WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), nullptr, 0, nullptr, nullptr);
         if (clen > 0)
         {
             std::string utf8(clen, '\0');
             WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), &utf8[0], clen, nullptr, nullptr);
-            m_file.write(utf8.data(), utf8.size());
-            m_file.flush();
-            std::streampos pos = m_file.tellp();
-            if (pos != std::streampos(-1) &&
-                static_cast<std::streamoff>(pos) > MaxLogFileBytes &&
-                ShouldLogEvery(m_lastSizeTrimTick, 60000))
             {
-                TrimLogFileBySizeLocked();
+                std::lock_guard<std::mutex> queueLock(m_cleanupMutex);
+                if (m_pendingLogs.size() >= MaxPendingLogEntries)
+                {
+                    if (level == DEBUG)
+                    {
+                        ++m_droppedDebugLogs;
+                        return;
+                    }
+                    auto debugIt = std::find_if(m_pendingLogs.begin(), m_pendingLogs.end(), [](const PendingLogEntry& entry) {
+                        return entry.level == DEBUG;
+                    });
+                    if (debugIt != m_pendingLogs.end()) m_pendingLogs.erase(debugIt);
+                    else m_pendingLogs.pop_front();
+                }
+                m_pendingLogs.push_back({ level, std::move(utf8) });
+            }
+            if (level == ERRA)
+            {
+                m_cv.notify_one();
             }
         }
     }
@@ -337,16 +365,46 @@ LONG WINAPI Logger::UnhandledCrashHandler(EXCEPTION_POINTERS* exceptionInfo)
 // Threaded Cleanup Loop
 void Logger::CleanupLoop()
 {
-    // Run cleanup immediately at startup
     PruneLogFile();
-
-    while (!m_stopCleanup)
+    ULONGLONG lastPrune = GetTickCount64();
+    while (true)
     {
+        std::deque<PendingLogEntry> pending;
+        size_t dropped = 0;
         std::unique_lock<std::mutex> lock(m_cleanupMutex);
-        m_cv.wait_for(lock, std::chrono::hours(1), [this]() { return m_stopCleanup.load(); });
-        if (m_stopCleanup) break;
+        m_cv.wait_for(lock, std::chrono::milliseconds(100), [this]() {
+            return m_stopCleanup.load() || !m_pendingLogs.empty();
+        });
+        pending.swap(m_pendingLogs);
+        dropped = m_droppedDebugLogs;
+        m_droppedDebugLogs = 0;
+        bool stopping = m_stopCleanup.load();
+        lock.unlock();
 
-        PruneLogFile();
+        if (!pending.empty() || dropped != 0)
+        {
+            std::lock_guard<std::mutex> fileLock(m_mutex);
+            if (m_file.is_open())
+            {
+                if (dropped != 0)
+                    m_file << "[log-maintenance] dropped " << dropped << " debug entries because the async queue was full\n";
+                for (const auto& entry : pending)
+                    m_file.write(entry.utf8.data(), entry.utf8.size());
+                m_file.flush();
+                std::streampos pos = m_file.tellp();
+                if (pos != std::streampos(-1) && static_cast<std::streamoff>(pos) > MaxLogFileBytes &&
+                    ShouldLogEvery(m_lastSizeTrimTick, 60000))
+                    TrimLogFileBySizeLocked();
+            }
+        }
+
+        ULONGLONG now = GetTickCount64();
+        if (!stopping && now - lastPrune >= 60 * 60 * 1000ULL)
+        {
+            PruneLogFile();
+            lastPrune = now;
+        }
+        if (stopping && pending.empty()) break;
     }
 }
 
@@ -418,7 +476,7 @@ void Logger::PruneLogFile()
     }
     inFile.close();
 
-    // Prune lines older than 6 hours
+    // Keep one day of context for intermittent hangs and crashes.
     auto now = std::chrono::system_clock::now();
     std::vector<std::string> keptLines;
     bool currentKeep = true; // Default to keeping lines if they don't have a timestamp
@@ -429,8 +487,7 @@ void Logger::PruneLogFile()
         if (ParseLogTime(l, logTime))
         {
             auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - logTime).count();
-            // 6 hours = 21600 seconds
-            currentKeep = (diff >= 0 && diff < 21600);
+            currentKeep = (diff >= 0 && diff < 86400);
         }
         if (currentKeep)
         {

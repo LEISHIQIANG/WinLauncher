@@ -21,4 +21,5 @@ namespace AppMessages
     constexpr UINT UpdateCheckCompleted     = WM_APP + 0x95; // 检查更新完成
     constexpr UINT UpdateDownloadProgress   = WM_APP + 0x96; // 更新下载进度
     constexpr UINT UpdateDownloadCompleted  = WM_APP + 0x97; // 更新下载完成
+    constexpr UINT UiDispatch               = WM_APP + 0x98; // background-to-UI dispatcher
 }

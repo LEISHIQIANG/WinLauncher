@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "DropDownMenu.h"
+#include "../App/CallbackGuard.h"
 #include "../DpiHelper.h"
 #include <windowsx.h>
 #include "UIStyle.h"
@@ -336,7 +337,7 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         {
             auto callback = m_items[hit].callback;
             Hide();
-            if (callback) callback();
+            if (callback) CallbackGuard::Invoke(Logger::GetDefault(), L"dropdown_menu", callback);
         }
         return 0;
     }

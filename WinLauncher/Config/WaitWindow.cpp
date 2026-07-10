@@ -146,14 +146,18 @@ void WaitWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt, 
     SetForegroundWindow(win->GetHWND());
     SetFocus(win->GetHWND());
 
-    // Spawn the background worker thread
-    std::thread t([win, worker]() {
-        if (worker) {
-            worker();
-        }
+    auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+    auto taskHandle = tasks ? tasks->Submit(L"wait_window.worker", BackgroundTaskService::Priority::High,
+        [win, worker](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (worker && !cancellation->IsCancellationRequested()) worker();
+            win->m_finished = true;
+            PostMessageW(win->GetHWND(), WM_CLOSE, 0, 0);
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!taskHandle)
+    {
         win->m_finished = true;
         PostMessageW(win->GetHWND(), WM_CLOSE, 0, 0);
-    });
+    }
 
     // Run a modal message loop
     MSG msg;
@@ -172,11 +176,6 @@ void WaitWindow::Show(HWND parent, const wchar_t* title, const wchar_t* prompt, 
     if (msg.message == WM_QUIT)
     {
         PostQuitMessage((int)msg.wParam);
-    }
-
-    // Join the worker thread to ensure it's fully done
-    if (t.joinable()) {
-        t.join();
     }
 
     delete win;

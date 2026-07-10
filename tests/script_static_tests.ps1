@@ -33,7 +33,9 @@ $requiredAutomationFiles = @(
     "tests\run_tests.ps1",
     "tests\project_static_tests.ps1",
     "tests\script_static_tests.ps1",
-    "tests\README.md"
+    "tests\README.md",
+    "tests\native\WinLauncherNativeTests.vcxproj",
+    "tests\native\main.cpp"
 )
 
 foreach ($relativePath in $requiredAutomationFiles) {
@@ -77,6 +79,7 @@ if (Test-Path -LiteralPath $ciScriptPath) {
     Add-TestResult "CI script runs test suite" ($ciScript -match 'tests\\run_tests\.ps1') "ci_check should run tests\run_tests.ps1"
     Add-TestResult "CI script supports build skip" ($ciScript -match '\[switch\]\$SkipBuild') "SkipBuild keeps source-only validation possible"
     Add-TestResult "CI script supports plugin build opt-in" ($ciScript -match '\[switch\]\$BuildPlugins') "plugin builds should remain opt-in"
+    Add-TestResult "CI runs native stability tests" ($ciScript -match 'WinLauncherNativeTests\.exe' -and $ciScript -match 'Native async/callback/crash tests') "Release validation must execute the native stability harness"
 }
 
 $failed = @($results | Where-Object { -not $_.Passed })

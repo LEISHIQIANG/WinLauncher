@@ -39,6 +39,7 @@ private:
     bool HitTestMoreButton(POINT pt);
     D2D1_RECT_F GetFooterButtonRect(int index) const;
     void AppendOutput(const std::wstring& text);
+    void FlushPendingOutput();
     void RunRefresh();
     void CopyOutputToClipboard();
     void ClearOutput(const wchar_t* initialText);
@@ -48,6 +49,7 @@ private:
     std::wstring m_title;
     std::wstring m_outputText;
     std::wstring m_initialText;
+    std::wstring m_pendingOutput;
     std::function<void(HWND)> m_refreshWorker;
 
     TextBox m_textBox;
@@ -62,6 +64,7 @@ private:
     int m_loadingFrame;
     ULONGLONG m_loadingStartedTick;
     uint64_t m_workerGeneration;
+    uint64_t m_instanceToken;
 
     ComPtr<IDWriteTextFormat> m_tfTitle;
     ComPtr<IDWriteTextFormat> m_tfBtn;

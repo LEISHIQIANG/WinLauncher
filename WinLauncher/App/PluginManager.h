@@ -2,6 +2,7 @@
 
 #include "EventBus.h"
 #include "Logger.h"
+#include "BackgroundTaskService.h"
 #include "PluginManifest.h"
 #include "PluginStateStore.h"
 #include "../Model/ShortcutInfo.h"
@@ -14,6 +15,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+class UiDispatcher;
 
 struct PluginCommandInfo
 {
@@ -70,15 +73,18 @@ struct PluginSettingInfo
     bool hasMax = false;
 };
 
-class PluginManager
+class PluginManager : public std::enable_shared_from_this<PluginManager>
 {
 public:
-    PluginManager(std::shared_ptr<EventBus> eventBus, std::shared_ptr<Logger> logger);
+    PluginManager(std::shared_ptr<EventBus> eventBus, std::shared_ptr<Logger> logger,
+        std::shared_ptr<UiDispatcher> uiDispatcher = nullptr,
+        std::shared_ptr<BackgroundTaskService> backgroundTasks = nullptr);
     ~PluginManager();
 
     void Initialize();
     void Shutdown();
-    void Rescan();
+    void RequestShutdown();
+    bool Rescan(std::wstring* message = nullptr);
 
     std::vector<PluginInfo> GetPlugins() const;
     std::wstring GetInstalledDirectory() const;
@@ -253,6 +259,8 @@ private:
 
     std::shared_ptr<EventBus> m_eventBus;
     std::shared_ptr<Logger> m_logger;
+    std::shared_ptr<UiDispatcher> m_uiDispatcher;
+    std::shared_ptr<BackgroundTaskService> m_backgroundTasks;
     std::unique_ptr<PluginStateStore> m_stateStore;
     std::map<std::wstring, PluginState> m_states;
     std::map<std::wstring, PluginRecord> m_plugins;
@@ -260,7 +268,7 @@ private:
     std::vector<PluginCommandInfo> m_builtinSlashCommands;
     mutable std::mutex m_loadedPluginsMutex;
     mutable std::mutex m_searchMutex;
-    std::thread m_searchThread;
+    BackgroundTaskService::TaskHandle m_searchTask;
     std::wstring m_searchQuery;
     unsigned long long m_searchGeneration = 0;
     bool m_searchRunning = false;
@@ -271,4 +279,6 @@ private:
     uint64_t m_nextDialogHandle = 1;
     bool m_initialized = false;
     std::atomic_bool m_shuttingDown = false;
+    std::atomic_bool m_shutdownRequested = false;
+    std::atomic_uint32_t m_activeExecutions{ 0 };
 };

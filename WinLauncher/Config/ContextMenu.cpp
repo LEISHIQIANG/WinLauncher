@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ContextMenu.h"
+#include "../App/CallbackGuard.h"
 #include "../DpiHelper.h"
 #include <windowsx.h>
 #include "UIStyle.h"
@@ -333,7 +334,7 @@ LRESULT ContextMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             auto callback = m_items[hit].callback;
             Hide(); // Hide menu before callback triggers modal dialogs
-            if (callback) callback();
+            if (callback) CallbackGuard::Invoke(Logger::GetDefault(), L"context_menu", callback);
         }
         return 0;
     }

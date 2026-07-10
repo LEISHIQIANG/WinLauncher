@@ -51,6 +51,7 @@ static const UINT POPUP_ANIMATION_FRAME_MS = 8;
 static const UINT_PTR TIMELINE_ANIMATION_TIMER_ID = 3;
 static const UINT_PTR CLICK_CLOSE_TIMER_ID = 4;
 static const UINT_PTR PLUGIN_SEARCH_TIMER_ID = 5;
+static const UINT_PTR FILE_SELECTION_TIMER_ID = 6;
 static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
 static const UINT PLUGIN_SEARCH_REFRESH_MS = 120;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
@@ -210,7 +211,7 @@ static bool ToggleChinaLosAngelesTimeZone(HWND parent)
     return false;
 }
 
-static bool LaunchChinaLosAngelesTimeZoneToggleAsync()
+static bool LaunchChinaLosAngelesTimeZoneToggleAsync(AppContext* ctx)
 {
     static std::atomic_bool s_running{ false };
     if (s_running.exchange(true))
@@ -219,11 +220,14 @@ static bool LaunchChinaLosAngelesTimeZoneToggleAsync()
         return true;
     }
 
-    std::thread([]() {
-        ToggleChinaLosAngelesTimeZone(nullptr);
-        s_running.store(false);
-    }).detach();
-    return true;
+    auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+    auto handle = tasks ? tasks->Submit(L"timezone.toggle", BackgroundTaskService::Priority::High,
+        [](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (!cancellation->IsCancellationRequested()) ToggleChinaLosAngelesTimeZone(nullptr);
+            s_running.store(false);
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!handle) s_running.store(false);
+    return static_cast<bool>(handle);
 }
 
 int PopupWindow::CellWidth() const  { return GetIconSize() + GetCellMarginX() * 2 + GetIconGap(); }
@@ -353,6 +357,7 @@ PopupWindow::PopupWindow(AppContext* ctx)
 
 PopupWindow::~PopupWindow()
 {
+    if (m_selectionRequest) m_selectionRequest->Cancel();
     if (m_appCtx && m_appCtx->eventBus)
     {
         if (m_configChangedToken)
@@ -1313,7 +1318,7 @@ void PopupWindow::ExecuteSearchResult(int index)
         std::wstring commandId = item.pluginCommandId;
         std::wstring rawInput = m_searchQuery;
         auto selectedFiles = files;
-        PluginManager* pluginManager = m_appCtx->pluginManager.get();
+        std::shared_ptr<PluginManager> pluginManager = m_appCtx->pluginManager;
         HWND mainHwnd = m_appCtx->hMainWnd;
         auto worker = [pluginId, commandId, rawInput, selectedFiles, pluginManager, mainHwnd](HWND panelHwnd) {
             if (!pluginManager || (mainHwnd && !IsWindow(mainHwnd)))
@@ -1346,7 +1351,7 @@ void PopupWindow::ExecuteSearchResult(int index)
         std::wstring pluginId = item.pluginId;
         std::wstring commandId = item.pluginCommandId;
         std::wstring rawInput = m_searchQuery;
-        PluginManager* pluginManager = m_appCtx->pluginManager.get();
+        std::shared_ptr<PluginManager> pluginManager = m_appCtx->pluginManager;
         HWND mainHwnd = m_appCtx->hMainWnd;
         auto worker = [pluginId, commandId, rawInput, pluginManager, mainHwnd](HWND panelHwnd) {
             if (!pluginManager || (mainHwnd && !IsWindow(mainHwnd)))
@@ -2352,6 +2357,11 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_TIMER:
     {
+        if (wParam == FILE_SELECTION_TIMER_ID)
+        {
+            PollFileSelectionQuery();
+            return 0;
+        }
         if (wParam == CLICK_CLOSE_TIMER_ID)
         {
             KillTimer(hWnd, CLICK_CLOSE_TIMER_ID);
@@ -3129,9 +3139,12 @@ static WORD ParseVirtualKey(const std::wstring& name)
     return 0;
 }
 
-static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose)
+static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose, AppContext* ctx)
 {
-    std::thread([hotkeyStr, afterClose]() {
+    auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+    if (!tasks) return;
+    tasks->Submit(L"hotkey.simulate", BackgroundTaskService::Priority::High,
+        [hotkeyStr, afterClose](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
         if (afterClose)
         {
             if (UIStyle::Animation::IsEnabled())
@@ -3163,7 +3176,7 @@ static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose)
         WORD vk = ParseVirtualKey(s);
         if (vk) keys.push_back(vk);
         
-        if (keys.empty()) return;
+        if (keys.empty() || cancellation->IsCancellationRequested()) return;
         
         for (WORD k : keys)
         {
@@ -3173,7 +3186,7 @@ static void SimulateHotkey(const std::wstring& hotkeyStr, bool afterClose)
         {
             keybd_event(static_cast<BYTE>(*it), 0, KEYEVENTF_KEYUP, 0);
         }
-    }).detach();
+    });
 }
 
 static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, AppContext* ctx, bool& cancelled)
@@ -3183,6 +3196,7 @@ static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, A
     std::vector<std::wstring> files;
     if (PopupWindow::s_instance)
     {
+        std::lock_guard<std::mutex> lock(PopupWindow::s_instance->m_selectedFilesMutex);
         double now = GetTimeInSeconds();
         if (!PopupWindow::s_instance->m_selectedFilesCtx.isPending && 
             !PopupWindow::s_instance->m_selectedFilesCtx.filePaths.empty() && 
@@ -3957,7 +3971,8 @@ static bool ExecuteScriptViaTempFile(
     bool captureOutput,
     int timeoutSeconds,
     int maxChars,
-    std::wstring& output
+    std::wstring& output,
+    AppContext* ctx
 )
 {
     wchar_t tempPath[MAX_PATH];
@@ -3993,12 +4008,16 @@ static bool ExecuteScriptViaTempFile(
 
     if (!captureOutput)
     {
-        std::thread([interpreter, args, scriptFile, showWindow, timeoutSeconds, maxChars]() {
+        auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+        auto handle = tasks ? tasks->Submit(L"script.execute", BackgroundTaskService::Priority::Normal,
+            [interpreter, args, scriptFile, showWindow, timeoutSeconds, maxChars](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             std::wstring dummyOutput;
-            ExecuteProcessHelper(interpreter, args, L"", showWindow, false, timeoutSeconds, maxChars, dummyOutput, true);
+            if (!cancellation->IsCancellationRequested())
+                ExecuteProcessHelper(interpreter, args, L"", showWindow, false, timeoutSeconds, maxChars, dummyOutput, true);
             DeleteFileW(scriptFile.c_str());
-        }).detach();
-        return true;
+        }) : BackgroundTaskService::TaskHandle{};
+        if (!handle) DeleteFileW(scriptFile.c_str());
+        return static_cast<bool>(handle);
     }
 
     bool ok = ExecuteProcessHelper(interpreter, args, L"", showWindow, true, timeoutSeconds, maxChars, output);
@@ -4192,7 +4211,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     }
     else if (type == L"powershell")
     {
-        ok = ExecuteScriptViaTempFile(L"powershell.exe", L".ps1", L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+        ok = ExecuteScriptViaTempFile(L"powershell.exe", L".ps1", L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
     }
     else if (type == L"python")
     {
@@ -4208,7 +4227,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
             std::wstring pyArgs = python.argsBeforeScript;
             if (!pyArgs.empty()) pyArgs += L" ";
             pyArgs += L"-u";
-            ok = ExecuteScriptViaTempFile(python.path, L".py", pyArgs, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+            ok = ExecuteScriptViaTempFile(python.path, L".py", pyArgs, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
         }
     }
     else if (type == L"gitbash")
@@ -4222,7 +4241,7 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
         }
         else
         {
-            ok = ExecuteScriptViaTempFile(bashPath, L".sh", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output);
+            ok = ExecuteScriptViaTempFile(bashPath, L".sh", L"", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
         }
     }
     else
@@ -4296,7 +4315,7 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
     if (sc.type == Model::ShortcutType::Hotkey)
     {
         bool afterClose = sc.runAsAdmin;
-        SimulateHotkey(sc.targetPath, afterClose);
+        SimulateHotkey(sc.targetPath, afterClose, ctx);
         return true;
     }
     else if (sc.type == Model::ShortcutType::Url)
@@ -4334,7 +4353,7 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
         }
         else if (sc.targetPath == L":timezone_cn_la_toggle")
         {
-            return LaunchChinaLosAngelesTimeZoneToggleAsync();
+            return LaunchChinaLosAngelesTimeZoneToggleAsync(ctx);
         }
         else
         {
@@ -4389,25 +4408,31 @@ void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT 
         m_selectedFilesCtx.isPending = true;
     }
 
-    Services::FileSelectionService::CaptureSelectedFilesAsync(activeHwnd, clickPt, popupCenter, [activeHwnd](const Services::SelectionContext& ctx) {
-        bool hasFiles = false;
-        HWND hWnd = nullptr;
-        if (s_instance)
+    if (m_selectionRequest) m_selectionRequest->Cancel();
+    m_selectionRequest = Services::FileSelectionService::CaptureSelectedFilesAsync(
+        activeHwnd, clickPt, popupCenter, m_appCtx ? m_appCtx->backgroundTasks : nullptr);
+    if (hWnd) SetTimer(hWnd, FILE_SELECTION_TIMER_ID, 30, nullptr);
+}
+
+void PopupWindow::PollFileSelectionQuery()
+{
+    if (!m_selectionRequest) return;
+    Services::SelectionContext result;
+    if (!m_selectionRequest->TryGetResult(result)) return;
+
+    HWND hWnd = GetHWND();
+    if (hWnd) KillTimer(hWnd, FILE_SELECTION_TIMER_ID);
+    auto completed = std::move(m_selectionRequest);
+
+    bool hasFiles = false;
+    {
+        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+        if (m_selectedFilesCtx.sourceHwnd == result.sourceHwnd)
         {
-            std::lock_guard<std::mutex> lock(s_instance->m_selectedFilesMutex);
-            if (s_instance->m_selectedFilesCtx.sourceHwnd == ctx.sourceHwnd)
-            {
-                s_instance->m_selectedFilesCtx = ctx;
-                if (!s_instance->m_selectedFilesCtx.filePaths.empty())
-                {
-                    hasFiles = true;
-                    hWnd = s_instance->GetHWND();
-                }
-            }
+            m_selectedFilesCtx = std::move(result);
+            hasFiles = !m_selectedFilesCtx.filePaths.empty();
         }
-        if (hasFiles && hWnd && IsWindow(hWnd))
-        {
-            PostMessageW(hWnd, WM_USER_SELECTION_UPDATED, 0, 0);
-        }
-    });
+    }
+    if (hasFiles && hWnd && IsWindow(hWnd))
+        PostMessageW(hWnd, WM_USER_SELECTION_UPDATED, 0, 0);
 }

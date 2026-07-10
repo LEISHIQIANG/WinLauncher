@@ -5,6 +5,7 @@
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
 #include "../Services/FaviconFetcher.h"
+#include "../App/AppContext.h"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <shlobj.h>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <cstring>
 #include <vector>
+#include <mutex>
 
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "wininet.lib")
@@ -25,6 +27,14 @@ struct UrlBrushCacheEntry
     ComPtr<ID2D1SolidColorBrush> brush;
 };
 static std::vector<UrlBrushCacheEntry> g_urlBrushCache;
+
+struct UrlEditForm::AsyncState
+{
+    std::mutex mutex;
+    UrlEditForm* owner = nullptr; // Accessed only by UI-dispatched callbacks while holding mutex.
+    uint64_t latencyGeneration = 0;
+    uint64_t faviconGeneration = 0;
+};
 
 static ComPtr<ID2D1SolidColorBrush> GetOrCreateBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color)
 {
@@ -82,6 +92,8 @@ bool UrlEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D
     m_parentHWND = parentHWND;
     m_bounds = logicalBounds;
     m_init = init;
+    m_asyncState = std::make_shared<AsyncState>();
+    m_asyncState->owner = this;
     m_iconInvertLight = init.iconInvertLight;
     m_iconInvertDark = init.iconInvertDark;
 
@@ -135,6 +147,13 @@ bool UrlEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D
 
 void UrlEditForm::Destroy()
 {
+    if (m_asyncState)
+    {
+        std::lock_guard<std::mutex> lock(m_asyncState->mutex);
+        m_asyncState->owner = nullptr;
+        ++m_asyncState->latencyGeneration;
+        ++m_asyncState->faviconGeneration;
+    }
     m_nameBox.Destroy();
     m_urlBox.Destroy();
     m_browserBox.Destroy();
@@ -539,12 +558,21 @@ void UrlEditForm::ClearIcon()
 
 void UrlEditForm::TestLatencyAsync()
 {
+    if (m_latencyState == LatencyState::Checking || !m_ctx || !m_ctx->backgroundTasks || !m_ctx->uiDispatcher)
+        return;
     m_latencyState = LatencyState::Checking;
     m_latencyResultStr = L"测试中...";
 
     std::wstring url = m_urlBox.GetText();
-
-    std::thread([this, url]() {
+    auto state = m_asyncState;
+    uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        generation = ++state->latencyGeneration;
+    }
+    auto dispatcher = m_ctx->uiDispatcher;
+    auto handle = m_ctx->backgroundTasks->Submit(L"url.latency", BackgroundTaskService::Priority::Normal,
+        [state, dispatcher, url, generation](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
         // Ensure scheme exists
         std::wstring targetUrl = url;
         // Trim spaces
@@ -553,10 +581,10 @@ void UrlEditForm::TestLatencyAsync()
 
         if (targetUrl.empty())
         {
-            m_latencyMs = -1;
-            m_latencyResultStr = L"网址为空";
-            m_latencyState = LatencyState::CheckedError;
-            if (m_parentHWND) InvalidateRect(m_parentHWND, nullptr, FALSE);
+            dispatcher->Post(L"url.latency.empty", [state, generation]() {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (state->owner) state->owner->ApplyLatencyResult(generation, false, -1, L"网址为空");
+            });
             return;
         }
 
@@ -586,29 +614,21 @@ void UrlEditForm::TestLatencyAsync()
 
         ULONGLONG end = GetTickCount64();
 
-        if (success)
-        {
-            m_latencyMs = static_cast<int>(end - start);
-            m_latencyResultStr = L"延迟 " + std::to_wstring(m_latencyMs) + L" ms";
-            m_latencyState = LatencyState::CheckedOk;
-        }
-        else
-        {
-            m_latencyMs = -1;
-            m_latencyResultStr = L"无法访问";
-            m_latencyState = LatencyState::CheckedError;
-        }
-
-        if (m_parentHWND)
-        {
-            InvalidateRect(m_parentHWND, nullptr, FALSE);
-        }
-    }).detach();
+        if (cancellation->IsCancellationRequested()) return;
+        int latencyMs = success ? static_cast<int>(end - start) : -1;
+        std::wstring message = success ? (L"延迟 " + std::to_wstring(latencyMs) + L" ms") : L"无法访问";
+        dispatcher->Post(L"url.latency.complete", [state, generation, success, latencyMs, message]() {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->owner) state->owner->ApplyLatencyResult(generation, success, latencyMs, message);
+        });
+    });
+    if (!handle)
+        ApplyLatencyResult(generation, false, -1, L"后台任务繁忙");
 }
 
 void UrlEditForm::FetchFaviconAsync()
 {
-    if (m_fetchingFavicon) return;
+    if (m_fetchingFavicon || !m_ctx || !m_ctx->backgroundTasks || !m_ctx->uiDispatcher) return;
     m_fetchingFavicon = true;
     m_faviconResultStr = L"获取中...";
 
@@ -625,33 +645,56 @@ void UrlEditForm::FetchFaviconAsync()
         return;
     }
 
-    // Force-refresh: always go online
-    std::thread([this, url]() {
+    auto state = m_asyncState;
+    uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        generation = ++state->faviconGeneration;
+    }
+    auto dispatcher = m_ctx->uiDispatcher;
+    // Force-refresh: always go online. Worker never touches UI/D2D state.
+    auto handle = m_ctx->backgroundTasks->Submit(L"url.favicon", BackgroundTaskService::Priority::Normal,
+        [state, dispatcher, url, generation](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
         std::wstring iconPath = FaviconFetcher::FetchFavicon(url, /*forceRefresh=*/true);
-
-        if (!iconPath.empty())
-        {
-            // Deliver result back; the UI controls are only updated from the
-            // thread that created the HWND (which runs the D2D loop), but
-            // SetText is a simple wstring assignment guarded by atomic flag, so
-            // it is safe here.  We then force a repaint via InvalidateRect.
-            m_iconBox.SetText(iconPath);
-            if (m_previewIcon)  { DestroyIcon(m_previewIcon);   m_previewIcon = nullptr; }
-            if (m_previewBitmap){ m_previewBitmap->Release(); m_previewBitmap = nullptr; }
-            m_previewIcon = GetFileIconForPreview(iconPath);
-            m_faviconResultStr = L"";
-        }
-        else
-        {
-            m_faviconResultStr = L"未获取到图标";
-        }
-
+        if (cancellation->IsCancellationRequested()) return;
+        dispatcher->Post(L"url.favicon.complete", [state, generation, iconPath]() {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->owner) state->owner->ApplyFaviconResult(generation, iconPath);
+        });
+    });
+    if (!handle)
+    {
         m_fetchingFavicon = false;
-        if (m_parentHWND)
-        {
-            InvalidateRect(m_parentHWND, nullptr, FALSE);
-        }
-    }).detach();
+        m_faviconResultStr = L"后台任务繁忙";
+    }
+}
+
+void UrlEditForm::ApplyLatencyResult(uint64_t generation, bool success, int latencyMs, const std::wstring& message)
+{
+    if (!m_asyncState || generation != m_asyncState->latencyGeneration) return;
+    m_latencyMs = latencyMs;
+    m_latencyResultStr = message;
+    m_latencyState = success ? LatencyState::CheckedOk : LatencyState::CheckedError;
+    if (m_parentHWND && IsWindow(m_parentHWND)) InvalidateRect(m_parentHWND, nullptr, FALSE);
+}
+
+void UrlEditForm::ApplyFaviconResult(uint64_t generation, const std::wstring& iconPath)
+{
+    if (!m_asyncState || generation != m_asyncState->faviconGeneration) return;
+    if (!iconPath.empty())
+    {
+        m_iconBox.SetText(iconPath);
+        if (m_previewIcon) { DestroyIcon(m_previewIcon); m_previewIcon = nullptr; }
+        if (m_previewBitmap) { m_previewBitmap->Release(); m_previewBitmap = nullptr; }
+        m_previewIcon = GetFileIconForPreview(iconPath);
+        m_faviconResultStr.clear();
+    }
+    else
+    {
+        m_faviconResultStr = L"未获取到图标";
+    }
+    m_fetchingFavicon = false;
+    if (m_parentHWND && IsWindow(m_parentHWND)) InvalidateRect(m_parentHWND, nullptr, FALSE);
 }
 
 void UrlEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
@@ -678,7 +721,9 @@ void UrlEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
     m_urlBox.Paint(rt, scale);
 
     // Test Latency Row
-    DrawButton(rt, L"测试延迟", D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_LATENCY, m_bounds.left + 100, m_bounds.top + Y_LBL_LATENCY + 20), m_hoveredTestLatency);
+    DrawButton(rt, m_latencyState == LatencyState::Checking ? L"测试中..." : L"测试延迟",
+        D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_LBL_LATENCY, m_bounds.left + 100, m_bounds.top + Y_LBL_LATENCY + 20),
+        m_hoveredTestLatency, m_latencyState != LatencyState::Checking);
 
     if (m_tfLabel)
     {

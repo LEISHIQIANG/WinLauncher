@@ -4,8 +4,8 @@
 #include <dwrite.h>
 #include <wrl.h>
 #include <string>
-#include <thread>
 #include <atomic>
+#include <memory>
 #include "TextBox.h"
 #include "../Model/ShortcutInfo.h"
 
@@ -68,6 +68,7 @@ public:
     bool Validate(HWND hWnd);
 
 private:
+    struct AsyncState;
     void EnsureFonts(IDWriteFactory* dwriteFactory);
     void BrowseBrowserFile(HWND hWnd);
     void ClearBrowserSettings();
@@ -77,6 +78,8 @@ private:
     // Async Latency and Favicon Fetchers
     void TestLatencyAsync();
     void FetchFaviconAsync();
+    void ApplyLatencyResult(uint64_t generation, bool success, int latencyMs, const std::wstring& message);
+    void ApplyFaviconResult(uint64_t generation, const std::wstring& iconPath);
 
     // Hit-testing helpers (logical coordinates)
     bool HitTestRect(POINT pt, const D2D1_RECT_F& rect);
@@ -97,6 +100,7 @@ private:
     HICON GetFileIconForPreview(const std::wstring& path);
 
     AppContext*     m_ctx = nullptr;
+    std::shared_ptr<AsyncState> m_asyncState;
     HWND            m_parentHWND = nullptr;
     D2D1_RECT_F     m_bounds = {};
     UrlEditFormInitParams m_init;

@@ -134,7 +134,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="App\Application.cpp" />
+    <ClCompile Include="App\BackgroundTaskService.cpp" />
+    <ClCompile Include="App\CrashReporter.cpp" />
     <ClCompile Include="App\Logger.cpp" />
+    <ClCompile Include="App\UiDispatcher.cpp" />
     <ClCompile Include="App\PluginInstaller.cpp" />
     <ClCompile Include="App\PluginManager.cpp" />
     <ClCompile Include="App\PluginManifest.cpp" />
@@ -204,9 +207,13 @@
     <!-- App Layer -->
     <ClInclude Include="App\AppMessages.h" />
     <ClInclude Include="App\Application.h" />
+    <ClInclude Include="App\BackgroundTaskService.h" />
+    <ClInclude Include="App\CallbackGuard.h" />
+    <ClInclude Include="App\CrashReporter.h" />
     <ClInclude Include="App\AppContext.h" />
     <ClInclude Include="App\EventBus.h" />
     <ClInclude Include="App\Logger.h" />
+    <ClInclude Include="App\UiDispatcher.h" />
     <ClInclude Include="App\PluginInstaller.h" />
     <ClInclude Include="App\PluginManager.h" />
     <ClInclude Include="App\PluginManifest.h" />

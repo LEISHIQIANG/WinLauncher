@@ -48,9 +48,18 @@ void UpdateService::CheckForUpdates(HWND notifyWnd, bool isSilent, AppContext* c
         if (notifyWnd) m_mainNotifyWnd = notifyWnd;
     }
 
-    std::thread([this, notifyWnd, isSilent, ctx]() {
-        PerformCheck(notifyWnd, isSilent, ctx);
-    }).detach();
+    auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+    auto logger = ctx ? ctx->logger : std::shared_ptr<Logger>();
+    auto handle = tasks ? tasks->Submit(L"update.check", BackgroundTaskService::Priority::Normal,
+        [this, notifyWnd, isSilent, logger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (!cancellation->IsCancellationRequested()) PerformCheck(notifyWnd, isSilent, logger.get());
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!handle)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_isChecking = false;
+        m_state = UpdateState::Error;
+    }
 }
 
 void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
@@ -62,9 +71,18 @@ void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
         m_downloadProgress = 0;
     }
 
-    std::thread([this, parentWnd, ctx]() {
-        PerformDownloadAndInstall(parentWnd, ctx);
-    }).detach();
+    auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+    auto logger = ctx ? ctx->logger : std::shared_ptr<Logger>();
+    auto handle = tasks ? tasks->Submit(L"update.download", BackgroundTaskService::Priority::Normal,
+        [this, parentWnd, logger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (!cancellation->IsCancellationRequested()) PerformDownloadAndInstall(parentWnd, logger.get());
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!handle)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_isDownloading = false;
+        m_state = UpdateState::Error;
+    }
 }
 
 UpdateService::UpdateState UpdateService::GetState() const
@@ -111,7 +129,7 @@ void UpdateService::SetUpdatePromptClosed(bool closed)
 
 #if MOCK_UPDATE_SERVICE
 
-void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
+void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger)
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -155,7 +173,7 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
     }
 }
 
-void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
+void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
 {
     // Simulate background downloading
     for (int p = 0; p <= 100; p += 10)
@@ -215,7 +233,7 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
 
 #else
 
-void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
+void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger)
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -233,9 +251,9 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
         PostMessageW(m_mainNotifyWnd, AppMessages::UpdateCheckCompleted, 0, 0);
     }
 
-    if (ctx && ctx->logger)
+    if (logger)
     {
-        LOG_INFO(ctx->logger, L"UpdateService: Starting update check...");
+        LOG_INFO(logger, L"UpdateService: Starting update check...");
     }
 
     std::string response;
@@ -283,27 +301,27 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
             }
             else
             {
-                if (ctx && ctx->logger)
+                if (logger)
                 {
-                    LOG_ERROR(ctx->logger, L"UpdateService: GitHub API request returned status code %d", statusCode);
+                    LOG_ERROR(logger, L"UpdateService: GitHub API request returned status code %d", statusCode);
                 }
             }
             InternetCloseHandle(hUrl);
         }
         else
         {
-            if (ctx && ctx->logger)
+            if (logger)
             {
-                LOG_ERROR(ctx->logger, L"UpdateService: InternetOpenUrlW failed. Error: %d", GetLastError());
+                LOG_ERROR(logger, L"UpdateService: InternetOpenUrlW failed. Error: %d", GetLastError());
             }
         }
         InternetCloseHandle(hSession);
     }
     else
     {
-        if (ctx && ctx->logger)
+        if (logger)
         {
-            LOG_ERROR(ctx->logger, L"UpdateService: InternetOpenW failed.");
+            LOG_ERROR(logger, L"UpdateService: InternetOpenW failed.");
         }
     }
 
@@ -332,9 +350,9 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
         }
         else
         {
-            if (ctx && ctx->logger)
+            if (logger)
             {
-                LOG_ERROR(ctx->logger, L"UpdateService: Failed to parse release JSON.");
+                LOG_ERROR(logger, L"UpdateService: Failed to parse release JSON.");
             }
             std::lock_guard<std::mutex> lock(m_mutex);
             m_state = UpdateState::Error;
@@ -360,24 +378,24 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx)
         PostMessageW(m_mainNotifyWnd, AppMessages::UpdateCheckCompleted, 0, 0);
     }
 
-    if (ctx && ctx->logger)
+    if (logger)
     {
         if (finalState == UpdateState::NewVersionAvailable)
         {
-            LOG_INFO(ctx->logger, L"UpdateService: New version available: %s", tag.c_str());
+            LOG_INFO(logger, L"UpdateService: New version available: %s", tag.c_str());
         }
         else if (finalState == UpdateState::UpToDate)
         {
-            LOG_INFO(ctx->logger, L"UpdateService: Application is up to date.");
+            LOG_INFO(logger, L"UpdateService: Application is up to date.");
         }
         else
         {
-            LOG_ERROR(ctx->logger, L"UpdateService: Update check failed or finished with error.");
+            LOG_ERROR(logger, L"UpdateService: Update check failed or finished with error.");
         }
     }
 }
 
-void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
+void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
 {
     std::wstring downloadUrl;
     {
@@ -386,9 +404,9 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
         m_downloadProgress = 0;
     }
 
-    if (ctx && ctx->logger)
+    if (logger)
     {
-        LOG_INFO(ctx->logger, L"UpdateService: Starting update download from: %s", downloadUrl.c_str());
+        LOG_INFO(logger, L"UpdateService: Starting update download from: %s", downloadUrl.c_str());
     }
 
     if (downloadUrl.empty())
@@ -508,9 +526,9 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx)
                 if (!downloadSuccess)
                 {
                     DeleteFileW(targetPath.c_str());
-                    if (ctx && ctx->logger)
+                    if (logger)
                     {
-                        LOG_ERROR(ctx->logger, L"UpdateService: Download incomplete. readOk=%d writeOk=%d bytes=%lu expected=%lu",
+                        LOG_ERROR(logger, L"UpdateService: Download incomplete. readOk=%d writeOk=%d bytes=%lu expected=%lu",
                                   readOk ? 1 : 0, writeOk ? 1 : 0, totalBytesRead, contentLength);
                     }
                 }

@@ -3,6 +3,9 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <memory>
+
+class BackgroundTaskService;
 
 /// <summary>
 /// Standalone environment detection module.
@@ -20,7 +23,7 @@ class EnvironmentDetector
 {
 public:
     // Start background detection. Safe to call multiple times (no-op after first).
-    static void StartDetection();
+    static void StartDetection(const std::shared_ptr<BackgroundTaskService>& tasks);
 
     // Returns true if the given command type is available.
     // "cmd" and "powershell" always return true.

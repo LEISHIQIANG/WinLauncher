@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WinLauncher", "WinLauncher\WinLauncher.vcxproj", "{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WinLauncherNativeTests", "tests\native\WinLauncherNativeTests.vcxproj", "{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,5 +23,13 @@ Global
 		{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}.Debug|Win32.Build.0 = Debug|Win32
 		{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}.Release|Win32.ActiveCfg = Release|Win32
 		{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}.Release|Win32.Build.0 = Release|Win32
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Debug|x64.ActiveCfg = Debug|x64
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Debug|x64.Build.0 = Debug|x64
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Release|x64.ActiveCfg = Release|x64
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Release|x64.Build.0 = Release|x64
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Debug|Win32.Build.0 = Debug|Win32
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Release|Win32.ActiveCfg = Release|Win32
+		{A53C294E-0BCF-43F0-92AC-61F9BA63C7D3}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 EndGlobal

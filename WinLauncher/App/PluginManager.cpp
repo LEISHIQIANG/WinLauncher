@@ -1,4 +1,5 @@
 #include "PluginManager.h"
+#include "UiDispatcher.h"
 #include "PluginInstaller.h"
 #include "../Config/CommandPanelWindow.h"
 #include "../Config/PromptWindow.h"
@@ -411,9 +412,13 @@ namespace
     }
 }
 
-PluginManager::PluginManager(std::shared_ptr<EventBus> eventBus, std::shared_ptr<Logger> logger)
+PluginManager::PluginManager(std::shared_ptr<EventBus> eventBus, std::shared_ptr<Logger> logger,
+    std::shared_ptr<UiDispatcher> uiDispatcher,
+    std::shared_ptr<BackgroundTaskService> backgroundTasks)
     : m_eventBus(std::move(eventBus))
     , m_logger(std::move(logger))
+    , m_uiDispatcher(std::move(uiDispatcher))
+    , m_backgroundTasks(std::move(backgroundTasks))
 {
 }
 
@@ -461,8 +466,7 @@ void PluginManager::Shutdown()
         m_searchCacheReady = false;
         m_cachedSearchResults.clear();
     }
-    if (m_searchThread.joinable())
-        m_searchThread.join();
+    m_searchTask.Cancel();
 
     std::vector<std::wstring> ids;
     {
@@ -481,12 +485,45 @@ void PluginManager::Shutdown()
     m_shuttingDown = false;
 }
 
-void PluginManager::Rescan()
+void PluginManager::RequestShutdown()
 {
+    m_shutdownRequested = true;
+    {
+        std::lock_guard<std::mutex> lock(m_searchMutex);
+        ++m_searchGeneration;
+        m_searchQuery.clear();
+        m_searchCacheReady = false;
+    }
+    m_searchTask.Cancel();
+}
+
+bool PluginManager::Rescan(std::wstring* message)
+{
+    if (m_shutdownRequested)
+    {
+        if (message) *message = L"程序正在退出，无法重新加载插件";
+        return false;
+    }
+    if (m_activeExecutions.load() != 0)
+    {
+        if (message) *message = L"仍有插件命令正在运行，请结束后重试";
+        LOG_WORNING(m_logger, L"PluginManager::Rescan rejected: active executions=%u", m_activeExecutions.load());
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_searchMutex);
+        if (m_searchRunning)
+        {
+            if (message) *message = L"插件搜索仍在运行，请稍后重试";
+            return false;
+        }
+    }
     Shutdown();
     m_plugins.clear();
     m_initialized = false;
     Initialize();
+    if (message) *message = L"已重新加载插件";
+    return true;
 }
 
 std::vector<PluginInfo> PluginManager::GetPlugins() const
@@ -523,6 +560,11 @@ std::wstring PluginManager::GetInstalledDirectory() const
 
 bool PluginManager::InstallPackage(const std::wstring& packagePath, std::wstring& message)
 {
+    if (m_shutdownRequested || m_activeExecutions.load() != 0)
+    {
+        message = m_shutdownRequested ? L"程序正在退出，无法安装插件" : L"仍有插件命令正在运行，请结束后再安装";
+        return false;
+    }
     PluginManifest packageManifest;
     if (!PluginInstaller::InspectPackage(packagePath, packageManifest, message))
         return false;
@@ -541,6 +583,11 @@ bool PluginManager::InstallPackage(const std::wstring& packagePath, std::wstring
 
 bool PluginManager::UninstallPlugin(const std::wstring& pluginId, std::wstring& message)
 {
+    if (m_shutdownRequested || m_activeExecutions.load() != 0)
+    {
+        message = m_shutdownRequested ? L"程序正在退出，无法卸载插件" : L"仍有插件命令正在运行，请结束后再卸载";
+        return false;
+    }
     auto it = m_plugins.find(pluginId);
     if (it == m_plugins.end())
     {
@@ -563,6 +610,8 @@ bool PluginManager::UninstallPlugin(const std::wstring& pluginId, std::wstring& 
 
 bool PluginManager::SetPluginEnabled(const std::wstring& pluginId, bool enabled)
 {
+    if (m_shutdownRequested || m_activeExecutions.load() != 0)
+        return false;
     auto it = m_plugins.find(pluginId);
     if (it == m_plugins.end())
         return false;
@@ -651,7 +700,7 @@ std::vector<PluginCommandInfo> PluginManager::SearchSlashCommands(const std::wst
 
 void PluginManager::RequestSearch(const std::wstring& query)
 {
-    if (m_shuttingDown)
+    if (m_shuttingDown || m_shutdownRequested)
         return;
 
     if (query.empty() || query.front() == L'/')
@@ -689,10 +738,16 @@ void PluginManager::RequestSearch(const std::wstring& query)
         m_searchRunning = true;
     }
 
-    if (m_searchThread.joinable())
-        m_searchThread.join();
-
-    m_searchThread = std::thread(&PluginManager::RunSearchWorker, this, query, generation);
+    auto self = shared_from_this();
+    m_searchTask = m_backgroundTasks ? m_backgroundTasks->Submit(L"plugin.search", BackgroundTaskService::Priority::Normal,
+        [self, query, generation](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (!cancellation->IsCancellationRequested()) self->RunSearchWorker(query, generation);
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!m_searchTask)
+    {
+        std::lock_guard<std::mutex> lock(m_searchMutex);
+        m_searchRunning = false;
+    }
 }
 
 std::vector<PluginCommandInfo> PluginManager::GetCachedSearchResults(const std::wstring& query) const
@@ -711,6 +766,18 @@ bool PluginManager::IsSearchRunning(const std::wstring& query) const
 
 bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message, HWND outputPanelHwnd)
 {
+    if (m_shutdownRequested)
+    {
+        message = L"程序正在退出，命令已取消";
+        return false;
+    }
+    struct ActiveExecutionGuard
+    {
+        std::atomic_uint32_t& count;
+        explicit ActiveExecutionGuard(std::atomic_uint32_t& value) : count(value) { ++count; }
+        ~ActiveExecutionGuard() { --count; }
+    } executionGuard(m_activeExecutions);
+
     std::shared_ptr<LoadedPlugin> loaded;
     {
         std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
@@ -773,14 +840,24 @@ bool PluginManager::ExecuteSlashCommand(const std::wstring& pluginId, const std:
         }
         if (commandId == L"winlauncher.reload")
         {
-            Rescan();
-            message = L"已重新加载插件";
-            return true;
+            return Rescan(&message);
         }
 
         message = L"内置 / 命令需要主窗口处理";
         return true;
     }
+
+    if (m_shutdownRequested)
+    {
+        message = L"程序正在退出，命令已取消";
+        return false;
+    }
+    struct ActiveSlashExecutionGuard
+    {
+        std::atomic_uint32_t& count;
+        explicit ActiveSlashExecutionGuard(std::atomic_uint32_t& value) : count(value) { ++count; }
+        ~ActiveSlashExecutionGuard() { --count; }
+    } executionGuard(m_activeExecutions);
 
     std::shared_ptr<LoadedPlugin> loaded;
     std::wstring commandName;
@@ -1060,7 +1137,7 @@ void PluginManager::RunSearchWorker(std::wstring query, unsigned long long gener
         std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
         for (const auto& [pluginId, loaded] : m_loadedPlugins)
         {
-            if (m_shuttingDown)
+            if (m_shuttingDown || m_shutdownRequested)
                 break;
             if (!loaded || !PluginSupportsSearch(loaded->instance))
                 continue;
@@ -1081,7 +1158,7 @@ void PluginManager::RunSearchWorker(std::wstring query, unsigned long long gener
 
     for (const auto& [pluginId, loaded] : snapshot)
     {
-        if (m_shuttingDown || results.size() >= request.maxResults)
+        if (m_shuttingDown || m_shutdownRequested || results.size() >= request.maxResults)
             break;
         if (!loaded || !PluginSupportsSearch(loaded->instance))
             continue;
@@ -1113,7 +1190,7 @@ void PluginManager::RunSearchWorker(std::wstring query, unsigned long long gener
 
     {
         std::lock_guard<std::mutex> lock(m_searchMutex);
-        if (generation == m_searchGeneration && query == m_searchQuery && !m_shuttingDown)
+        if (generation == m_searchGeneration && query == m_searchQuery && !m_shuttingDown && !m_shutdownRequested)
         {
             m_cachedSearchResults = std::move(results);
             m_searchCacheReady = true;
@@ -1924,7 +2001,10 @@ bool WL_CALL PluginManager::HostShowInputDialog(void* hostContext, const wchar_t
     }
 
     std::wstring value;
-    if (!PromptWindow::Show(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, defaultText ? defaultText : L"", nullptr))
+    bool accepted = false;
+    if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.input", [&]() {
+        accepted = PromptWindow::Show(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, defaultText ? defaultText : L"", nullptr);
+    }) || !accepted)
         return false;
     return CopyStringResult(value, outText);
 }
@@ -1941,7 +2021,10 @@ bool WL_CALL PluginManager::HostShowPasswordDialog(void* hostContext, const wcha
     }
 
     std::wstring value;
-    if (!PromptWindow::ShowPassword(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, nullptr))
+    bool accepted = false;
+    if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.password", [&]() {
+        accepted = PromptWindow::ShowPassword(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, nullptr);
+    }) || !accepted)
         return false;
     return CopyStringResult(value, outText);
 }
@@ -1961,7 +2044,10 @@ bool WL_CALL PluginManager::HostShowChooseDialog(void* hostContext, const wchar_
     if (items.empty())
         return false;
     std::wstring value;
-    if (!PromptWindow::ShowChoose(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", items, value, nullptr))
+    bool accepted = false;
+    if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.choose", [&]() {
+        accepted = PromptWindow::ShowChoose(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", items, value, nullptr);
+    }) || !accepted)
         return false;
     return CopyStringResult(value, outSelected);
 }
@@ -1971,7 +2057,11 @@ bool WL_CALL PluginManager::HostShowConfirmDialog(void* hostContext, const wchar
     auto* ctx = reinterpret_cast<HostContext*>(hostContext);
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.input"))
         return false;
-    return PromptWindow::ShowConfirm(nullptr, title ? title : L"WinLauncher", message ? message : L"", nullptr);
+    bool accepted = false;
+    if (!ctx->manager->m_uiDispatcher) return false;
+    return ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.confirm", [&]() {
+        accepted = PromptWindow::ShowConfirm(nullptr, title ? title : L"WinLauncher", message ? message : L"", nullptr);
+    }) && accepted;
 }
 
 bool WL_CALL PluginManager::HostShowFilePicker(void* hostContext, const wchar_t* title, bool multiSelect, const wchar_t* filterPattern, bool onlyFolders, WLStringResultV1* outPaths)
@@ -1985,37 +2075,43 @@ bool WL_CALL PluginManager::HostShowFilePicker(void* hostContext, const wchar_t*
         return false;
     }
 
-    if (onlyFolders)
-    {
-        BROWSEINFOW bi{};
-        bi.hwndOwner = nullptr;
-        bi.lpszTitle = title ? title : L"Select folder";
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
-        if (!pidl)
-            return false;
-        wchar_t path[MAX_PATH]{};
-        bool ok = SHGetPathFromIDListW(pidl, path) != FALSE;
-        CoTaskMemFree(pidl);
-        return ok && CopyStringResult(path, outPaths);
-    }
+    if (!ctx->manager->m_uiDispatcher) return false;
+    std::wstring selectedPaths;
+    bool selected = false;
+    bool dispatched = ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.file_picker", [&]() {
+        if (onlyFolders)
+        {
+            BROWSEINFOW bi{};
+            bi.hwndOwner = nullptr;
+            bi.lpszTitle = title ? title : L"Select folder";
+            bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+            PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
+            if (!pidl) return;
+            wchar_t path[MAX_PATH]{};
+            selected = SHGetPathFromIDListW(pidl, path) != FALSE;
+            if (selected) selectedPaths = path;
+            CoTaskMemFree(pidl);
+            return;
+        }
 
-    std::vector<wchar_t> fileBuffer(multiSelect ? 32768 : MAX_PATH, L'\0');
-    std::wstring filter = BuildFileDialogFilter(filterPattern);
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr;
-    ofn.lpstrTitle = title ? title : L"Select file";
-    ofn.lpstrFile = fileBuffer.data();
-    ofn.nMaxFile = (DWORD)fileBuffer.size();
-    ofn.lpstrFilter = filter.c_str();
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
-    if (multiSelect)
-        ofn.Flags |= OFN_ALLOWMULTISELECT;
-    if (!GetOpenFileNameW(&ofn))
-        return false;
-
-    return CopyStringResult(ParseOpenFileResult(fileBuffer), outPaths);
+        std::vector<wchar_t> fileBuffer(multiSelect ? 32768 : MAX_PATH, L'\0');
+        std::wstring filter = BuildFileDialogFilter(filterPattern);
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = nullptr;
+        ofn.lpstrTitle = title ? title : L"Select file";
+        ofn.lpstrFile = fileBuffer.data();
+        ofn.nMaxFile = (DWORD)fileBuffer.size();
+        ofn.lpstrFilter = filter.c_str();
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+        if (multiSelect) ofn.Flags |= OFN_ALLOWMULTISELECT;
+        if (GetOpenFileNameW(&ofn))
+        {
+            selectedPaths = ParseOpenFileResult(fileBuffer);
+            selected = true;
+        }
+    });
+    return dispatched && selected && CopyStringResult(selectedPaths, outPaths);
 }
 
 bool WL_CALL PluginManager::HostShowNotificationToaster(void* hostContext, const wchar_t* title, const wchar_t* message, const wchar_t*, uint32_t durationMs)
@@ -2023,8 +2119,11 @@ bool WL_CALL PluginManager::HostShowNotificationToaster(void* hostContext, const
     auto* ctx = reinterpret_cast<HostContext*>(hostContext);
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.notify"))
         return false;
-    ToastWindow::Show(FormatMessageText(title, message), durationMs == 0 ? 3000 : durationMs);
-    return true;
+    if (!ctx->manager->m_uiDispatcher) return false;
+    std::wstring text = FormatMessageText(title, message);
+    return ctx->manager->m_uiDispatcher->Post(L"plugin.ui.toast", [text, durationMs]() {
+        ToastWindow::Show(text, durationMs == 0 ? 3000 : durationMs);
+    });
 }
 
 bool WL_CALL PluginManager::HostShowMessageBox(void* hostContext, const wchar_t* title, const wchar_t* message, const wchar_t* iconType, const wchar_t* buttons, WLStringResultV1* outResult)
@@ -2038,8 +2137,12 @@ bool WL_CALL PluginManager::HostShowMessageBox(void* hostContext, const wchar_t*
         return false;
     }
 
+    if (!ctx->manager->m_uiDispatcher) return false;
     UINT flags = MessageIconFlag(iconType ? iconType : L"info") | MessageButtonsFlag(buttons ? buttons : L"ok");
-    int clicked = MessageBoxW(nullptr, message ? message : L"", title ? title : L"WinLauncher", flags);
+    int clicked = 0;
+    if (!ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.message_box", [&]() {
+        clicked = MessageBoxW(nullptr, message ? message : L"", title ? title : L"WinLauncher", flags);
+    })) return false;
     return CopyStringResult(MessageResultText(clicked), outResult);
 }
 
@@ -2054,7 +2157,11 @@ bool WL_CALL PluginManager::HostShowLoadingDialog(void* hostContext, const wchar
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.notify") || !outHandle)
         return false;
     *outHandle = ctx->manager->RegisterDialogState(ctx->pluginId, message ? message : L"", cancelable);
-    ToastWindow::Show(message ? message : L"Working...", 1500);
+    if (ctx->manager->m_uiDispatcher)
+    {
+        std::wstring text = message ? message : L"Working...";
+        ctx->manager->m_uiDispatcher->Post(L"plugin.ui.loading", [text]() { ToastWindow::Show(text, 1500); });
+    }
     return true;
 }
 
@@ -2065,7 +2172,11 @@ bool WL_CALL PluginManager::HostUpdateLoadingMessage(void* hostContext, uint64_t
         return false;
     if (!ctx->manager->UpdateDialogState(handle, newMessage ? newMessage : L""))
         return false;
-    ToastWindow::Show(newMessage ? newMessage : L"Working...", 1500);
+    if (ctx->manager->m_uiDispatcher)
+    {
+        std::wstring text = newMessage ? newMessage : L"Working...";
+        ctx->manager->m_uiDispatcher->Post(L"plugin.ui.loading_update", [text]() { ToastWindow::Show(text, 1500); });
+    }
     return true;
 }
 
@@ -2083,7 +2194,11 @@ bool WL_CALL PluginManager::HostShowProgressDialog(void* hostContext, const wcha
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.notify") || !outHandle || total == 0)
         return false;
     *outHandle = ctx->manager->RegisterDialogState(ctx->pluginId, message ? message : L"", cancelable, total);
-    ToastWindow::Show(message ? message : L"Starting...", 1500);
+    if (ctx->manager->m_uiDispatcher)
+    {
+        std::wstring text = message ? message : L"Starting...";
+        ctx->manager->m_uiDispatcher->Post(L"plugin.ui.progress", [text]() { ToastWindow::Show(text, 1500); });
+    }
     return true;
 }
 
@@ -2094,8 +2209,11 @@ bool WL_CALL PluginManager::HostUpdateProgress(void* hostContext, uint64_t handl
         return false;
     if (!ctx->manager->UpdateDialogState(handle, statusMessage ? statusMessage : L"", current))
         return false;
-    if (statusMessage && *statusMessage)
-        ToastWindow::Show(statusMessage, 1000);
+    if (statusMessage && *statusMessage && ctx->manager->m_uiDispatcher)
+    {
+        std::wstring text = statusMessage;
+        ctx->manager->m_uiDispatcher->Post(L"plugin.ui.progress_update", [text]() { ToastWindow::Show(text, 1000); });
+    }
     return true;
 }
 
@@ -2122,8 +2240,12 @@ bool WL_CALL PluginManager::HostShowResultInPanel(void* hostContext, const wchar
     auto* ctx = reinterpret_cast<HostContext*>(hostContext);
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.notify"))
         return false;
-    MessageBoxW(nullptr, content ? content : L"", title ? title : L"WinLauncher", MB_OK | MB_ICONINFORMATION);
-    return true;
+    if (!ctx->manager->m_uiDispatcher) return false;
+    std::wstring titleText = title ? title : L"WinLauncher";
+    std::wstring contentText = content ? content : L"";
+    return ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.result", [titleText, contentText]() {
+        MessageBoxW(nullptr, contentText.c_str(), titleText.c_str(), MB_OK | MB_ICONINFORMATION);
+    });
 }
 
 bool WL_CALL PluginManager::HostHttpRequest(void* hostContext, const wchar_t* method, const wchar_t* url, const wchar_t* headers, const wchar_t* body, uint32_t timeoutMs, WLStringResultV1* outResponse)
@@ -2180,6 +2302,13 @@ bool WL_CALL PluginManager::HostHttpRequest(void* hostContext, const wchar_t* me
     }
 
     std::string bodyBytes = ToUtf8(body ? body : L"");
+    if (BackgroundTaskService::IsCurrentTaskCancellationRequested())
+    {
+        WinHttpCloseHandle(request);
+        WinHttpCloseHandle(connect);
+        WinHttpCloseHandle(session);
+        return false;
+    }
     BOOL sent = WinHttpSendRequest(
         request,
         headers && *headers ? headers : WINHTTP_NO_ADDITIONAL_HEADERS,
@@ -2188,7 +2317,7 @@ bool WL_CALL PluginManager::HostHttpRequest(void* hostContext, const wchar_t* me
         (DWORD)bodyBytes.size(),
         (DWORD)bodyBytes.size(),
         0);
-    BOOL received = sent && WinHttpReceiveResponse(request, nullptr);
+    BOOL received = sent && !BackgroundTaskService::IsCurrentTaskCancellationRequested() && WinHttpReceiveResponse(request, nullptr);
 
     std::string responseBytes;
     if (received)
@@ -2196,6 +2325,7 @@ bool WL_CALL PluginManager::HostHttpRequest(void* hostContext, const wchar_t* me
         DWORD available = 0;
         while (WinHttpQueryDataAvailable(request, &available) && available > 0)
         {
+            if (BackgroundTaskService::IsCurrentTaskCancellationRequested()) break;
             std::string chunk(available, '\0');
             DWORD read = 0;
             if (!WinHttpReadData(request, &chunk[0], available, &read))
@@ -2210,7 +2340,7 @@ bool WL_CALL PluginManager::HostHttpRequest(void* hostContext, const wchar_t* me
     WinHttpCloseHandle(request);
     WinHttpCloseHandle(connect);
     WinHttpCloseHandle(session);
-    if (!received)
+    if (!received || BackgroundTaskService::IsCurrentTaskCancellationRequested())
         return false;
     return CopyStringResult(Utf8ToWide(responseBytes), outResponse);
 }
@@ -2264,6 +2394,12 @@ bool WL_CALL PluginManager::HostRunProcess(void* hostContext, const wchar_t* com
     while (true)
     {
         waitResult = WaitForSingleObject(pi.hProcess, 25);
+        if (BackgroundTaskService::IsCurrentTaskCancellationRequested())
+        {
+            TerminateProcess(pi.hProcess, ERROR_CANCELLED);
+            waitResult = WaitForProcessWithTimeout(pi.hProcess, 1000);
+            break;
+        }
         if (captureOutput && readPipe)
         {
             DWORD available = 0;

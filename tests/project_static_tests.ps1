@@ -74,6 +74,46 @@ Add-TestResult `
     ) `
     -Detail "Long-running command execution must remain asynchronous and risk-gated"
 
+$urlEditSource = Read-RepoFile "WinLauncher\Config\UrlEditForm.cpp"
+$fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
+$pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
+$loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
+$crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
+
+Add-TestResult `
+    -Name "Detached threads are isolated to bounded shutdown fallback" `
+    -Passed (
+        @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "WinLauncher") -Recurse -Include *.cpp,*.h |
+            Where-Object { $_.Name -ne "BackgroundTaskService.cpp" } |
+            Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -cmatch '\.detach\s*\(' }).Count -eq 0
+    ) `
+    -Detail "Feature code must submit work through BackgroundTaskService instead of fire-and-forget threads"
+
+Add-TestResult `
+    -Name "URL editor workers do not capture form instances" `
+    -Passed ($urlEditSource -match 'url\.latency' -and $urlEditSource -match 'url\.favicon' -and $urlEditSource -notmatch 'std::thread\s*\(\s*\[this') `
+    -Detail "Network workers must return through lifetime-checked UI dispatch"
+
+Add-TestResult `
+    -Name "File selection uses cancellable request state" `
+    -Passed ($fileSelectionSource -match 'SelectionRequest' -and $fileSelectionSource -match 'Priority::Interactive' -and $fileSelectionSource -cnotmatch '\.detach\s*\(') `
+    -Detail "Selection completion must not call PopupWindow from a worker thread"
+
+Add-TestResult `
+    -Name "Plugin UI and shutdown use guarded lifetimes" `
+    -Passed ($pluginManagerSource -match 'RequestShutdown' -and $pluginManagerSource -match 'm_activeExecutions' -and $pluginManagerSource -match 'm_uiDispatcher->InvokeSync' -and $pluginManagerSource -match 'm_uiDispatcher->Post' -and $pluginManagerSource -match 'IsCurrentTaskCancellationRequested') `
+    -Detail "Plugin tasks must retain manager lifetime and marshal UI work"
+
+Add-TestResult `
+    -Name "Crash reporting is independent from normal logger locks" `
+    -Passed ($crashSource -match 'MiniDumpWriteDump' -and $crashSource -match 'MiniDumpWithThreadInfo' -and $crashSource -match 'MiniDumpWithUnloadedModules' -and $loggerSource -notmatch 'SetUnhandledExceptionFilter\(') `
+    -Detail "Unhandled exceptions must use the dedicated dump thread, not the normal log mutex"
+
+Add-TestResult `
+    -Name "Normal logging uses a bounded async queue" `
+    -Passed ($loggerSource -match 'MaxPendingLogEntries\s*=\s*4096' -and $loggerSource -match 'm_pendingLogs' -and $loggerSource -match 'milliseconds\(100\)') `
+    -Detail "UI callers must not flush the log file on every entry"
+
 $projectPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj"
 $filtersPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj.filters"
 $projectXml = [xml](Get-Content -LiteralPath $projectPath)

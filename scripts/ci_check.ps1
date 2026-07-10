@@ -84,6 +84,16 @@ try {
             throw "Executable version mismatch. Expected $expectedVersion, got $actualVersion"
         }
         Write-Host "Executable version verified: $actualVersion"
+
+        $nativeTests = Join-Path $repoRoot "$Platform\$Configuration\WinLauncherNativeTests.exe"
+        if (-not (Test-Path -LiteralPath $nativeTests)) {
+            throw "Native test executable is missing: $nativeTests"
+        }
+        Write-Host "== Native async/callback/crash tests =="
+        & $nativeTests
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
     }
 
     if ($BuildPlugins) {

@@ -18,6 +18,15 @@
     <ClCompile Include="App\Application.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="App\BackgroundTaskService.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="App\CrashReporter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="App\UiDispatcher.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="App\PluginInstaller.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -177,6 +186,18 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="App\Application.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\BackgroundTaskService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\CallbackGuard.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\CrashReporter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\UiDispatcher.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="App\PluginInstaller.h">

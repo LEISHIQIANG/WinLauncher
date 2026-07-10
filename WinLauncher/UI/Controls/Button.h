@@ -1,6 +1,7 @@
 #pragma once
 #include "IControl.h"
 #include "../../Config/UIStyle.h"
+#include "../../App/CallbackGuard.h"
 #include <d2d1.h>
 #include <d2d1helper.h>
 #include <dwrite.h>
@@ -143,7 +144,7 @@ public:
         m_pressed = false;
         if (wasPressed && HitTest(pt, scale))
         {
-            if (m_onClick) m_onClick();
+            if (m_onClick) CallbackGuard::Invoke(Logger::GetDefault(), L"button", m_onClick);
             return true;
         }
         return false;

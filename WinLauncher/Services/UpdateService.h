@@ -10,6 +10,7 @@
 #include <Windows.h>
 
 struct AppContext;
+class Logger;
 
 class UpdateService
 {
@@ -43,8 +44,8 @@ private:
     UpdateService() = default;
     ~UpdateService() = default;
 
-    void PerformCheck(HWND notifyWnd, bool isSilent, AppContext* ctx);
-    void PerformDownloadAndInstall(HWND parentWnd, AppContext* ctx);
+    void PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger);
+    void PerformDownloadAndInstall(HWND parentWnd, Logger* logger);
 
     bool ParseReleaseJson(const std::string& json, std::wstring& tag, std::wstring& body, std::wstring& downloadUrl);
     bool IsNewer(const std::wstring& latestTag);

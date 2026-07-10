@@ -2,6 +2,7 @@
 #include "EnvironmentDetector.h"
 #include <windows.h>
 #include <thread>
+#include "../App/BackgroundTaskService.h"
 
 // Static members
 std::vector<EnvironmentDetector::DetectEntry> EnvironmentDetector::s_detectList;
@@ -14,7 +15,7 @@ EnvironmentDetector::DetectEntry EnvironmentDetector::MakeEntry(const std::wstri
     return { type, exeName, false };
 }
 
-void EnvironmentDetector::StartDetection()
+void EnvironmentDetector::StartDetection(const std::shared_ptr<BackgroundTaskService>& tasks)
 {
     bool expected = false;
     if (!s_started.compare_exchange_strong(expected, true))
@@ -29,8 +30,14 @@ void EnvironmentDetector::StartDetection()
         // Extend here to add more executors in the future
     }
 
-    // Run on a detached background thread — fire and forget
-    std::thread(RunDetection).detach();
+    auto handle = tasks ? tasks->Submit(L"environment.detect", BackgroundTaskService::Priority::Normal,
+        [](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            if (!cancellation->IsCancellationRequested()) RunDetection();
+        }) : BackgroundTaskService::TaskHandle{};
+    if (!handle)
+    {
+        s_done = true;
+    }
 }
 
 bool EnvironmentDetector::IsAvailable(const std::wstring& type)

@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <wrl.h>
+#include <atomic>
 
 using Microsoft::WRL::ComPtr;
 
@@ -28,7 +29,7 @@ private:
     std::wstring m_prompt;
     float m_angle;
     UINT_PTR m_timerId;
-    bool m_finished;
+    std::atomic_bool m_finished;
 
     ComPtr<IDWriteTextFormat> m_tfTitle;
     ComPtr<IDWriteTextFormat> m_tfPrompt;

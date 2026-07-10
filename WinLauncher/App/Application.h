@@ -2,6 +2,7 @@
 #include "AppContext.h"
 #include <Windows.h>
 #include <memory>
+#include <atomic>
 
 class Application
 {
@@ -44,4 +45,11 @@ private:
     bool m_trayIconAdded = false;
     bool m_mouseHookInstalled = false;
     bool m_popupPaused = false;  // 当前弹窗暂停状态
+    struct UiHeartbeatState
+    {
+        std::atomic<ULONGLONG> lastTick{ 0 };
+        std::atomic_bool stopping{ false };
+    };
+    std::shared_ptr<UiHeartbeatState> m_uiHeartbeat;
+    BackgroundTaskService::TaskHandle m_uiWatchdogTask;
 };

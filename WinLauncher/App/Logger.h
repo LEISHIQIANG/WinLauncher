@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <vector>
+#include <deque>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -36,6 +37,8 @@ public:
     static void SetDefault(Logger* logger);
     static bool ShouldLogEvery(ULONGLONG& lastLogTick, DWORD intervalMs = 1000);
     static bool ShouldLogElapsed(ULONGLONG& lastLogTick, double elapsedMs, double thresholdMs, DWORD intervalMs = 1000);
+    static void SetThreadTaskContext(uint64_t taskId, const std::wstring& taskName);
+    static void ClearThreadTaskContext();
 
     // Dynamic instance registry for exception callback
     static Logger*& GetInstanceRef();
@@ -72,6 +75,13 @@ private:
     std::condition_variable m_cv;
     std::mutex m_cleanupMutex;
     ULONGLONG m_lastSizeTrimTick = 0;
+    struct PendingLogEntry
+    {
+        Level level = INFO;
+        std::string utf8;
+    };
+    std::deque<PendingLogEntry> m_pendingLogs;
+    size_t m_droppedDebugLogs = 0;
 };
 
 // Logging Macros capturing file, line, and function details

@@ -4,6 +4,7 @@
 #include "DropDownMenu.h"
 #include "../DpiHelper.h"
 #include "../App/Logger.h"
+#include "../App/AppContext.h"
 #include <windowsx.h>
 #include <commctrl.h>
 #include <algorithm>
@@ -11,6 +12,8 @@
 #include <cmath>
 #include <cstring>
 #include <thread>
+#include <map>
+#include <mutex>
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -19,13 +22,19 @@ static const UINT WM_COMMAND_PANEL_APPEND = WM_APP + 0x310;
 static const UINT WM_COMMAND_PANEL_REFRESH_DONE = WM_APP + 0x311;
 static const UINT_PTR COMMAND_PANEL_CARET_TIMER_ID = 0x999;
 static const UINT_PTR COMMAND_PANEL_LOADING_TIMER_ID = 0x998;
+static const UINT_PTR COMMAND_PANEL_APPEND_TIMER_ID = 0x997;
 static const UINT COMMAND_PANEL_LOADING_FRAME_MS = 16;
 static std::atomic<uint64_t> g_commandPanelGeneration{ 1 };
 static thread_local uint64_t t_commandPanelGeneration = 0;
+static std::atomic<uint64_t> g_commandPanelInstanceGeneration{ 1 };
+static thread_local uint64_t t_commandPanelInstanceToken = 0;
+static std::mutex g_commandPanelRegistryMutex;
+static std::map<HWND, uint64_t> g_commandPanelRegistry;
 
 struct CommandPanelAppendPayload
 {
     uint64_t generation = 0;
+    uint64_t instanceToken = 0;
     std::wstring text;
 };
 
@@ -68,6 +77,7 @@ CommandPanelWindow::CommandPanelWindow(const wchar_t* title, const wchar_t* outp
     , m_loadingFrame(0)
     , m_loadingStartedTick(0)
     , m_workerGeneration(0)
+    , m_instanceToken(g_commandPanelInstanceGeneration.fetch_add(1))
 {
     m_appCtx = ctx;
     RegisterBuiltinActions();
@@ -80,6 +90,7 @@ CommandPanelWindow::~CommandPanelWindow()
 
 void CommandPanelWindow::ClearOutput(const wchar_t* initialText)
 {
+    m_pendingOutput.clear();
     m_outputText = initialText ? initialText : L"";
     m_textBox.SetText(m_outputText);
     if (GetHWND())
@@ -100,7 +111,19 @@ bool CommandPanelWindow::PostAppend(HWND hwnd, const std::wstring& text)
 
     CommandPanelAppendPayload* payload = new CommandPanelAppendPayload();
     payload->generation = t_commandPanelGeneration;
+    payload->instanceToken = t_commandPanelInstanceToken;
     payload->text = text;
+    {
+        std::lock_guard<std::mutex> lock(g_commandPanelRegistryMutex);
+        auto it = g_commandPanelRegistry.find(hwnd);
+        if (it == g_commandPanelRegistry.end() ||
+            (payload->instanceToken != 0 && payload->instanceToken != it->second))
+        {
+            delete payload;
+            return false;
+        }
+        if (payload->instanceToken == 0) payload->instanceToken = it->second;
+    }
     if (!PostMessageW(hwnd, WM_COMMAND_PANEL_APPEND, 0, reinterpret_cast<LPARAM>(payload)))
     {
         delete payload;
@@ -146,13 +169,19 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             {
                 HWND workerHwnd = existing;
                 uint64_t generation = g_cmdPanelInstance->m_workerGeneration;
-                std::thread([worker, workerHwnd, generation]() {
+                uint64_t instanceToken = g_cmdPanelInstance->m_instanceToken;
+                auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+                auto handle = tasks ? tasks->Submit(L"command.panel.worker", BackgroundTaskService::Priority::High,
+                    [worker, workerHwnd, generation, instanceToken](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
                     t_commandPanelGeneration = generation;
-                    worker(workerHwnd);
-                    if (IsWindow(workerHwnd))
+                    t_commandPanelInstanceToken = instanceToken;
+                    if (!cancellation->IsCancellationRequested()) worker(workerHwnd);
+                    if (!cancellation->IsCancellationRequested() && IsWindow(workerHwnd))
                         PostMessageW(workerHwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
                     t_commandPanelGeneration = 0;
-                }).detach();
+                    t_commandPanelInstanceToken = 0;
+                }) : BackgroundTaskService::TaskHandle{};
+                if (!handle) PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
             }
         }
         return;
@@ -217,6 +246,10 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
     SetFocus(win->GetHWND());
 
     g_cmdPanelInstance = win;
+    {
+        std::lock_guard<std::mutex> lock(g_commandPanelRegistryMutex);
+        g_commandPanelRegistry[win->GetHWND()] = win->m_instanceToken;
+    }
 
     if (worker)
     {
@@ -228,13 +261,19 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
         SetTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID, COMMAND_PANEL_LOADING_FRAME_MS, nullptr);
         InvalidateRect(workerHwnd, nullptr, FALSE);
         uint64_t generation = win->m_workerGeneration;
-        std::thread([worker, workerHwnd, generation]() {
+        uint64_t instanceToken = win->m_instanceToken;
+        auto tasks = ctx ? ctx->backgroundTasks : nullptr;
+        auto handle = tasks ? tasks->Submit(L"command.panel.worker", BackgroundTaskService::Priority::High,
+            [worker, workerHwnd, generation, instanceToken](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             t_commandPanelGeneration = generation;
-            worker(workerHwnd);
-            if (IsWindow(workerHwnd))
+            t_commandPanelInstanceToken = instanceToken;
+            if (!cancellation->IsCancellationRequested()) worker(workerHwnd);
+            if (!cancellation->IsCancellationRequested() && IsWindow(workerHwnd))
                 PostMessageW(workerHwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
             t_commandPanelGeneration = 0;
-        }).detach();
+            t_commandPanelInstanceToken = 0;
+        }) : BackgroundTaskService::TaskHandle{};
+        if (!handle) PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
     }
 }
 
@@ -247,8 +286,15 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         CommandPanelAppendPayload* payload = reinterpret_cast<CommandPanelAppendPayload*>(lParam);
         if (payload)
         {
-            if (payload->generation == 0 || payload->generation == m_workerGeneration)
-                AppendOutput(payload->text);
+            if (payload->instanceToken == m_instanceToken &&
+                (payload->generation == 0 || payload->generation == m_workerGeneration))
+            {
+                m_pendingOutput += payload->text;
+                if (m_pendingOutput.size() >= 4096)
+                    FlushPendingOutput();
+                else
+                    SetTimer(hWnd, COMMAND_PANEL_APPEND_TIMER_ID, 50, nullptr);
+            }
             delete payload;
         }
         return 0;
@@ -354,6 +400,12 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
             }
             m_loadingFrame = (m_loadingFrame + 1) % 60;
             InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+        if (wParam == COMMAND_PANEL_APPEND_TIMER_ID)
+        {
+            KillTimer(hWnd, COMMAND_PANEL_APPEND_TIMER_ID);
+            FlushPendingOutput();
             return 0;
         }
         break;
@@ -502,9 +554,16 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_DESTROY:
         KillTimer(hWnd, COMMAND_PANEL_CARET_TIMER_ID);
         KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
+        KillTimer(hWnd, COMMAND_PANEL_APPEND_TIMER_ID);
         break;
 
     case WM_NCDESTROY:
+        {
+            std::lock_guard<std::mutex> lock(g_commandPanelRegistryMutex);
+            auto it = g_commandPanelRegistry.find(hWnd);
+            if (it != g_commandPanelRegistry.end() && it->second == m_instanceToken)
+                g_commandPanelRegistry.erase(it);
+        }
         g_cmdPanelInstance = nullptr;
         delete this;
         return 0;
@@ -525,6 +584,14 @@ void CommandPanelWindow::AppendOutput(const std::wstring& text)
     }
 }
 
+void CommandPanelWindow::FlushPendingOutput()
+{
+    if (m_pendingOutput.empty()) return;
+    std::wstring pending;
+    pending.swap(m_pendingOutput);
+    AppendOutput(pending);
+}
+
 void CommandPanelWindow::RunRefresh()
 {
     HWND hwnd = GetHWND();
@@ -540,13 +607,24 @@ void CommandPanelWindow::RunRefresh()
 
     auto worker = m_refreshWorker;
     uint64_t generation = m_workerGeneration;
-    std::thread([worker, hwnd, generation]() {
+    uint64_t instanceToken = m_instanceToken;
+    auto tasks = m_appCtx ? m_appCtx->backgroundTasks : nullptr;
+    auto handle = tasks ? tasks->Submit(L"command.panel.refresh", BackgroundTaskService::Priority::High,
+        [worker, hwnd, generation, instanceToken](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
         t_commandPanelGeneration = generation;
-        worker(hwnd);
-        if (IsWindow(hwnd))
+        t_commandPanelInstanceToken = instanceToken;
+        if (!cancellation->IsCancellationRequested()) worker(hwnd);
+        if (!cancellation->IsCancellationRequested() && IsWindow(hwnd))
             PostMessageW(hwnd, WM_COMMAND_PANEL_REFRESH_DONE, 0, (LPARAM)generation);
         t_commandPanelGeneration = 0;
-    }).detach();
+        t_commandPanelInstanceToken = 0;
+    }) : BackgroundTaskService::TaskHandle{};
+    if (!handle)
+    {
+        m_refreshRunning = false;
+        KillTimer(hwnd, COMMAND_PANEL_LOADING_TIMER_ID);
+        AppendOutput(L"\r\n后台任务繁忙，无法刷新。\r\n");
+    }
 }
 
 void CommandPanelWindow::UpdateChildLayout()
@@ -881,6 +959,7 @@ void CommandPanelWindow::ShowMoreDropdown()
 
 void CommandPanelWindow::CopyOutputToClipboard()
 {
+    FlushPendingOutput();
     HWND hwnd = GetHWND();
     if (!hwnd || !OpenClipboard(hwnd))
         return;

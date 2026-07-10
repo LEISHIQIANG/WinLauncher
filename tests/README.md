@@ -17,6 +17,7 @@ This directory contains lightweight automation for source-level regressions that
   - PowerShell scripts parse,
   - GitHub Actions calls the local source gate on `windows-latest`,
   - plugin package builds remain opt-in.
+- `native/WinLauncherNativeTests.vcxproj` is a dependency-free native harness for background-task exception isolation, callback invalidation, and child-process minidump generation. The Release CI preflight runs it after compilation.
 
 Run from the repository root:
 

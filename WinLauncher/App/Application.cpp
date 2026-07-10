@@ -21,11 +21,13 @@
 #include <ole2.h>
 #include <shellapi.h>
 #include <timeapi.h>
+#include <chrono>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
 
 static UINT g_uShellRestart = 0;
+static constexpr UINT_PTR UI_HEARTBEAT_TIMER_ID = 0xA11;
 
 Application::Application(HINSTANCE hInstance)
     : m_hInstance(hInstance)
@@ -79,6 +81,29 @@ int Application::Run()
         LOG_ERROR(m_appCtx->logger, L"Application::Run: CreateMainWindow failed! GetLastError()=%d", GetLastError());
         return 1;
     }
+    m_appCtx->uiDispatcher->Bind(m_hMainWnd);
+    m_uiHeartbeat = std::make_shared<UiHeartbeatState>();
+    m_uiHeartbeat->lastTick = GetTickCount64();
+    SetTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID, 250, nullptr);
+    auto heartbeat = m_uiHeartbeat;
+    auto heartbeatLogger = m_appCtx->logger;
+    m_uiWatchdogTask = m_appCtx->backgroundTasks->Submit(L"ui.watchdog", BackgroundTaskService::Priority::High,
+        [heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            ULONGLONG lastWarning = 0;
+            while (!cancellation->IsCancellationRequested() && !heartbeat->stopping)
+            {
+                Sleep(250);
+                ULONGLONG now = GetTickCount64();
+                ULONGLONG last = heartbeat->lastTick.load();
+                if (last != 0 && now - last > 2000 && (lastWarning == 0 || now - lastWarning >= 10000))
+                {
+                    LOG_WARNING_NODE(heartbeatLogger, L"ui.health", L"stall", L"elapsed_ms=%llu",
+                        static_cast<unsigned long long>(now - last));
+                    CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(now - last) + L"ms");
+                    lastWarning = now;
+                }
+            }
+        });
 
     if (!InitializeServices())
     {
@@ -109,7 +134,7 @@ int Application::Run()
     }
 
     // Start background environment detection (executors like python, git bash)
-    EnvironmentDetector::StartDetection();
+    EnvironmentDetector::StartDetection(m_appCtx->backgroundTasks);
 
     if (!LoadRuntimeSettings())
     {
@@ -299,16 +324,23 @@ void Application::Shutdown()
     if (m_appCtx)
         LOG_INFO(m_appCtx->logger, L"WinLauncher shutting down...");
 
+    if (m_uiHeartbeat) m_uiHeartbeat->stopping = true;
+    m_uiWatchdogTask.Cancel();
+    if (m_hMainWnd) KillTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID);
+
     // Uninstall keyboard hook
     KeyboardHook::ClearDoubleAltTarget();
     KeyboardHook::Uninstall();
 
     if (m_mouseHookInstalled)
     {
-        LOG_INFO(m_appCtx->logger, L"Application::Shutdown: uninstalling mouse hook");
+        if (m_appCtx) LOG_INFO(m_appCtx->logger, L"Application::Shutdown: uninstalling mouse hook");
         MouseHook::Uninstall();
         m_mouseHookInstalled = false;
     }
+
+    if (m_appCtx && m_appCtx->uiDispatcher)
+        m_appCtx->uiDispatcher->Shutdown();
 
     if (m_hMainWnd && IsWindow(m_hMainWnd))
     {
@@ -317,7 +349,7 @@ void Application::Shutdown()
     }
     m_hMainWnd = nullptr;
 
-    LOG_INFO(m_appCtx->logger, L"Application::Shutdown: releasing window singletons");
+    if (m_appCtx) LOG_INFO(m_appCtx->logger, L"Application::Shutdown: releasing window singletons");
     PopupWindow::Release();
     ConfigWindow::Release(true);
     TrayMenuWindow::Release();
@@ -326,7 +358,10 @@ void Application::Shutdown()
     if (m_appCtx)
     {
         if (m_appCtx->pluginManager)
-            m_appCtx->pluginManager->Shutdown();
+            m_appCtx->pluginManager->RequestShutdown();
+
+        if (m_appCtx->backgroundTasks)
+            m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500));
 
         m_appCtx->iconService.reset();
         m_appCtx->configService.reset();
@@ -499,6 +534,17 @@ void Application::RestartApp()
 
 LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    if (msg == WM_TIMER && wParam == UI_HEARTBEAT_TIMER_ID)
+    {
+        if (m_uiHeartbeat) m_uiHeartbeat->lastTick = GetTickCount64();
+        return 0;
+    }
+    if (msg == AppMessages::UiDispatch)
+    {
+        if (m_appCtx && m_appCtx->uiDispatcher)
+            m_appCtx->uiDispatcher->HandleMessage(lParam);
+        return 0;
+    }
     if (g_uShellRestart && msg == g_uShellRestart)
     {
         m_trayIconAdded = false;

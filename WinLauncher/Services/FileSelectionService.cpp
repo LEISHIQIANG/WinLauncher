@@ -196,31 +196,45 @@ namespace Services
         return selectedFiles;
     }
 
-    void FileSelectionService::CaptureSelectedFilesAsync(HWND activeHwnd, POINT clickPt, POINT popupCenter, std::function<void(const SelectionContext&)> callback)
+    std::shared_ptr<SelectionRequest> FileSelectionService::CaptureSelectedFilesAsync(
+        HWND activeHwnd,
+        POINT clickPt,
+        POINT popupCenter,
+        const std::shared_ptr<BackgroundTaskService>& tasks)
     {
+        auto request = std::make_shared<SelectionRequest>();
         auto capturedTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (!tasks)
+        {
+            request->m_completed = true;
+            return request;
+        }
 
-        std::thread([activeHwnd, clickPt, popupCenter, capturedTime, callback]() {
+        request->m_task = tasks->Submit(L"file.selection", BackgroundTaskService::Priority::Interactive,
+            [request, activeHwnd, clickPt, popupCenter, capturedTime](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
             bool needsUninit = (hr == S_OK || hr == S_FALSE);
 
-            std::vector<std::wstring> files = GetSelectedFiles(activeHwnd, clickPt, popupCenter);
+            std::vector<std::wstring> files;
+            if (!request->IsCancelled() && !cancellation->IsCancellationRequested())
+                files = GetSelectedFiles(activeHwnd, clickPt, popupCenter);
 
             if (needsUninit)
             {
                 CoUninitialize();
             }
 
-            SelectionContext ctx;
-            ctx.filePaths = std::move(files);
-            ctx.sourceHwnd = activeHwnd;
-            ctx.capturedTime = capturedTime;
-            ctx.isPending = false;
-
-            if (callback)
             {
-                callback(ctx);
+                std::lock_guard<std::mutex> lock(request->m_mutex);
+                request->m_result.filePaths = std::move(files);
+                request->m_result.sourceHwnd = activeHwnd;
+                request->m_result.capturedTime = capturedTime;
+                request->m_result.isPending = false;
             }
-        }).detach();
+            request->m_completed = true;
+        });
+        if (!request->m_task)
+            request->m_completed = true;
+        return request;
     }
 }

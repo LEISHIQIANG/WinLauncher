@@ -170,7 +170,9 @@ private:
 
     std::mutex m_selectedFilesMutex;
     Services::SelectionContext m_selectedFilesCtx;
+    std::shared_ptr<Services::SelectionRequest> m_selectionRequest;
     void StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter);
+    void PollFileSelectionQuery();
 
     friend std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, AppContext* ctx, bool& cancelled);
 };
