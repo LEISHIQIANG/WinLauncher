@@ -75,7 +75,7 @@ void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
     auto logger = ctx ? ctx->logger : std::shared_ptr<Logger>();
     auto handle = tasks ? tasks->Submit(L"update.download", BackgroundTaskService::Priority::Normal,
         [this, parentWnd, logger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            if (!cancellation->IsCancellationRequested()) PerformDownloadAndInstall(parentWnd, logger.get());
+            PerformDownloadAndInstall(parentWnd, logger.get(), cancellation);
         }) : BackgroundTaskService::TaskHandle{};
     if (!handle)
     {
@@ -173,11 +173,19 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger)
     }
 }
 
-void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
+void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation)
 {
     // Simulate background downloading
     for (int p = 0; p <= 100; p += 10)
     {
+        if (cancellation && cancellation->IsCancellationRequested())
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_state = UpdateState::Error;
+            m_isDownloading = false;
+            m_downloadProgress = 0;
+            return;
+        }
         Sleep(300);
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -395,7 +403,7 @@ void UpdateService::PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger)
     }
 }
 
-void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
+void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation)
 {
     std::wstring downloadUrl;
     {
@@ -426,27 +434,10 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
         return;
     }
 
-    wchar_t currentExePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, currentExePath, MAX_PATH);
-    std::wstring exeDir = currentExePath;
-    size_t lastSlash = exeDir.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos)
-    {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
-
     wchar_t tempDir[MAX_PATH];
     GetTempPathW(MAX_PATH, tempDir);
 
-    std::wstring targetPath;
-    if (downloadUrl.size() >= 4 && downloadUrl.compare(downloadUrl.size() - 4, 4, L".zip") == 0)
-    {
-        targetPath = exeDir + L"\\WinLauncher_update.zip";
-    }
-    else
-    {
-        targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
-    }
+    std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
 
     HINTERNET hSession = InternetOpenW(
         L"WinLauncher-Updater",
@@ -468,12 +459,17 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
 
         if (hUrl)
         {
+            DWORD statusCode = 0;
+            DWORD statusLen = sizeof(statusCode);
+            const bool httpSuccess = HttpQueryInfoW(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                                                    &statusCode, &statusLen, nullptr) &&
+                                     statusCode >= 200 && statusCode < 300;
             DWORD contentLength = 0;
             DWORD bufLen = sizeof(contentLength);
             HttpQueryInfoW(hUrl, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER, &contentLength, &bufLen, nullptr);
 
-            std::ofstream outFile(targetPath, std::ios::binary);
-            if (outFile.is_open())
+            std::ofstream outFile(targetPath, std::ios::binary | std::ios::trunc);
+            if (httpSuccess && outFile.is_open())
             {
                 char buf[8192];
                 DWORD bytesRead = 0;
@@ -483,6 +479,11 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
 
                 while (true)
                 {
+                    if (cancellation && cancellation->IsCancellationRequested())
+                    {
+                        readOk = false;
+                        break;
+                    }
                     if (!InternetReadFile(hUrl, buf, sizeof(buf), &bytesRead))
                     {
                         readOk = false;
@@ -533,10 +534,18 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
                     }
                 }
             }
+            else if (logger)
+            {
+                LOG_ERROR(logger, L"UpdateService: Download request rejected. status=%lu targetOpen=%d",
+                          statusCode, outFile.is_open() ? 1 : 0);
+            }
             InternetCloseHandle(hUrl);
         }
         InternetCloseHandle(hSession);
     }
+
+    if (!downloadSuccess)
+        DeleteFileW(targetPath.c_str());
 
     if (downloadSuccess)
     {
@@ -547,24 +556,6 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
         if (m_mainNotifyWnd && m_mainNotifyWnd != parentWnd && IsWindow(m_mainNotifyWnd))
         {
             PostMessageW(m_mainNotifyWnd, AppMessages::UpdateDownloadProgress, 0, 0);
-        }
-
-        if (targetPath.compare(targetPath.size() - 4, 4, L".zip") == 0)
-        {
-            ShellExecuteW(nullptr, L"open", exeDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_state = UpdateState::Idle;
-            m_isDownloading = false;
-            if (parentWnd && IsWindow(parentWnd))
-            {
-                PostMessageW(parentWnd, AppMessages::UpdateCheckCompleted, 0, 0);
-            }
-            if (m_mainNotifyWnd && m_mainNotifyWnd != parentWnd && IsWindow(m_mainNotifyWnd))
-            {
-                PostMessageW(m_mainNotifyWnd, AppMessages::UpdateCheckCompleted, 0, 0);
-            }
-            return;
         }
 
         {
@@ -603,12 +594,21 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger)
 
 void UpdateService::ApplyUpdate(AppContext* ctx)
 {
-    wchar_t currentExePath[MAX_PATH];
+    wchar_t currentExePath[MAX_PATH]{};
     GetModuleFileNameW(nullptr, currentExePath, MAX_PATH);
 
     wchar_t tempDir[MAX_PATH];
     GetTempPathW(MAX_PATH, tempDir);
     std::wstring targetPath = std::wstring(tempDir) + L"WinLauncher.exe";
+    WIN32_FILE_ATTRIBUTE_DATA updateFile{};
+    if (!GetFileAttributesExW(targetPath.c_str(), GetFileExInfoStandard, &updateFile) ||
+        (static_cast<ULONGLONG>(updateFile.nFileSizeHigh) << 32 | updateFile.nFileSizeLow) == 0)
+    {
+        if (ctx && ctx->logger)
+            LOG_ERROR(ctx->logger, L"UpdateService: replacement skipped because downloaded EXE is missing or empty.");
+        MessageBoxW(nullptr, L"更新文件无效或已丢失，请重新下载后再试。", L"WinLauncher", MB_OK | MB_ICONWARNING);
+        return;
+    }
     std::wstring currentExePathEscaped = EscapePowerShellSingleQuotedString(currentExePath);
     std::wstring targetPathEscaped = EscapePowerShellSingleQuotedString(targetPath);
 
@@ -673,24 +673,9 @@ bool UpdateService::ParseReleaseJson(const std::string& json, std::wstring& tag,
             }
         }
 
-        for (size_t i = 0; i < assetsVal->Size(); ++i)
-        {
-            auto* asset = (*assetsVal)[i];
-            if (asset && asset->type == JsonImport::JsonValue::Object)
-            {
-                std::wstring name = asset->GetString(L"name");
-                std::wstring url = asset->GetString(L"browser_download_url");
-
-                if (name.size() >= 4 && name.compare(name.size() - 4, 4, L".zip") == 0)
-                {
-                    downloadUrl = url;
-                    return true;
-                }
-            }
-        }
     }
 
-    return !tag.empty();
+    return false;
 }
 
 bool UpdateService::IsNewer(const std::wstring& latestTag)

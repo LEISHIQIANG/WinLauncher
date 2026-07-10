@@ -1,7 +1,9 @@
 #define NOMINMAX
 #include "CommandVariableService.h"
 #include "../Config/PromptWindow.h"
+#include "ConfigPath.h"
 #include <algorithm>
+#include <cwctype>
 #include <wininet.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -78,9 +80,12 @@ namespace Services
     static std::wstring FetchPublicWANIP()
     {
         std::wstring ipStr = L"";
-        HINTERNET hInternet = InternetOpenW(L"WinLauncher/1.0", INTERNET_OPEN_TYPE_DIRECT, nullptr, nullptr, 0);
+        HINTERNET hInternet = InternetOpenW(L"WinLauncher/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
         if (hInternet)
         {
+            DWORD WAN_IP_TIMEOUT_MS = 3000;
+            InternetSetOptionW(hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, (LPVOID)&WAN_IP_TIMEOUT_MS, sizeof(WAN_IP_TIMEOUT_MS));
+            InternetSetOptionW(hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, (LPVOID)&WAN_IP_TIMEOUT_MS, sizeof(WAN_IP_TIMEOUT_MS));
             HINTERNET hUrl = InternetOpenUrlW(hInternet, L"https://api.ipify.org", nullptr, 0, INTERNET_FLAG_RELOAD, 0);
             if (hUrl)
             {
@@ -101,6 +106,11 @@ namespace Services
                     {
                         ipStr.resize(len - 1);
                         MultiByteToWideChar(CP_UTF8, 0, response.c_str(), -1, &ipStr[0], len - 1);
+                        while (!ipStr.empty() && iswspace(ipStr.back())) ipStr.pop_back();
+                        while (!ipStr.empty() && iswspace(ipStr.front())) ipStr.erase(ipStr.begin());
+                        IN_ADDR address{};
+                        if (ipStr.empty() || InetPtonW(AF_INET, ipStr.c_str(), &address) != 1)
+                            ipStr.clear();
                     }
                 }
             }
@@ -145,7 +155,7 @@ namespace Services
     // Helper to get config directory path
     static std::wstring GetConfigDir()
     {
-        return GetAppDir() + L"\\config";
+        return ConfigPath::GetUserConfigDirectory();
     }
 
     // Escapes and quotes an argument depending on shell type

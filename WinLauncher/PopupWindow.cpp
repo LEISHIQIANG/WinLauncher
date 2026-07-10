@@ -18,6 +18,7 @@
 #include "Config/PromptWindow.h"
 #include "Config/ConfirmWindow.h"
 #include "Config/CommandPanelWindow.h"
+#include "ToastWindow.h"
 #include "App/Logger.h"
 #include "App/AppMessages.h"
 #include <windowsx.h>
@@ -357,7 +358,7 @@ PopupWindow::PopupWindow(AppContext* ctx)
 
 PopupWindow::~PopupWindow()
 {
-    if (m_selectionRequest) m_selectionRequest->Cancel();
+    CancelFileSelectionQuery();
     if (m_appCtx && m_appCtx->eventBus)
     {
         if (m_configChangedToken)
@@ -642,6 +643,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
                 KillTimer(oldHwnd, POPUP_ANIMATION_TIMER_ID);
                 KillTimer(oldHwnd, TIMELINE_ANIMATION_TIMER_ID);
                 KillTimer(oldHwnd, PLUGIN_SEARCH_TIMER_ID);
+                oldWindow->CancelFileSelectionQuery();
                 DestroyWindow(oldHwnd);
             }
             delete oldWindow;
@@ -926,6 +928,7 @@ void PopupWindow::HideSelf()
         KillTimer(h, POPUP_ANIMATION_TIMER_ID);
         KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
         KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
+        CancelFileSelectionQuery();
         m_animating = false;
     }
 
@@ -974,6 +977,7 @@ void PopupWindow::DestroySelf()
         KillTimer(h, POPUP_ANIMATION_TIMER_ID);
         KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
         KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
+        CancelFileSelectionQuery();
         m_animating = false;
     }
 
@@ -1030,6 +1034,7 @@ void PopupWindow::Release()
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
             KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
+            extra->CancelFileSelectionQuery();
             DestroyWindow(h);
         }
         delete extra;
@@ -1048,6 +1053,7 @@ void PopupWindow::Release()
             KillTimer(h, POPUP_ANIMATION_TIMER_ID);
             KillTimer(h, TIMELINE_ANIMATION_TIMER_ID);
             KillTimer(h, PLUGIN_SEARCH_TIMER_ID);
+            inst->CancelFileSelectionQuery();
             DestroyWindow(h);
         }
 
@@ -1285,6 +1291,19 @@ void PopupWindow::ExecuteSearchResult(int index)
         {
             if (m_appCtx->hMainWnd)
                 PostMessageW(m_appCtx->hMainWnd, AppMessages::ShowConfigWindow, 0, 0);
+            return;
+        }
+
+        // Reload is a quick built-in maintenance action. It has no output the
+        // user needs to inspect, so avoid opening an otherwise empty panel.
+        if (item.pluginId.empty() &&
+            item.pluginCommandId == L"winlauncher.reload")
+        {
+            std::wstring message;
+            const bool ok = m_appCtx->pluginManager->ExecuteSlashCommand(
+                L"", item.pluginCommandId, m_searchQuery, {}, message, nullptr);
+            LOG_G_INFO(L"PopupWindow::ExecuteSearchResult: silent reload result=%d", ok ? 1 : 0);
+            ToastWindow::Show(ok ? L"插件已重新加载" : L"插件重新加载失败", ok ? 1200 : 2200);
             return;
         }
 
@@ -3403,7 +3422,8 @@ static std::wstring FormatCapturedCommandOutput(
     DWORD exitCode,
     bool hasExitCode,
     bool timedOut,
-    bool truncated)
+    bool truncated,
+    int timeoutSeconds)
 {
     std::wstring status = timedOut ? L"超时终止" : ((hasExitCode && exitCode == 0) ? L"成功" : L"失败");
     std::wstring result = L"状态: " + status;
@@ -3414,7 +3434,7 @@ static std::wstring FormatCapturedCommandOutput(
     }
     if (timedOut)
     {
-        result += L"\r\n提示: 命令超过超时时间，进程已终止。";
+        result += L"\r\n提示: 命令超过 " + std::to_wstring(timeoutSeconds) + L" 秒超时时间，进程已终止。";
     }
     if (truncated)
     {
@@ -3646,7 +3666,7 @@ static bool ExecuteProcessHelper(
         CloseHandle(pi.hProcess);
 
         std::wstring decodedOutput = DecodeCommandOutputBytes(capturedBytes);
-        outOutput = FormatCapturedCommandOutput(decodedOutput, exitCode, hasExitCode, timedOut, truncated);
+        outOutput = FormatCapturedCommandOutput(decodedOutput, exitCode, hasExitCode, timedOut, truncated, timeoutSeconds);
         return !timedOut && hasExitCode && exitCode == 0;
     }
     else
@@ -3873,7 +3893,7 @@ static bool ExecuteProcessStreaming(
         }
         if (timedOut)
         {
-            summary += L"\r\n提示: 命令超过超时时间，进程已终止。";
+            summary += L"\r\n提示: 命令超过 " + std::to_wstring(timeoutSeconds) + L" 秒超时时间，进程已终止。";
         }
         if (truncated)
         {
@@ -4104,7 +4124,21 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     if (segments.size() > 2) showWindow = (segments[2] == L"1");
     if (segments.size() > 3) captureOutput = (segments[3] == L"1");
     if (captureOutput) showWindow = false;
-    if (segments.size() > 4) { try { timeoutSeconds = std::stoi(segments[4]); } catch(...) {} }
+    if (segments.size() > 4)
+    {
+        try
+        {
+            const int configuredTimeout = std::stoi(segments[4]);
+            if (configuredTimeout >= 1 && configuredTimeout <= 3600)
+                timeoutSeconds = configuredTimeout;
+            else
+                LOG_G_WORNING(L"ExecuteCommand: invalid timeout=%d; using default 300 seconds", configuredTimeout);
+        }
+        catch (...)
+        {
+            LOG_G_WORNING(L"ExecuteCommand: invalid timeout text; using default 300 seconds");
+        }
+    }
     if (segments.size() > 5) { try { int v = std::stoi(segments[5]); if (v > 2000) maxChars = v; } catch(...) {} }
     
     std::map<std::wstring, std::wstring> inputValues;
@@ -4408,10 +4442,22 @@ void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT 
         m_selectedFilesCtx.isPending = true;
     }
 
-    if (m_selectionRequest) m_selectionRequest->Cancel();
+    CancelFileSelectionQuery();
     m_selectionRequest = Services::FileSelectionService::CaptureSelectedFilesAsync(
         activeHwnd, clickPt, popupCenter, m_appCtx ? m_appCtx->backgroundTasks : nullptr);
     if (hWnd) SetTimer(hWnd, FILE_SELECTION_TIMER_ID, 30, nullptr);
+}
+
+void PopupWindow::CancelFileSelectionQuery()
+{
+    if (m_selectionRequest)
+    {
+        m_selectionRequest->Cancel();
+        m_selectionRequest.reset();
+    }
+
+    if (HWND hWnd = GetHWND())
+        KillTimer(hWnd, FILE_SELECTION_TIMER_ID);
 }
 
 void PopupWindow::PollFileSelectionQuery()

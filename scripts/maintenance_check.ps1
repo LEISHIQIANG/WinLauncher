@@ -121,10 +121,7 @@ else {
 }
 
 $requiredFiles = @(
-    "MAINTENANCE.md",
     "scripts\build_plugins.ps1",
-    "PLUGIN_SYSTEM_PLAN.md",
-    "PLUGIN_API_PLAN.md",
     "SDK\docs\PLUGIN_DEV.md",
     "WinLauncher\SDK\include\WinLauncher\WinLauncherPluginABI.h",
     "WinLauncher\SDK\include\WinLauncher\WinLauncherPluginCpp.h",

@@ -181,7 +181,13 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
                     t_commandPanelGeneration = 0;
                     t_commandPanelInstanceToken = 0;
                 }) : BackgroundTaskService::TaskHandle{};
-                if (!handle) PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
+                if (!handle)
+                {
+                    g_cmdPanelInstance->m_refreshRunning = false;
+                    g_cmdPanelInstance->m_workerGeneration = 0;
+                    KillTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID);
+                    PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
+                }
             }
         }
         return;
@@ -273,7 +279,13 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             t_commandPanelGeneration = 0;
             t_commandPanelInstanceToken = 0;
         }) : BackgroundTaskService::TaskHandle{};
-        if (!handle) PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
+        if (!handle)
+        {
+            win->m_refreshRunning = false;
+            win->m_workerGeneration = 0;
+            KillTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID);
+            PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
+        }
     }
 }
 

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <mutex>
 #include "../App/AppContext.h"
 
 struct BatchStep
@@ -38,5 +39,7 @@ private:
     };
 
     static std::atomic<bool> s_running;
+    static std::atomic<bool> s_cancelRequested;
     static HANDLE s_hThread;
+    static std::mutex s_threadMutex;
 };

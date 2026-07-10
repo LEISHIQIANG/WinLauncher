@@ -45,7 +45,7 @@
 | `{{lan_ip}}` / `{{wan_ip}}` | 局域网/公网 IP 地址（WAN 有缓存） |
 | `{{selected_file}}` / `{{selected_files}}` | 资源管理器中选中的文件路径 |
 | `{{selected_file_name}}` / `{{selected_file_dir}}` / `{{selected_file_folder}}` | 选中文件的名称/所在目录/上级目录 |
-| `{{app_dir}}` / `{{config_dir}}` | 应用目录/配置目录 |
+| `{{app_dir}}` / `{{config_dir}}` | 应用目录/当前用户的 `%APPDATA%\WinLauncher\config` 配置目录 |
 | `{{input}}` / `{{input:提示}}` | 运行时弹出输入框收集用户文本 |
 | `{{password}}` / `{{password:提示}}` | 运行时弹出密码输入框（`●` 掩码） |
 | `{{choose:选项1\|选项2\|...}}` | 运行时弹出下拉选择列表 |
@@ -451,7 +451,7 @@ Command/URL shortcuts support **12 runtime variables** resolved at launch:
 | `{{lan_ip}}` / `{{wan_ip}}` | LAN / WAN IP address (WAN caching) |
 | `{{selected_file}}` / `{{selected_files}}` | File(s) selected in Explorer |
 | `{{selected_file_name}}` / `{{selected_file_dir}}` / `{{selected_file_folder}}` | Selected file name/directory/parent folder |
-| `{{app_dir}}` / `{{config_dir}}` | App directory / config directory |
+| `{{app_dir}}` / `{{config_dir}}` | App directory / current user's `%APPDATA%\WinLauncher\config` directory |
 | `{{input}}` / `{{input:prompt}}` | Modal text input dialog at runtime |
 | `{{password}}` / `{{password:prompt}}` | Modal password input (masked with `●`) |
 | `{{choose:opt1\|opt2\|...}}` | Dropdown selection list at runtime |

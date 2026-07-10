@@ -1,6 +1,7 @@
 #include "MouseHook.h"
 #include "App/AppMessages.h"
 #include "App/Logger.h"
+#include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
 #include <algorithm>
@@ -144,6 +145,12 @@ namespace
         }
         return false;
     }
+
+    void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
+    {
+        LOG_G_INFO(L"MouseHook::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
+            operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+    }
 }
 
 void MouseHook::SetTriggerType(int type)
@@ -229,19 +236,13 @@ bool MouseHook::Install(HWND hTargetWnd)
     }
 
     s_running.store(false);
-    DWORD tid = s_hookThreadId.load();
-    if (tid != 0)
-        PostThreadMessageW(tid, WM_QUIT, 0, 0);
-    if (s_hThread)
-    {
-        if (WaitForSingleObject(s_hThread, 1000) == WAIT_TIMEOUT)
-        {
-            LOG_G_WORNING(L"MouseHook::Install: hook thread did not exit after failed install, terminating");
-            TerminateThread(s_hThread, 0);
-        }
-        CloseHandle(s_hThread);
-        s_hThread = nullptr;
-    }
+    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+        s_hThread, s_hookThreadId.load(), 1000, []() {
+            HHOOK hook = MouseHook::s_hHook.exchange(nullptr);
+            if (hook) UnhookWindowsHookEx(hook);
+        });
+    LogHookThreadStopResult(L"InstallFailureCleanup", stopResult);
+    s_hThread = nullptr;
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hTargetWnd = nullptr;
     s_hookThreadId.store(0);
@@ -255,23 +256,13 @@ void MouseHook::Uninstall()
 
     s_running.store(false);
 
-    if (s_hThread)
-    {
-        DWORD tid = s_hookThreadId.load();
-        if (tid == 0)
-            tid = GetThreadId(s_hThread);
-        if (tid != 0)
-            PostThreadMessageW(tid, WM_QUIT, 0, 0);
-
-        if (WaitForSingleObject(s_hThread, 2000) == WAIT_TIMEOUT)
-        {
-            LOG_G_WORNING(L"MouseHook::Uninstall: thread did not exit in time, terminating");
-            TerminateThread(s_hThread, 0);
-        }
-
-        CloseHandle(s_hThread);
-        s_hThread = nullptr;
-    }
+    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+        s_hThread, s_hookThreadId.load(), 2000, []() {
+            HHOOK hook = MouseHook::s_hHook.exchange(nullptr);
+            if (hook) UnhookWindowsHookEx(hook);
+        });
+    LogHookThreadStopResult(L"Uninstall", stopResult);
+    s_hThread = nullptr;
 
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
 

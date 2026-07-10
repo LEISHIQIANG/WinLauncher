@@ -17,6 +17,7 @@
 #include "../Services/SystemIconService.h"
 #include "../TrayMenuWindow.h"
 #include "../Services/BatchLaunchService.h"
+#include "../Services/MacroService.h"
 #include <CommCtrl.h>
 #include <ole2.h>
 #include <shellapi.h>
@@ -328,6 +329,11 @@ void Application::Shutdown()
     m_uiWatchdogTask.Cancel();
     if (m_hMainWnd) KillTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID);
 
+    // Batch workers synchronously request shortcut launches from the main window.
+    // Stop them before starting UI teardown so they cannot target a closing window.
+    BatchLaunchService::Cancel();
+    MacroPlayer::Cancel();
+
     // Uninstall keyboard hook
     KeyboardHook::ClearDoubleAltTarget();
     KeyboardHook::Uninstall();
@@ -339,8 +345,17 @@ void Application::Shutdown()
         m_mouseHookInstalled = false;
     }
 
+    // Stop new plugin work and UI callbacks before tearing down any windows.
+    // Background workers may still finish after cancellation, so the dispatcher
+    // must reject their completion callbacks while all UI objects are intact.
+    if (m_appCtx && m_appCtx->pluginManager)
+        m_appCtx->pluginManager->RequestShutdown();
+
     if (m_appCtx && m_appCtx->uiDispatcher)
         m_appCtx->uiDispatcher->Shutdown();
+
+    if (m_appCtx && m_appCtx->backgroundTasks)
+        m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500));
 
     if (m_hMainWnd && IsWindow(m_hMainWnd))
     {
@@ -357,12 +372,6 @@ void Application::Shutdown()
 
     if (m_appCtx)
     {
-        if (m_appCtx->pluginManager)
-            m_appCtx->pluginManager->RequestShutdown();
-
-        if (m_appCtx->backgroundTasks)
-            m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500));
-
         m_appCtx->iconService.reset();
         m_appCtx->configService.reset();
         m_appCtx.reset();
@@ -480,11 +489,11 @@ void Application::RestartHook()
         m_mouseHookInstalled = false;
     }
 
-    if (MouseHook::Install(m_hMainWnd))
+    const bool mouseInstalled = MouseHook::Install(m_hMainWnd);
+    if (mouseInstalled)
     {
         m_mouseHookInstalled = true;
         LOG_INFO(m_appCtx->logger, L"Application::RestartHook: mouse hook restarted successfully");
-        ToastWindow::Show(L"钩子已重启", 500);
     }
     else
     {
@@ -494,26 +503,25 @@ void Application::RestartHook()
     // Also restart the keyboard hook
     KeyboardHook::ClearDoubleAltTarget();
     KeyboardHook::Uninstall();
-    KeyboardHook::Install();
-    KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
-    LOG_INFO(m_appCtx->logger, L"Application::RestartHook: keyboard hook restarted");
+    const bool keyboardInstalled = KeyboardHook::Install();
+    if (keyboardInstalled)
+        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+
+    if (mouseInstalled && keyboardInstalled)
+    {
+        ToastWindow::Show(L"鼠标与键盘钩子已重启", 1200);
+        LOG_INFO(m_appCtx->logger, L"Application::RestartHook: mouse and keyboard hooks restarted");
+    }
+    else
+    {
+        ToastWindow::Show(L"钩子重启未完成，请重试或重启 WinLauncher", 2200);
+        LOG_ERROR(m_appCtx->logger, L"Application::RestartHook: mouse=%d keyboard=%d", mouseInstalled ? 1 : 0, keyboardInstalled ? 1 : 0);
+    }
 }
 
 void Application::RestartApp()
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartApp: restarting application...");
-
-    // Get current executable path
-    wchar_t exePath[MAX_PATH]{};
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-
-    // Use ShellExecute to relaunch; delay slightly so Toast is visible
-    SHELLEXECUTEINFOW sei{};
-    sei.cbSize = sizeof(sei);
-    sei.fMask  = SEE_MASK_NOASYNC;
-    sei.lpVerb = L"open";
-    sei.lpFile = exePath;
-    sei.nShow  = SW_NORMAL;
 
     // Schedule relaunch via a timer (300ms) so the toast can show briefly
     // We post WM_QUIT after the timer fires
@@ -527,7 +535,11 @@ void Application::RestartApp()
         sei2.lpVerb = L"open";
         sei2.lpFile = exePath2;
         sei2.nShow  = SW_NORMAL;
-        ShellExecuteExW(&sei2);
+        if (!ShellExecuteExW(&sei2))
+        {
+            ToastWindow::Show(L"重启失败，WinLauncher 将继续运行", 2200);
+            return;
+        }
         PostQuitMessage(0);
     });
 }

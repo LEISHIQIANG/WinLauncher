@@ -209,6 +209,7 @@
     <ClInclude Include="App\Application.h" />
     <ClInclude Include="App\BackgroundTaskService.h" />
     <ClInclude Include="App\CallbackGuard.h" />
+    <ClInclude Include="App\InputHookThreadStop.h" />
     <ClInclude Include="App\CrashReporter.h" />
     <ClInclude Include="App\AppContext.h" />
     <ClInclude Include="App\EventBus.h" />

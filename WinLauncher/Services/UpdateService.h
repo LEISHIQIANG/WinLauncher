@@ -8,6 +8,7 @@
 #include <thread>
 #include <mutex>
 #include <Windows.h>
+#include "../App/BackgroundTaskService.h"
 
 struct AppContext;
 class Logger;
@@ -45,7 +46,7 @@ private:
     ~UpdateService() = default;
 
     void PerformCheck(HWND notifyWnd, bool isSilent, Logger* logger);
-    void PerformDownloadAndInstall(HWND parentWnd, Logger* logger);
+    void PerformDownloadAndInstall(HWND parentWnd, Logger* logger, const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation);
 
     bool ParseReleaseJson(const std::string& json, std::wstring& tag, std::wstring& body, std::wstring& downloadUrl);
     bool IsNewer(const std::wstring& latestTag);

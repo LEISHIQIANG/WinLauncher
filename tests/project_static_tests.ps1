@@ -43,6 +43,25 @@ Add-TestResult `
     -Detail "Partial or failed update downloads must not be treated as installable"
 
 Add-TestResult `
+    -Name "Automatic updates require an EXE asset and validate HTTP status" `
+    -Passed (
+        $updateSource -match 'name\.compare\(name\.size\(\) - 4, 4, L"\.exe"\)' -and
+        $updateSource -notmatch 'name\.compare\(name\.size\(\) - 4, 4, L"\.zip"\)' -and
+        $updateSource -match 'statusCode >= 200 && statusCode < 300' -and
+        $updateSource -match 'cancellation->IsCancellationRequested\(\)' -and
+        $updateSource -match 'if \(!downloadSuccess\)\s*DeleteFileW\(targetPath\.c_str\(\)\)'
+    ) `
+    -Detail "Only complete EXE releases may enter automatic replacement; failed, non-2xx, or cancelled downloads are removed"
+
+Add-TestResult `
+    -Name "Update replacement verifies the downloaded executable" `
+    -Passed (
+        $updateSource -match 'GetFileAttributesExW\(targetPath\.c_str\(\)' -and
+        $updateSource -match 'replacement skipped because downloaded EXE is missing or empty'
+    ) `
+    -Detail "ApplyUpdate must not terminate the running app without a non-empty downloaded executable"
+
+Add-TestResult `
     -Name "Update replacement uses PowerShell-safe literal paths" `
     -Passed (
         $updateSource -match 'EscapePowerShellSingleQuotedString' -and
@@ -74,11 +93,31 @@ Add-TestResult `
     ) `
     -Detail "Long-running command execution must remain asynchronous and risk-gated"
 
+Add-TestResult `
+    -Name "Built-in reload is silent" `
+    -Passed (
+        $popupSource -match 'item\.pluginCommandId == L"winlauncher\.reload"' -and
+        $popupSource -match 'silent reload result' -and
+        $popupSource -match 'ToastWindow::Show\(ok \? L"插件已重新加载"' -and
+        $popupSource -match 'ExecuteSlashCommand\(\s*L"", item\.pluginCommandId.*nullptr\)'
+    ) `
+    -Detail "The built-in reload slash command must refresh plugins without opening a command output panel"
+
 $urlEditSource = Read-RepoFile "WinLauncher\Config\UrlEditForm.cpp"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
 $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
+$inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
+$keyboardHookSource = Read-RepoFile "WinLauncher\KeyboardHook.cpp"
+$mouseHookSource = Read-RepoFile "WinLauncher\MouseHook.cpp"
+$macroServiceSource = Read-RepoFile "WinLauncher\Services\MacroService.cpp"
+$batchLaunchSource = Read-RepoFile "WinLauncher\Services\BatchLaunchService.cpp"
+$applicationSource = Read-RepoFile "WinLauncher\App\Application.cpp"
+$popupHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
+$commandPanelSource = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.cpp"
+$configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
+$commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 
 Add-TestResult `
     -Name "Detached threads are isolated to bounded shutdown fallback" `
@@ -100,6 +139,56 @@ Add-TestResult `
     -Detail "Selection completion must not call PopupWindow from a worker thread"
 
 Add-TestResult `
+    -Name "Command variables use the real user config path and bounded WAN lookup" `
+    -Passed (
+        $commandVariableSource -match '#include "ConfigPath\.h"' -and
+        $commandVariableSource -match 'ConfigPath::GetUserConfigDirectory\(\)' -and
+        $commandVariableSource -match 'WAN_IP_TIMEOUT_MS = 3000' -and
+        $commandVariableSource -match 'INTERNET_OPTION_CONNECT_TIMEOUT' -and
+        $commandVariableSource -match 'INTERNET_OPTION_RECEIVE_TIMEOUT' -and
+        $commandVariableSource -match 'InetPtonW\(AF_INET'
+    ) `
+    -Detail "config_dir must match user config storage and wan_ip must fail fast on invalid network responses"
+
+Add-TestResult `
+    -Name "Command timeout settings are bounded and reported" `
+    -Passed (
+        $popupSource -match 'configuredTimeout >= 1 && configuredTimeout <= 3600' -and
+        $popupSource -match 'invalid timeout=.*using default 300 seconds' -and
+        $popupSource -match '秒超时时间，进程已终止'
+    ) `
+    -Detail "Invalid command timeout settings must use the 300-second default and clearly label terminated commands"
+
+Add-TestResult `
+    -Name "Popup lifecycle cancels pending file selection work" `
+    -Passed (
+        $popupHeader -match 'void\s+CancelFileSelectionQuery\(\)' -and
+        $popupSource -match 'void\s+PopupWindow::CancelFileSelectionQuery\(\)' -and
+        $popupSource -match 'm_selectionRequest->Cancel\(\)' -and
+        $popupSource -match 'KillTimer\(hWnd, FILE_SELECTION_TIMER_ID\)' -and
+        ([regex]::Matches($popupSource, 'CancelFileSelectionQuery\(\);')).Count -ge 5
+    ) `
+    -Detail "Closing, destroying, replacing, and releasing popups must cancel obsolete Shell selection work"
+
+Add-TestResult `
+    -Name "Command panel clears loading state when task submission fails" `
+    -Passed (
+        ([regex]::Matches($commandPanelSource, 'm_refreshRunning = false;')).Count -ge 2 -and
+        ([regex]::Matches($commandPanelSource, 'm_workerGeneration = 0;')).Count -ge 2 -and
+        ([regex]::Matches($commandPanelSource, '后台任务繁忙，命令未启动')).Count -ge 2
+    ) `
+    -Detail "A saturated task queue must not leave a reused or new command panel spinning indefinitely"
+
+Add-TestResult `
+    -Name "Config file operations cancel pending delayed saves" `
+    -Passed (
+        ([regex]::Matches($configWindowSource, 'KillTimer\(hwnd, CONFIG_SAVE_TIMER_ID\)')).Count -ge 3 -and
+        $configWindowSource -match 'RestoreConfigBackup\(' -and
+        $configWindowSource -match 'ClearConfig\('
+    ) `
+    -Detail "Restoring or clearing config must not be overwritten by an older debounced save"
+
+Add-TestResult `
     -Name "Plugin UI and shutdown use guarded lifetimes" `
     -Passed ($pluginManagerSource -match 'RequestShutdown' -and $pluginManagerSource -match 'm_activeExecutions' -and $pluginManagerSource -match 'm_uiDispatcher->InvokeSync' -and $pluginManagerSource -match 'm_uiDispatcher->Post' -and $pluginManagerSource -match 'IsCurrentTaskCancellationRequested') `
     -Detail "Plugin tasks must retain manager lifetime and marshal UI work"
@@ -113,6 +202,67 @@ Add-TestResult `
     -Name "Normal logging uses a bounded async queue" `
     -Passed ($loggerSource -match 'MaxPendingLogEntries\s*=\s*4096' -and $loggerSource -match 'm_pendingLogs' -and $loggerSource -match 'milliseconds\(100\)') `
     -Detail "UI callers must not flush the log file on every entry"
+
+Add-TestResult `
+    -Name "Input hook threads use one bounded shutdown primitive" `
+    -Passed (
+        $inputHookStopHeader -match 'PostThreadMessageW\(threadId, WM_QUIT' -and
+        $inputHookStopHeader -match 'GetTickCount64\(\) \+ timeoutMs' -and
+        $inputHookStopHeader -match 'WaitForSingleObject\(thread, remainingMs\)' -and
+        $inputHookStopHeader -match 'cleanupBeforeForce\(\)' -and
+        $inputHookStopHeader -match 'TerminateThread\(thread, 0\)' -and
+        $keyboardHookSource -match 'InputHookThreadStop::RequestStopAndClose' -and
+        $mouseHookSource -match 'InputHookThreadStop::RequestStopAndClose' -and
+        $macroServiceSource -match 'InputHookThreadStop::RequestStopAndClose' -and
+        $keyboardHookSource -notmatch 'TerminateThread\(' -and
+        $mouseHookSource -notmatch 'TerminateThread\(' -and
+        $macroServiceSource -notmatch 'TerminateThread\('
+    ) `
+    -Detail "Keyboard, mouse, and macro hook threads must quit cooperatively before the explicit timeout fallback"
+
+Add-TestResult `
+    -Name "Macro hook shutdown clears stale UI and input state" `
+    -Passed (
+        $macroServiceSource -match 's_hNotifyWnd\.store\(nullptr\)' -and
+        $macroServiceSource -match 's_ignoreMouseUntilReleased\.store\(false\)'
+    ) `
+    -Detail "Failed or stopped recording must not retain a closed notify window or stale mouse state"
+
+Add-TestResult `
+    -Name "Batch launch cancels before UI teardown and bounds UI calls" `
+    -Passed (
+        $batchLaunchSource -match 's_cancelRequested' -and
+        $batchLaunchSource -match 'SendMessageTimeoutW' -and
+        $batchLaunchSource -match 'SMTO_ABORTIFHUNG \| SMTO_BLOCK' -and
+        $batchLaunchSource -match 'WaitForSingleObject\(thread, 2500\)' -and
+        $batchLaunchSource -notmatch 'LRESULT res = SendMessageW' -and
+        $applicationSource -match 'BatchLaunchService::Cancel\(\);'
+    ) `
+    -Detail "Batch work must stop before UI destruction and never wait indefinitely for the main window"
+
+Add-TestResult `
+    -Name "Macro playback retains a live worker handle after cancellation timeout" `
+    -Passed (
+        $macroServiceSource -match 'const DWORD wait = WaitForSingleObject\(thread, 2000\)' -and
+        $macroServiceSource -match 'if \(wait == WAIT_OBJECT_0\)' -and
+        $macroServiceSource -match 'retaining worker handle until it exits' -and
+        $applicationSource -match 'MacroPlayer::Cancel\(\);'
+    ) `
+    -Detail "A timed-out macro worker must block a second input injector and be cancelled before UI teardown"
+
+$pluginShutdownIndex = $applicationSource.IndexOf('m_appCtx->pluginManager->RequestShutdown()')
+$dispatcherShutdownIndex = $applicationSource.IndexOf('m_appCtx->uiDispatcher->Shutdown()')
+$backgroundShutdownIndex = $applicationSource.IndexOf('m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500))')
+$destroyMainWindowIndex = $applicationSource.IndexOf('DestroyWindow(m_hMainWnd)')
+Add-TestResult `
+    -Name "Application shuts down async work before destroying windows" `
+    -Passed (
+        $pluginShutdownIndex -ge 0 -and
+        $dispatcherShutdownIndex -gt $pluginShutdownIndex -and
+        $backgroundShutdownIndex -gt $dispatcherShutdownIndex -and
+        $destroyMainWindowIndex -gt $backgroundShutdownIndex
+    ) `
+    -Detail "Plugin submissions, UI dispatch, and background tasks must stop before window teardown"
 
 $projectPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj"
 $filtersPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj.filters"

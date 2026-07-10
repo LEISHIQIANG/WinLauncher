@@ -7,6 +7,7 @@
 
 #include "KeyboardHook.h"
 #include "App/Logger.h"
+#include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
 
@@ -68,6 +69,12 @@ static DWORD CurrentModifiers()
     return mods;
 }
 
+static void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
+{
+    LOG_G_INFO(L"KeyboardHook::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
+        operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+}
+
 // ============================================================
 // Public API
 // ============================================================
@@ -121,19 +128,13 @@ bool KeyboardHook::Install()
     }
 
     s_running.store(false);
-    DWORD tid = s_hookThreadId.load();
-    if (tid != 0)
-        PostThreadMessageW(tid, WM_QUIT, 0, 0);
-    if (hThread)
-    {
-        if (WaitForSingleObject(hThread, 1000) == WAIT_TIMEOUT)
-        {
-            LOG_G_WORNING(L"KeyboardHook::Install: hook thread did not exit after failed install, terminating");
-            TerminateThread(hThread, 0);
-        }
-        CloseHandle(hThread);
-        s_hThread.store(nullptr);
-    }
+    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+        hThread, s_hookThreadId.load(), 1000, []() {
+            HHOOK hook = KeyboardHook::s_hHook.exchange(nullptr);
+            if (hook) UnhookWindowsHookEx(hook);
+        });
+    LogHookThreadStopResult(L"InstallFailureCleanup", stopResult);
+    s_hThread.store(nullptr);
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hookThreadId.store(0);
     return false;
@@ -148,22 +149,13 @@ void KeyboardHook::Uninstall()
     StopRecording();
 
     HANDLE hThread = s_hThread.load();
-    if (hThread)
-    {
-        // Wake the hook thread's message loop
-        DWORD tid = s_hookThreadId.load();
-        if (tid == 0)
-            tid = GetThreadId(hThread);
-        if (tid != 0)
-            PostThreadMessageW(tid, WM_QUIT, 0, 0);
-        if (WaitForSingleObject(hThread, 2000) == WAIT_TIMEOUT)
-        {
-            LOG_G_WORNING(L"KeyboardHook::Uninstall: thread did not exit in time, terminating");
-            TerminateThread(hThread, 0);
-        }
-        CloseHandle(hThread);
-        s_hThread.store(nullptr);
-    }
+    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+        hThread, s_hookThreadId.load(), 2000, []() {
+            HHOOK hook = KeyboardHook::s_hHook.exchange(nullptr);
+            if (hook) UnhookWindowsHookEx(hook);
+        });
+    LogHookThreadStopResult(L"Uninstall", stopResult);
+    s_hThread.store(nullptr);
 
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hHook.store(nullptr);

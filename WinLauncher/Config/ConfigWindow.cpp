@@ -659,6 +659,7 @@ void ConfigWindow::Hide()
 {
     if (s_instance)
     {
+        s_instance->SaveConfig(); // Flush the debounced save before hiding the settings window.
         HWND h = s_instance->GetHWND();
         if (h && UIStyle::Animation::IsEnabled())
         {

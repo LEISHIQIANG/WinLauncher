@@ -5,7 +5,9 @@
 #include <sstream>
 
 std::atomic<bool> BatchLaunchService::s_running = false;
+std::atomic<bool> BatchLaunchService::s_cancelRequested = false;
 HANDLE BatchLaunchService::s_hThread = nullptr;
+std::mutex BatchLaunchService::s_threadMutex;
 
 // ============================================================================
 // BatchHelper Implementation
@@ -73,12 +75,6 @@ std::vector<BatchStep> BatchHelper::Parse(const std::wstring& arguments)
 
 bool BatchLaunchService::Execute(const std::wstring& arguments, HWND parent, AppContext* ctx)
 {
-    if (s_running.load())
-    {
-        LOG_G_WORNING(L"BatchLaunchService::Execute: ignored because another batch is already running.");
-        return false;
-    }
-
     auto steps = BatchHelper::Parse(arguments);
     if (steps.empty())
     {
@@ -92,13 +88,26 @@ bool BatchLaunchService::Execute(const std::wstring& arguments, HWND parent, App
         parent,
         ctx ? ctx->hMainWnd : nullptr);
 
-    s_running.store(true);
-
     ExecParams* params = new ExecParams();
     params->steps = steps;
     params->parent = parent;
     params->ctx = ctx;
 
+    std::lock_guard<std::mutex> lock(s_threadMutex);
+    if (s_running.load())
+    {
+        delete params;
+        LOG_G_WORNING(L"BatchLaunchService::Execute: ignored because another batch is still stopping or running.");
+        return false;
+    }
+    if (s_hThread && WaitForSingleObject(s_hThread, 0) == WAIT_OBJECT_0)
+    {
+        CloseHandle(s_hThread);
+        s_hThread = nullptr;
+    }
+
+    s_cancelRequested.store(false);
+    s_running.store(true);
     s_hThread = CreateThread(nullptr, 0, ThreadProc, params, 0, nullptr);
     if (!s_hThread)
     {
@@ -112,12 +121,28 @@ bool BatchLaunchService::Execute(const std::wstring& arguments, HWND parent, App
 
 void BatchLaunchService::Cancel()
 {
-    s_running.store(false);
-    if (s_hThread)
+    HANDLE thread = nullptr;
     {
-        WaitForSingleObject(s_hThread, 2000);
-        CloseHandle(s_hThread);
-        s_hThread = nullptr;
+        std::lock_guard<std::mutex> lock(s_threadMutex);
+        if (!s_hThread) return;
+        s_cancelRequested.store(true);
+        thread = s_hThread;
+    }
+
+    const DWORD wait = WaitForSingleObject(thread, 2500);
+    if (wait == WAIT_OBJECT_0)
+    {
+        std::lock_guard<std::mutex> lock(s_threadMutex);
+        if (s_hThread == thread)
+        {
+            CloseHandle(s_hThread);
+            s_hThread = nullptr;
+        }
+        LOG_G_INFO(L"BatchLaunchService::Cancel: batch stopped cooperatively.");
+    }
+    else
+    {
+        LOG_G_WORNING(L"BatchLaunchService::Cancel: batch did not stop within 2500ms (wait=%lu); it remains blocked from a new batch until its worker exits.", wait);
     }
 }
 
@@ -142,7 +167,7 @@ DWORD WINAPI BatchLaunchService::ThreadProc(LPVOID lpParam)
 
     for (const auto& step : params->steps)
     {
-        if (!s_running.load()) break;
+        if (s_cancelRequested.load()) break;
         if (!step.enabled)
         {
             LOG_G_INFO(L"BatchLaunchService::ThreadProc: skipping disabled step id=%s", step.shortcutId.c_str());
@@ -153,19 +178,29 @@ DWORD WINAPI BatchLaunchService::ThreadProc(LPVOID lpParam)
         DWORD delayed = 0;
         while (delayed < step.delayMs)
         {
-            if (!s_running.load()) break;
+            if (s_cancelRequested.load()) break;
             DWORD sleepTime = (step.delayMs - delayed > 50) ? 50 : (step.delayMs - delayed);
             Sleep(sleepTime);
             delayed += sleepTime;
         }
 
-        if (!s_running.load()) break;
+        if (s_cancelRequested.load()) break;
 
         LOG_G_INFO(L"BatchLaunchService::ThreadProc: launching step id=%s delayMs=%lu", step.shortcutId.c_str(), step.delayMs);
 
-        // Send synchronously to the UI thread, returns 1 for success, 0 for failure
-        LRESULT res = SendMessageW(hMainWnd, AppMessages::LaunchShortcutById, 0, reinterpret_cast<LPARAM>(&step.shortcutId));
-        bool ok = (res != 0);
+        // A hung or closing UI must not indefinitely strand the batch worker.
+        DWORD_PTR result = 0;
+        const bool delivered = SendMessageTimeoutW(
+            hMainWnd,
+            AppMessages::LaunchShortcutById,
+            0,
+            reinterpret_cast<LPARAM>(&step.shortcutId),
+            SMTO_ABORTIFHUNG | SMTO_BLOCK,
+            2000,
+            &result) != FALSE;
+        const bool ok = delivered && result != 0;
+        if (!delivered)
+            LOG_G_WORNING(L"BatchLaunchService::ThreadProc: UI launch request timed out or the main window stopped responding. id=%s error=%lu", step.shortcutId.c_str(), GetLastError());
         LOG_G_INFO(L"BatchLaunchService::ThreadProc: step id=%s result=%d", step.shortcutId.c_str(), ok ? 1 : 0);
 
         if (!ok && step.stopOnError)
@@ -176,6 +211,7 @@ DWORD WINAPI BatchLaunchService::ThreadProc(LPVOID lpParam)
     }
 
     s_running.store(false);
+    s_cancelRequested.store(false);
     LOG_G_INFO(L"BatchLaunchService::ThreadProc: batch finished.");
     delete params;
     return 0;

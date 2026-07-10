@@ -194,6 +194,9 @@
     <ClInclude Include="App\CallbackGuard.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="App\InputHookThreadStop.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="App\CrashReporter.h">
       <Filter>头文件</Filter>
     </ClInclude>

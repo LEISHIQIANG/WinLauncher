@@ -351,7 +351,6 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
         else if (hit == 6)  // 退出应用
         {
             Hide();
-            if (s_ctx && s_ctx->pluginManager) s_ctx->pluginManager->Shutdown();
             PostQuitMessage(0);
         }
         return 0;

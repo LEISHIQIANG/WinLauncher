@@ -360,4 +360,4 @@ wl.example.wlplugin
 - 只声明实际使用的权限。
 - Release x64 DLL 已重新编译。
 - `.wlplugin` 已重新打包，包内只有运行所需文件。
-- `PLUGIN_API_PLAN.md` 和 `RELEASE_NOTES.md` 已同步实际变化。
+- `RELEASE_NOTES.md` 已同步实际变化；如本次涉及 SDK 接口，请同步更新本开发文档和示例。

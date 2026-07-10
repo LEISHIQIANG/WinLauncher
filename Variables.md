@@ -80,7 +80,7 @@
 | `{{date}}` | `GetCurrentDateString()` 行 114–121 | 通过 `GetLocalTime()` 获取当前系统本地时间，格式化为 `YYYY-MM-DD`。时间源为操作系统本地时钟。 | `2026-06-30` | 永远非空（系统时钟始终可用） |
 | `{{time}}` | `GetCurrentTimeString()` 行 124–131 | 通过 `GetLocalTime()` 获取当前系统本地时间，格式化为 `HH:MM:SS`（24 小时制）。 | `23:40:15` | 永远非空（系统时钟始终可用） |
 | `{{lan_ip}}` | `GetLocalLANIP()` 行 38–75 | 创建 UDP socket 向 `8.8.8.8:80` 发起 `connect()`（不实际发送数据），通过 `getsockname()` 提取本机实际使用的出口 IPv4 地址。每次 ResolveVariables 调用**仅执行一次**，结果缓存。 | `192.168.1.108` | `WSAStartup()` 失败 → `127.0.0.1`；其他失败 → `127.0.0.1` |
-| `{{wan_ip}}` | `FetchPublicWANIP()` 行 78–111 | 通过 Windows `WinINet` API（`InternetOpenUrlW`）访问 `https://api.ipify.org` 获取本机公网 IPv4 地址。使用 UTF-8 解码响应。每次 ResolveVariables 调用**仅执行一次**，结果缓存。 | `203.0.113.50` | 网络不可达或 API 无响应 → `0.0.0.0` |
+| `{{wan_ip}}` | `FetchPublicWANIP()` | 通过 Windows `WinINet` API（`InternetOpenUrlW`）访问 `https://api.ipify.org` 获取本机公网 IPv4 地址。连接和接收各最多等待 3 秒，并校验返回值为 IPv4；每次 ResolveVariables 调用**仅执行一次**，结果缓存。 | `203.0.113.50` | 网络不可达、超时或响应无效 → `0.0.0.0` |
 
 ### 1.2 文件选择类
 
@@ -104,9 +104,9 @@
 | 变量占位符 | 内部实现 | 功能描述 | 示例输出 | 空值行为 |
 | :--- | :--- | :--- | :--- | :--- |
 | `{{app_dir}}` | `GetAppDir()` 行 134–143 | 通过 `GetModuleFileNameW()` 获取当前进程的可执行文件完整路径，截取最后一个 `\` 或 `/` 之前的父目录。**无尾部反斜杠**。 | `C:\Users\Admin\Desktop\WinLauncher` | 理论上不会为空 (exe 必有路径) |
-| `{{config_dir}}` | `GetConfigDir()` 行 146–149 | `app_dir` + `\config`。即 `{app_dir}\config`。 | `C:\Users\Admin\Desktop\WinLauncher\config` | 同 `app_dir` + `\config` |
+| `{{config_dir}}` | `ConfigPath::GetUserConfigDirectory()` | 返回当前用户的 WinLauncher 配置目录，不依赖 EXE 安装位置。 | `C:\Users\Admin\AppData\Roaming\WinLauncher\config` | 配置目录路径始终可解析；变量展开不会主动创建目录。 |
 
-> **注意：** `config_dir` 仅拼接路径字符串，不检查目录是否真实存在。调用方需自行确保 `config` 子目录存在。
+> **注意：** `config_dir` 使用与程序配置存储相同的用户目录；变量展开本身不会主动创建该目录。
 
 ### 1.4 交互输入类
 
@@ -581,4 +581,3 @@ Remove-Item -Path "$env:TEMP\*" -Recurse -Force
 | :--- | :--- | :--- |
 | `C:\Program Files\Google\Chrome\Application\chrome.exe` | `{{url}} --new-window --incognito` | 以隐身模式打开 URL |
 | `C:\Program Files\Mozilla Firefox\firefox.exe` | `-private-window {{url}}` | 以隐私窗口打开 URL |
-

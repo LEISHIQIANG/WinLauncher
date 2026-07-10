@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "MacroService.h"
 #include "../App/Logger.h"
+#include "../App/InputHookThreadStop.h"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -34,6 +35,12 @@ namespace
     {
         HANDLE readyEvent = nullptr;
     };
+
+    void LogMacroThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
+    {
+        LOG_G_INFO(L"MacroRecorder::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
+            operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+    }
 }
 
 // Time helper
@@ -450,20 +457,15 @@ bool MacroRecorder::Start(HWND hNotifyWnd)
     if (wait != WAIT_OBJECT_0 || !s_hooksInstalled.load())
     {
         s_recording.store(false);
-        if (s_hThread)
-        {
-            DWORD tid = s_hookThreadId.load();
-            if (tid == 0)
-                tid = GetThreadId(s_hThread);
-            if (tid != 0)
-                PostThreadMessageW(tid, WM_QUIT, 0, 0);
-            if (WaitForSingleObject(s_hThread, 2000) == WAIT_TIMEOUT)
-            {
-                TerminateThread(s_hThread, 0);
-            }
-            CloseHandle(s_hThread);
-            s_hThread = nullptr;
-        }
+        const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+            s_hThread, s_hookThreadId.load(), 2000, []() {
+                if (s_hKeyHook) { UnhookWindowsHookEx(s_hKeyHook); s_hKeyHook = nullptr; }
+                if (s_hMouseHook) { UnhookWindowsHookEx(s_hMouseHook); s_hMouseHook = nullptr; }
+            });
+        LogMacroThreadStopResult(L"StartFailureCleanup", stopResult);
+        s_hThread = nullptr;
+        s_hNotifyWnd.store(nullptr);
+        s_ignoreMouseUntilReleased.store(false);
         LOG_G_ERRA(L"MacroRecorder::Start: failed to install low-level input hooks (wait=%lu)", wait);
         return false;
     }
@@ -480,21 +482,16 @@ void MacroRecorder::Stop(bool discardTrailingMouseClick)
     s_recording.store(false);
     s_hooksInstalled.store(false);
 
-    if (s_hThread)
-    {
-        DWORD tid = s_hookThreadId.load();
-        if (tid == 0)
-            tid = GetThreadId(s_hThread);
-        if (tid != 0)
-            PostThreadMessageW(tid, WM_QUIT, 0, 0);
-        if (WaitForSingleObject(s_hThread, 2000) == WAIT_TIMEOUT)
-        {
-            TerminateThread(s_hThread, 0);
-        }
-        CloseHandle(s_hThread);
-        s_hThread = nullptr;
-    }
+    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
+        s_hThread, s_hookThreadId.load(), 2000, []() {
+            if (s_hKeyHook) { UnhookWindowsHookEx(s_hKeyHook); s_hKeyHook = nullptr; }
+            if (s_hMouseHook) { UnhookWindowsHookEx(s_hMouseHook); s_hMouseHook = nullptr; }
+        });
+    LogMacroThreadStopResult(L"Stop", stopResult);
+    s_hThread = nullptr;
     s_hookThreadId.store(0);
+    s_hNotifyWnd.store(nullptr);
+    s_ignoreMouseUntilReleased.store(false);
 }
 
 void MacroRecorder::Clear()
@@ -751,13 +748,30 @@ bool MacroPlayer::Play(const std::vector<MacroEvent>& events, double speed, cons
 
 void MacroPlayer::Cancel()
 {
-    std::lock_guard<std::mutex> lock(s_playMutex);
     s_playing.store(false);
-    if (s_hPlayThread)
+    HANDLE thread = nullptr;
     {
-        WaitForSingleObject(s_hPlayThread, 2000);
-        CloseHandle(s_hPlayThread);
-        s_hPlayThread = nullptr;
+        std::lock_guard<std::mutex> lock(s_playMutex);
+        thread = s_hPlayThread;
+    }
+    if (!thread) return;
+
+    const DWORD wait = WaitForSingleObject(thread, 2000);
+    if (wait == WAIT_OBJECT_0)
+    {
+        std::lock_guard<std::mutex> lock(s_playMutex);
+        if (s_hPlayThread == thread)
+        {
+            CloseHandle(s_hPlayThread);
+            s_hPlayThread = nullptr;
+        }
+        LOG_G_INFO(L"MacroPlayer::Cancel: playback stopped cooperatively.");
+    }
+    else
+    {
+        // Keep the live handle so Play() refuses a second injector until the
+        // original worker actually exits and can be reaped safely.
+        LOG_G_WORNING(L"MacroPlayer::Cancel: playback did not stop within 2000ms (wait=%lu); retaining worker handle until it exits.", wait);
     }
 }
 
