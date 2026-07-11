@@ -11,6 +11,7 @@
 #include "Services/FileSelectionService.h"
 #include <mutex>
 #include <memory>
+#include <atomic>
 
 using Microsoft::WRL::ComPtr;
 
@@ -55,6 +56,8 @@ private:
     int HitTestDock(POINT pt);
     void EnsureIcons();
     void RefreshIcons();
+    void ApplyRefreshedIcons();
+    void CancelIconRefresh();
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
@@ -168,6 +171,25 @@ private:
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
     bool m_refreshingIcons = false;
+    bool m_iconRefreshPending = false;
+    uint64_t m_iconRefreshGeneration = 0;
+    BackgroundTaskService::TaskHandle m_iconRefreshTask;
+    struct RefreshedIcon
+    {
+        bool dock = false;
+        size_t pageIndex = 0;
+        size_t shortcutIndex = 0;
+        HICON icon = nullptr;
+    };
+    struct IconRefreshState
+    {
+        ~IconRefreshState();
+        std::mutex mutex;
+        std::vector<RefreshedIcon> results;
+        std::atomic_bool cancelled{ false };
+        uint64_t generation = 0;
+    };
+    std::shared_ptr<IconRefreshState> m_iconRefreshState;
 
     std::mutex m_selectedFilesMutex;
     Services::SelectionContext m_selectedFilesCtx;

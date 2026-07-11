@@ -142,6 +142,7 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
         HWND existing = g_cmdPanelInstance->GetHWND();
         if (existing && IsWindow(existing))
         {
+            g_cmdPanelInstance->CancelWorker();
             RECT rc{};
             GetWindowRect(existing, &rc);
             LOG_G_INFO(L"CommandPanelWindow::ShowLive: existing panel hwnd=%p visible=%d rect=(%ld,%ld,%ld,%ld)",
@@ -187,6 +188,10 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
                     g_cmdPanelInstance->m_workerGeneration = 0;
                     KillTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID);
                     PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
+                }
+                else
+                {
+                    g_cmdPanelInstance->m_workerTask = std::move(handle);
                 }
             }
         }
@@ -286,6 +291,10 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
             KillTimer(workerHwnd, COMMAND_PANEL_LOADING_TIMER_ID);
             PostAppend(workerHwnd, L"\r\n后台任务繁忙，命令未启动。\r\n");
         }
+        else
+        {
+            win->m_workerTask = std::move(handle);
+        }
     }
 }
 
@@ -318,6 +327,7 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
             return 0;
         m_refreshRunning = false;
         m_workerGeneration = 0;
+        m_workerTask = {};
         KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
@@ -564,6 +574,8 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
         return 0;
     }
     case WM_DESTROY:
+        CancelWorker();
+        m_pendingOutput.clear();
         KillTimer(hWnd, COMMAND_PANEL_CARET_TIMER_ID);
         KillTimer(hWnd, COMMAND_PANEL_LOADING_TIMER_ID);
         KillTimer(hWnd, COMMAND_PANEL_APPEND_TIMER_ID);
@@ -604,12 +616,24 @@ void CommandPanelWindow::FlushPendingOutput()
     AppendOutput(pending);
 }
 
+void CommandPanelWindow::CancelWorker()
+{
+    m_workerTask.Cancel();
+    m_workerTask = {};
+    // Invalidate all queued append/completion messages from the old operation.
+    m_workerGeneration = 0;
+    m_refreshRunning = false;
+    m_loadingStartedTick = 0;
+}
+
 void CommandPanelWindow::RunRefresh()
 {
     HWND hwnd = GetHWND();
     if (!hwnd || !m_refreshWorker || m_refreshRunning)
         return;
 
+    CancelWorker();
+    m_pendingOutput.clear();
     m_refreshRunning = true;
     m_loadingFrame = 0;
     m_loadingStartedTick = GetTickCount64();
@@ -636,6 +660,10 @@ void CommandPanelWindow::RunRefresh()
         m_refreshRunning = false;
         KillTimer(hwnd, COMMAND_PANEL_LOADING_TIMER_ID);
         AppendOutput(L"\r\n后台任务繁忙，无法刷新。\r\n");
+    }
+    else
+    {
+        m_workerTask = std::move(handle);
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "../GlassWindow.h"
+#include "../App/BackgroundTaskService.h"
 #include "TextBox.h"
 #include <cstdint>
 #include <functional>
@@ -40,6 +41,7 @@ private:
     D2D1_RECT_F GetFooterButtonRect(int index) const;
     void AppendOutput(const std::wstring& text);
     void FlushPendingOutput();
+    void CancelWorker();
     void RunRefresh();
     void CopyOutputToClipboard();
     void ClearOutput(const wchar_t* initialText);
@@ -65,6 +67,7 @@ private:
     ULONGLONG m_loadingStartedTick;
     uint64_t m_workerGeneration;
     uint64_t m_instanceToken;
+    BackgroundTaskService::TaskHandle m_workerTask;
 
     ComPtr<IDWriteTextFormat> m_tfTitle;
     ComPtr<IDWriteTextFormat> m_tfBtn;

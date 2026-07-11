@@ -42,7 +42,7 @@ void UpdateService::CheckForUpdates(HWND notifyWnd, bool isSilent, AppContext* c
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_isChecking || m_isDownloading) return;
+        if (m_stopping || m_isChecking || m_isDownloading) return;
         m_isChecking = true;
         m_updatePromptClosed = false;
         if (notifyWnd) m_mainNotifyWnd = notifyWnd;
@@ -52,7 +52,8 @@ void UpdateService::CheckForUpdates(HWND notifyWnd, bool isSilent, AppContext* c
     auto logger = ctx ? ctx->logger : std::shared_ptr<Logger>();
     auto handle = tasks ? tasks->Submit(L"update.check", BackgroundTaskService::Priority::Normal,
         [this, notifyWnd, isSilent, logger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            if (!cancellation->IsCancellationRequested()) PerformCheck(notifyWnd, isSilent, logger.get());
+            if (!cancellation->IsCancellationRequested() && !m_stopping)
+                PerformCheck(notifyWnd, isSilent, logger.get());
         }) : BackgroundTaskService::TaskHandle{};
     if (!handle)
     {
@@ -60,13 +61,18 @@ void UpdateService::CheckForUpdates(HWND notifyWnd, bool isSilent, AppContext* c
         m_isChecking = false;
         m_state = UpdateState::Error;
     }
+    else
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_checkTask = std::move(handle);
+    }
 }
 
 void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_isDownloading) return;
+        if (m_stopping || m_isDownloading) return;
         m_isDownloading = true;
         m_downloadProgress = 0;
     }
@@ -75,7 +81,8 @@ void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
     auto logger = ctx ? ctx->logger : std::shared_ptr<Logger>();
     auto handle = tasks ? tasks->Submit(L"update.download", BackgroundTaskService::Priority::Normal,
         [this, parentWnd, logger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            PerformDownloadAndInstall(parentWnd, logger.get(), cancellation);
+            if (!cancellation->IsCancellationRequested() && !m_stopping)
+                PerformDownloadAndInstall(parentWnd, logger.get(), cancellation);
         }) : BackgroundTaskService::TaskHandle{};
     if (!handle)
     {
@@ -83,6 +90,25 @@ void UpdateService::StartDownloadAndInstall(HWND parentWnd, AppContext* ctx)
         m_isDownloading = false;
         m_state = UpdateState::Error;
     }
+    else
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_downloadTask = std::move(handle);
+    }
+}
+
+void UpdateService::Shutdown()
+{
+    m_stopping = true;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_checkTask.Cancel();
+    m_downloadTask.Cancel();
+    m_checkTask = {};
+    m_downloadTask = {};
+    m_isChecking = false;
+    m_isDownloading = false;
+    m_downloadProgress = 0;
+    m_mainNotifyWnd = nullptr;
 }
 
 UpdateService::UpdateState UpdateService::GetState() const

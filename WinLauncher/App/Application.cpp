@@ -354,6 +354,10 @@ void Application::Shutdown()
     if (m_appCtx && m_appCtx->uiDispatcher)
         m_appCtx->uiDispatcher->Shutdown();
 
+    // Cancel update work before the task service can enter its bounded
+    // shutdown fallback; update callbacks must not target torn-down windows.
+    UpdateService::GetInstance().Shutdown();
+
     if (m_appCtx && m_appCtx->backgroundTasks)
         m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500));
 

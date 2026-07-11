@@ -100,6 +100,33 @@ int wmain(int argc, wchar_t** argv)
     }
 
     {
+        BackgroundTaskService tasks(logger);
+        HANDLE gate = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        HANDLE cancelledTaskRan = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!gate || !cancelledTaskRan) return Fail(L"unable to create cancellation test events");
+
+        // Occupy the interactive worker, then cancel a queued operation.  This
+        // mirrors a command panel being replaced before its old worker starts.
+        tasks.Submit(L"test.cancel.gate", BackgroundTaskService::Priority::Interactive,
+            [gate](const std::shared_ptr<BackgroundTaskService::CancellationToken>&) {
+                WaitForSingleObject(gate, 1000);
+            });
+        auto cancelled = tasks.Submit(L"test.cancel.queued", BackgroundTaskService::Priority::Interactive,
+            [cancelledTaskRan](const std::shared_ptr<BackgroundTaskService::CancellationToken>&) {
+                SetEvent(cancelledTaskRan);
+            });
+        if (!cancelled) return Fail(L"unable to queue cancellable task");
+        cancelled.Cancel();
+        SetEvent(gate);
+        Sleep(100);
+        if (WaitForSingleObject(cancelledTaskRan, 0) == WAIT_OBJECT_0)
+            return Fail(L"cancelled queued task still executed");
+        CloseHandle(gate);
+        CloseHandle(cancelledTaskRan);
+        tasks.Shutdown(std::chrono::milliseconds(1500));
+    }
+
+    {
         auto bus = std::make_shared<EventBus>(logger);
         int called = 0;
         EventBus::Token second = 0;

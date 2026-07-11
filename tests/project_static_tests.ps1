@@ -116,6 +116,8 @@ $batchLaunchSource = Read-RepoFile "WinLauncher\Services\BatchLaunchService.cpp"
 $applicationSource = Read-RepoFile "WinLauncher\App\Application.cpp"
 $popupHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $commandPanelSource = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.cpp"
+$commandPanelHeader = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.h"
+$popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 
@@ -127,6 +129,58 @@ Add-TestResult `
             Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -cmatch '\.detach\s*\(' }).Count -eq 0
     ) `
     -Detail "Feature code must submit work through BackgroundTaskService instead of fire-and-forget threads"
+
+Add-TestResult `
+    -Name "Command panel cancels obsolete workers before reuse or teardown" `
+    -Passed (
+        $commandPanelHeader -match 'BackgroundTaskService::TaskHandle\s+m_workerTask' -and
+        $commandPanelSource -match 'void\s+CommandPanelWindow::CancelWorker\s*\(' -and
+        $commandPanelSource -match 'g_cmdPanelInstance->CancelWorker\(\)' -and
+        $commandPanelSource -match 'case\s+WM_DESTROY:\s*\r?\n\s*CancelWorker\(\)' -and
+        $commandPanelSource -match 'm_workerTask\.Cancel\(\)'
+    ) `
+    -Detail "Closing, replacing, or refreshing a panel must invalidate old worker output"
+
+Add-TestResult `
+    -Name "Popup icon refresh leaves Shell extraction off the UI message path" `
+    -Passed (
+        $popupWindowHeader -match 'BackgroundTaskService::TaskHandle\s+m_iconRefreshTask' -and
+        $popupSource -match 'Submit\(L"popup\.icon_refresh"' -and
+        $popupSource -match 'void\s+PopupWindow::CancelIconRefresh\s*\(' -and
+        $popupSource -match 'void\s+PopupWindow::ApplyRefreshedIcons\s*\(' -and
+        $popupSource -notmatch 'case\s+WM_USER_REFRESH_ICONS:[\s\S]{0,1800}ShortcutManager::RefreshShortcutIcon'
+    ) `
+    -Detail "The UI thread must apply completed icon results instead of extracting every Shell icon synchronously"
+
+Add-TestResult `
+    -Name "Popup icon work is limited to visible pages and cancelled when hidden" `
+    -Passed (
+        $popupSource -match 'distance\s*>\s*1\)\s*continue' -and
+        $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(\)' -and
+        $popupSource -match 'm_iconRefreshPending\s*=\s*false'
+    ) `
+    -Detail "First paint should defer off-screen bitmaps, and hidden popups must not keep refreshing icons"
+
+Add-TestResult `
+    -Name "Popup show reuses clean background caches and scene-safe page indices" `
+    -Passed (
+        $popupSource -match 'backgroundRefreshNeeded\s*=\s*this->m_bgCaptureDirty' -and
+        $popupSource -match 'if\s*\(geometryChanged\)\s*\r?\n\s*SetWindowPos' -and
+        $popupSource -match 'm_pageModelIndices\[i\]\s*==\s*modelCurrentPage' -and
+        $popupSource -match 'PopupWindow perf: show_state'
+    ) `
+    -Detail "Repeated popup shows should preserve valid background caches and map filtered scene pages correctly"
+
+Add-TestResult `
+    -Name "Update tasks are cancelled before service teardown" `
+    -Passed (
+        $updateHeader -match 'void\s+Shutdown\(\)' -and
+        $updateSource -match 'void\s+UpdateService::Shutdown\s*\(' -and
+        $updateSource -match 'm_checkTask\.Cancel\(\)' -and
+        $updateSource -match 'm_downloadTask\.Cancel\(\)' -and
+        $applicationSource -match 'UpdateService::GetInstance\(\)\.Shutdown\(\)'
+    ) `
+    -Detail "Application shutdown must cancel update callbacks before background workers outlive UI services"
 
 Add-TestResult `
     -Name "URL editor workers do not capture form instances" `

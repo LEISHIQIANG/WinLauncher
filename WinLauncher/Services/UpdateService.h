@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <atomic>
 
 // Toggle Mock update engine for testing. Set to 1 to test, 0 for production release.
 #define MOCK_UPDATE_SERVICE 0
@@ -31,6 +32,9 @@ public:
     void CheckForUpdates(HWND notifyWnd, bool isSilent, AppContext* ctx = nullptr);
     void StartDownloadAndInstall(HWND parentWnd, AppContext* ctx = nullptr);
     void ApplyUpdate(AppContext* ctx = nullptr);
+    // Called before the application releases UI/services.  It prevents queued
+    // update callbacks from reviving state during shutdown.
+    void Shutdown();
 
     UpdateState GetState() const;
     std::wstring GetLatestVersion() const;
@@ -63,4 +67,7 @@ private:
     mutable std::mutex m_mutex;
     bool m_isChecking = false;
     bool m_isDownloading = false;
+    std::atomic_bool m_stopping{ false };
+    BackgroundTaskService::TaskHandle m_checkTask;
+    BackgroundTaskService::TaskHandle m_downloadTask;
 };
