@@ -47,6 +47,10 @@ public:
     virtual void RestoreLatestConfigBackup() override;
     virtual void ClearConfigData() override;
     virtual void ClearConfigHistoryData() override;
+    virtual void CreateDiagnosticPackage() override;
+    virtual void ExportMigrationBackup() override;
+    virtual void ImportMigrationBackup() override;
+    virtual void ClearUsageHistory() override;
     virtual void StartAnimation() override;
     virtual IDWriteTextFormat* GetLeftFont() override { return m_tfLeft.Get(); }
     virtual IDWriteTextFormat* GetTitleFont() override { return m_tfTitle.Get(); }

@@ -617,6 +617,7 @@ public:
         }
 
         LOG_INFO(m_logger, L"Loaded %zu pages from config", pages.size());
+        PruneConfigHistory(10);
         return pages;
     }
 
@@ -1246,7 +1247,7 @@ private:
         {
             if (contentChanged)
                 ScheduleAutoBackup();
-            PruneConfigHistory(80);
+            PruneConfigHistory(10);
             return true;
         }
 
@@ -1330,7 +1331,7 @@ private:
             LOG_ERROR(m_logger, L"Failed to create config backup: %s", backupPath.c_str());
             return false;
         }
-        PruneConfigHistory(80);
+        PruneConfigHistory(10);
         LOG_INFO(m_logger, L"Created config backup: %s", backupPath.c_str());
         return true;
     }

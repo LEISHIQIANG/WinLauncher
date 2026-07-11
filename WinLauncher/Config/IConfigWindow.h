@@ -28,6 +28,10 @@ public:
     virtual void RestoreLatestConfigBackup() = 0;
     virtual void ClearConfigData() = 0;
     virtual void ClearConfigHistoryData() = 0;
+    virtual void CreateDiagnosticPackage() = 0;
+    virtual void ExportMigrationBackup() = 0;
+    virtual void ImportMigrationBackup() = 0;
+    virtual void ClearUsageHistory() = 0;
     virtual void StartAnimation() = 0;
     virtual IDWriteTextFormat* GetLeftFont() = 0;
     virtual IDWriteTextFormat* GetTitleFont() = 0;

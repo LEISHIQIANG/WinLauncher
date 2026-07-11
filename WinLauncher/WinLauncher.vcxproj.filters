@@ -99,6 +99,9 @@
     <ClCompile Include="Services\FolderWatcher.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Services\UsageHistoryStore.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\DiagnosticService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\MigrationBackupService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\FaviconFetcher.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -407,6 +410,9 @@
     <ClInclude Include="Services\IniConfigRepository.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Services\UsageHistoryStore.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Services\DiagnosticService.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Services\MigrationBackupService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\SystemIconService.h">
       <Filter>头文件</Filter>
     </ClInclude>

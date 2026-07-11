@@ -2,6 +2,7 @@
 #include "ConfigWindow.h"
 #include "PromptWindow.h"
 #include "ConfirmWindow.h"
+#include "../Services/MigrationBackupService.h"
 #include "WaitWindow.h"
 #include "HotkeyDialog.h"
 #include "UrlDialog.h"
@@ -806,6 +807,81 @@ void ConfigWindow::OpenConfigDir()
     std::wstring dir = GetConfigDir();
     if (!dir.empty())
         ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void ConfigWindow::CreateDiagnosticPackage()
+{
+    if (!m_appCtx || !m_appCtx->diagnostics) return;
+    // Build default filename with timestamp
+    wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st);
+    swprintf_s(stamp, L"%04u%02u%02u-%02u%02u%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    std::wstring defaultName = std::wstring(L"WinLauncher-diagnostic-") + stamp + L".zip";
+    // Resolve Desktop as initial directory
+    wchar_t desktopPath[MAX_PATH]{};
+    SHGetFolderPathW(nullptr, CSIDL_DESKTOP, nullptr, SHGFP_TYPE_CURRENT, desktopPath);
+    // Show Save dialog
+    wchar_t filePath[MAX_PATH]{};
+    wcsncpy_s(filePath, defaultName.c_str(), _TRUNCATE);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize   = sizeof(ofn);
+    ofn.hwndOwner     = GetHWND();
+    ofn.lpstrFilter   = L"ZIP 文件 (*.zip)\0*.zip\0";
+    ofn.lpstrFile     = filePath;
+    ofn.nMaxFile      = MAX_PATH;
+    ofn.lpstrInitialDir = desktopPath;
+    ofn.lpstrTitle    = L"保存诊断包";
+    ofn.lpstrDefExt   = L"zip";
+    ofn.Flags         = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return; // user cancelled
+    std::wstring path = filePath, error;
+    bool ok = m_appCtx->diagnostics->CreatePackage(path, error);
+    std::wstring message = ok ? std::wstring(L"已在本地生成脱敏诊断包：\n") + path + L"\n不会自动上传。" : error;
+    ConfirmWindow::Show(GetHWND(), ok ? L"诊断包已生成" : L"诊断包生成失败", message.c_str(), m_appCtx, false);
+}
+
+void ConfigWindow::ExportMigrationBackup()
+{
+    // Build default filename with timestamp
+    wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st);
+    swprintf_s(stamp, L"%04u%02u%02u-%02u%02u%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    std::wstring defaultName = std::wstring(L"WinLauncher-migration-") + stamp + L".zip";
+    // Resolve Desktop as initial directory
+    wchar_t desktopPath[MAX_PATH]{};
+    SHGetFolderPathW(nullptr, CSIDL_DESKTOP, nullptr, SHGFP_TYPE_CURRENT, desktopPath);
+    // Show Save dialog
+    wchar_t filePath[MAX_PATH]{};
+    wcsncpy_s(filePath, defaultName.c_str(), _TRUNCATE);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize   = sizeof(ofn);
+    ofn.hwndOwner     = GetHWND();
+    ofn.lpstrFilter   = L"ZIP 文件 (*.zip)\0*.zip\0";
+    ofn.lpstrFile     = filePath;
+    ofn.nMaxFile      = MAX_PATH;
+    ofn.lpstrInitialDir = desktopPath;
+    ofn.lpstrTitle    = L"保存迁移备份";
+    ofn.lpstrDefExt   = L"zip";
+    ofn.Flags         = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return; // user cancelled
+    std::wstring path = filePath;
+    MigrationBackupService service; auto result = service.Export(path);
+    std::wstring message = result.ok ? result.message + L"：\n" + path : result.message;
+    ConfirmWindow::Show(GetHWND(), result.ok ? L"迁移备份已导出" : L"迁移备份失败", message.c_str(), m_appCtx, false);
+}
+
+void ConfigWindow::ImportMigrationBackup()
+{
+    wchar_t path[MAX_PATH]{}; OPENFILENAMEW ofn{}; ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=GetHWND(); ofn.lpstrFilter=L"WinLauncher migration (*.zip)\0*.zip\0"; ofn.lpstrFile=path; ofn.nMaxFile=MAX_PATH; ofn.Flags=OFN_FILEMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn)) return;
+    MigrationBackupService service; auto check=service.Preflight(path);
+    if (!check.ok) { ConfirmWindow::Show(GetHWND(), L"迁移包无效", check.message.c_str(), m_appCtx, false); return; }
+    auto result=service.Restore(path); if(result.ok) ReloadAfterConfigFileOperation();
+    ConfirmWindow::Show(GetHWND(), result.ok ? L"迁移恢复完成" : L"迁移恢复失败", result.message.c_str(), m_appCtx, false);
+}
+
+void ConfigWindow::ClearUsageHistory()
+{
+    bool ok=m_appCtx && m_appCtx->usageHistory && m_appCtx->usageHistory->Clear();
+    ConfirmWindow::Show(GetHWND(), ok ? L"使用记录已清除" : L"清除失败", ok ? L"本地搜索排序记录已清除。" : L"无法清除本地使用记录。", m_appCtx, false);
 }
 
 void ConfigWindow::OpenConfigHistoryDir()

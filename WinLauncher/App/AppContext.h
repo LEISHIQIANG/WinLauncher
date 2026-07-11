@@ -10,6 +10,8 @@
 #include "../Services/IConfigService.h"
 #include "../Services/IIconService.h"
 #include "../Services/ConfigPath.h"
+#include "../Services/UsageHistoryStore.h"
+#include "../Services/DiagnosticService.h"
 
 struct AppContext
 {
@@ -19,6 +21,8 @@ struct AppContext
     std::shared_ptr<BackgroundTaskService> backgroundTasks;
     std::shared_ptr<UiDispatcher> uiDispatcher;
     std::shared_ptr<PluginManager> pluginManager;
+    std::shared_ptr<UsageHistoryStore> usageHistory;
+    std::shared_ptr<DiagnosticService> diagnostics;
 
     std::unique_ptr<IConfigService> configService;
     std::unique_ptr<IIconService> iconService;
@@ -33,6 +37,8 @@ struct AppContext
         , backgroundTasks(std::make_shared<BackgroundTaskService>(logger))
         , uiDispatcher(std::make_shared<UiDispatcher>(logger))
         , pluginManager(std::make_shared<PluginManager>(eventBus, logger, uiDispatcher, backgroundTasks))
+        , usageHistory(std::make_shared<UsageHistoryStore>(ConfigPath::GetUserDataDirectory() + L"\\usage_history.json"))
+        , diagnostics(std::make_shared<DiagnosticService>(logger.get()))
     {
     }
 

@@ -18,6 +18,9 @@ This directory contains lightweight automation for source-level regressions that
   - GitHub Actions calls the local source gate on `windows-latest`,
   - plugin package builds remain opt-in.
 - `native/WinLauncherNativeTests.vcxproj` is a dependency-free native harness for background-task exception isolation, callback invalidation, and child-process minidump generation. The Release CI preflight runs it after compilation.
+- `scenario_regression.ps1` verifies the non-interactive contracts for diagnostics privacy, local usage ranking, and migration preflight. It never opens the desktop UI or reads real user data.
+
+For every release candidate, manually verify popup show/hide, keyboard search and execution, cancelling a slow command, and importing a migration backup in a clean Windows user-data directory. Sleep/resume and Explorer selection behavior remain manual scenarios because they depend on the active desktop session.
 
 Run from the repository root:
 

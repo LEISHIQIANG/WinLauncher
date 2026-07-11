@@ -1388,6 +1388,10 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const D2D1_RECT_F importJsonRect = TwoColumnRect(1, 310.0f);
             const D2D1_RECT_F clearConfigRect = TwoColumnRect(0, 352.0f);
             const D2D1_RECT_F clearHistoryRect = TwoColumnRect(1, 352.0f);
+            const D2D1_RECT_F diagnosticRect = TwoColumnRect(0, 394.0f);
+            const D2D1_RECT_F exportMigrationRect = TwoColumnRect(1, 394.0f);
+            const D2D1_RECT_F importMigrationRect = TwoColumnRect(0, 436.0f);
+            const D2D1_RECT_F clearUsageRect = TwoColumnRect(1, 436.0f);
 
             ID2D1SolidColorBrush* tbNormal = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
@@ -1483,6 +1487,10 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             drawActionButton(importJsonRect, L"导入 QuickLauncher", m_hoveredImportJson, false);
             drawActionButton(clearConfigRect, L"清除配置", m_hoveredClearConfig, true);
             drawActionButton(clearHistoryRect, L"清除历史", m_hoveredClearConfigHistory, true);
+            drawActionButton(diagnosticRect, L"生成诊断包", m_hoveredDiagnosticPackage, false);
+            drawActionButton(exportMigrationRect, L"导出迁移备份", m_hoveredExportMigration, false);
+            drawActionButton(importMigrationRect, L"导入迁移备份", m_hoveredImportMigration, false);
+            drawActionButton(clearUsageRect, L"清除使用记录", m_hoveredClearUsageHistory, true);
 
             if (tbNormal) tbNormal->Release();
             if (tbMuted) tbMuted->Release();
@@ -1879,6 +1887,10 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         bool hClearConfig = HitTestClearConfig(pt);
         bool hClearHistory = HitTestClearConfigHistory(pt);
         bool hImportJson = HitTestImportJson(pt);
+        bool hDiagnostic = HitTestDiagnosticPackage(pt);
+        bool hExport = HitTestExportMigration(pt);
+        bool hImport = HitTestImportMigration(pt);
+        bool hClearUsage = HitTestClearUsageHistory(pt);
         if (hConfigFile != m_hoveredOpenConfigFile ||
             hLogFile != m_hoveredOpenLogFile ||
             hConfigDirText != m_hoveredConfigDirText ||
@@ -1887,7 +1899,7 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             hRestore != m_hoveredRestoreConfigBackup ||
             hClearConfig != m_hoveredClearConfig ||
             hClearHistory != m_hoveredClearConfigHistory ||
-            hImportJson != m_hoveredImportJson)
+            hImportJson != m_hoveredImportJson || hDiagnostic != m_hoveredDiagnosticPackage || hExport != m_hoveredExportMigration || hImport != m_hoveredImportMigration || hClearUsage != m_hoveredClearUsageHistory)
         {
             m_hoveredOpenConfigFile = hConfigFile;
             m_hoveredOpenLogFile = hLogFile;
@@ -1898,6 +1910,10 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             m_hoveredClearConfig = hClearConfig;
             m_hoveredClearConfigHistory = hClearHistory;
             m_hoveredImportJson = hImportJson;
+            m_hoveredDiagnosticPackage = hDiagnostic;
+            m_hoveredExportMigration = hExport;
+            m_hoveredImportMigration = hImport;
+            m_hoveredClearUsageHistory = hClearUsage;
             repaint = true;
         }
     }
@@ -2328,6 +2344,10 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                 OnImportJsonClicked();
             repaint = true;
         }
+        else if (HitTestDiagnosticPackage(pt)) { m_owner->CreateDiagnosticPackage(); repaint = true; }
+        else if (HitTestExportMigration(pt)) { m_owner->ExportMigrationBackup(); repaint = true; }
+        else if (HitTestImportMigration(pt)) { m_owner->ImportMigrationBackup(); repaint = true; }
+        else if (HitTestClearUsageHistory(pt)) { m_owner->ClearUsageHistory(); repaint = true; }
         else if (HitTestClearConfig(pt))
         {
             m_owner->ClearConfigData();
@@ -2834,6 +2854,11 @@ bool SettingsPage::HitTestImportJson(POINT pt)
     if (m_categoryIndex != 3) return false;
     return PointInRect(TwoColumnRect(1, 310.0f), pt);
 }
+
+bool SettingsPage::HitTestDiagnosticPackage(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 394.0f), pt); }
+bool SettingsPage::HitTestExportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 394.0f), pt); }
+bool SettingsPage::HitTestImportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 436.0f), pt); }
+bool SettingsPage::HitTestClearUsageHistory(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 436.0f), pt); }
 
 bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType)
 {

@@ -55,6 +55,9 @@ try {
     Write-Host "== Tests =="
     & (Join-Path $repoRoot "tests\run_tests.ps1")
 
+    Write-Host "== Scenario regression =="
+    & (Join-Path $repoRoot "tests\scenario_regression.ps1")
+
     $msbuild = $null
     if (-not $SkipBuild -or $BuildPlugins) {
         $msbuild = Resolve-MSBuild -ExplicitPath $MsBuildPath

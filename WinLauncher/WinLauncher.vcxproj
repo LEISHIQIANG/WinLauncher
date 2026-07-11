@@ -184,6 +184,9 @@
     <ClCompile Include="Services\BatchLaunchService.cpp" />
     <ClCompile Include="Services\CommandVariableService.cpp" />
     <ClCompile Include="Services\UpdateService.cpp" />
+    <ClCompile Include="Services\UsageHistoryStore.cpp" />
+    <ClCompile Include="Services\DiagnosticService.cpp" />
+    <ClCompile Include="Services\MigrationBackupService.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
     <ClCompile Include="Config\MacroEditForm.cpp" />
     <ClCompile Include="Config\BatchLaunchDialog.cpp" />
@@ -237,6 +240,9 @@
     <ClInclude Include="Services\FileSelectionService.h" />
     <ClInclude Include="Services\CommandVariableService.h" />
     <ClInclude Include="Services\UpdateService.h" />
+    <ClInclude Include="Services\UsageHistoryStore.h" />
+    <ClInclude Include="Services\DiagnosticService.h" />
+    <ClInclude Include="Services\MigrationBackupService.h" />
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />
     <ClInclude Include="ViewModel\ConfigViewModel.h" />

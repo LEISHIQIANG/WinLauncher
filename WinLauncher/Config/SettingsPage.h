@@ -46,6 +46,10 @@ private:
     bool HitTestClearConfig(POINT pt);
     bool HitTestClearConfigHistory(POINT pt);
     bool HitTestImportJson(POINT pt);
+    bool HitTestDiagnosticPackage(POINT pt);
+    bool HitTestExportMigration(POINT pt);
+    bool HitTestImportMigration(POINT pt);
+    bool HitTestClearUsageHistory(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestHardwareAcceleration(POINT pt);
@@ -95,6 +99,10 @@ private:
     bool m_hoveredClearConfig = false;
     bool m_hoveredClearConfigHistory = false;
     bool m_hoveredImportJson = false;
+    bool m_hoveredDiagnosticPackage = false;
+    bool m_hoveredExportMigration = false;
+    bool m_hoveredImportMigration = false;
+    bool m_hoveredClearUsageHistory = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredPopupAlignMode = -1;
     int m_hoveredPopupAutoClose = -1;
