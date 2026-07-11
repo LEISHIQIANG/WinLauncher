@@ -1316,7 +1316,15 @@ void PopupWindow::UpdateSearch()
                 });
                 size_t pos = name.find(queryLower);
                 int posScore = (pos == std::wstring::npos) ? 10000 : (int)pos;
-                return std::make_tuple(posScore, (int)name.size(), item.originalPageIndex, item.originalShortcutIndex);
+                UsageHistoryEntry usage{};
+                if (m_appCtx && m_appCtx->usageHistory) {
+                    std::wstring key = item.kind == SearchResultItem::Kind::LocalShortcut
+                        ? L"shortcut:" + item.shortcut.id
+                        : L"plugin:" + item.pluginId + L":" + item.pluginCommandId;
+                    usage = m_appCtx->usageHistory->Get(key);
+                }
+                const int prefixScore = name.rfind(queryLower, 0) == 0 ? 0 : 1;
+                return std::make_tuple(prefixScore, posScore, 0ULL - usage.launchCount, 0ULL - usage.lastUsedUtc, item.originalPageIndex, item.originalShortcutIndex);
             };
             return score(a) < score(b);
         });
@@ -1329,6 +1337,13 @@ void PopupWindow::ExecuteSearchResult(int index)
         return;
 
     auto& item = m_searchResults[index];
+    if (m_appCtx && m_appCtx->usageHistory) {
+        const std::wstring key = item.kind == SearchResultItem::Kind::LocalShortcut
+            ? L"shortcut:" + item.shortcut.id
+            : L"plugin:" + item.pluginId + L":" + item.pluginCommandId;
+        // A result reached execution dispatch; failures/cancellations do not record a completion later.
+        m_appCtx->usageHistory->RecordAccepted(key);
+    }
     if (item.kind == SearchResultItem::Kind::SlashCommand)
     {
         if (!m_appCtx || !m_appCtx->pluginManager)
@@ -2521,6 +2536,20 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_IME_COMPOSITION:
     case WM_IME_ENDCOMPOSITION:
     {
+        // If the user starts typing Chinese/Japanese/Korean via IME while the
+        // popup is showing the category tab bar, switch to search mode now so
+        // the composition string appears inside the search box.
+        // Do NOT save this to config – next popup open should still show tabs.
+        if (!m_searchActive && uMsg == WM_IME_STARTCOMPOSITION)
+        {
+            m_searchActive = true;
+            m_searchTextBox.SetFocus(true);
+            m_searchTextBox.SetText(L"");
+            m_searchQuery.clear();
+            m_searchResults.clear();
+            InvalidateRect(hWnd, nullptr, FALSE);
+        }
+
         if (m_searchActive)
         {
             bool repaint = false;
@@ -3206,11 +3235,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_CHAR:
         if (wParam >= 32 && !m_searchActive)
         {
+            // Activate search mode temporarily and immediately repaint so the
+            // search box appears before the character is processed.
+            // NOTE: do NOT persist this activation to config – the next popup
+            // open should still show the category tab bar as before.
             m_searchActive = true;
             m_searchTextBox.SetFocus(true);
             m_searchTextBox.SetText(L"");
             m_searchQuery.clear();
             m_searchResults.clear();
+            InvalidateRect(hWnd, nullptr, FALSE);
         }
 
         if (m_searchActive)
