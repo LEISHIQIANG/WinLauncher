@@ -37,7 +37,7 @@ void UsageHistoryStore::RecordAccepted(const std::wstring& key)
 {
     if (key.empty()) return;
     std::lock_guard<std::mutex> lock(m_mutex); LoadLocked();
-    auto& entry = m_entries[key]; ++entry.launchCount; entry.lastUsedUtc = GetSystemTimeAsFileTime ? [] { FILETIME ft{}; GetSystemTimeAsFileTime(&ft); ULARGE_INTEGER value{}; value.LowPart=ft.dwLowDateTime; value.HighPart=ft.dwHighDateTime; return value.QuadPart; }() : 0;
+    auto& entry = m_entries[key]; ++entry.launchCount; FILETIME ft{}; GetSystemTimeAsFileTime(&ft); ULARGE_INTEGER value{}; value.LowPart=ft.dwLowDateTime; value.HighPart=ft.dwHighDateTime; entry.lastUsedUtc = value.QuadPart;
     if (m_entries.size() > 500) {
         auto oldest = std::min_element(m_entries.begin(), m_entries.end(), [](const auto& a, const auto& b) { return a.second.lastUsedUtc < b.second.lastUsedUtc; });
         if (oldest != m_entries.end()) m_entries.erase(oldest);

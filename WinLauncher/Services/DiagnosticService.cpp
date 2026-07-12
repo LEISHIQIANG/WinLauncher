@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <fstream>
 #include <filesystem>
+#include <vector>
 
 DiagnosticService::DiagnosticService(Logger* logger) : m_logger(logger) {}
 std::wstring DiagnosticService::GetDirectory() const { auto p=ConfigPath::GetUserDataDirectory()+L"\\diagnostics"; ConfigPath::EnsureDirectoryExists(p); return p; }
