@@ -50,13 +50,18 @@ private:
     bool HitTestExportMigration(POINT pt);
     bool HitTestImportMigration(POINT pt);
     bool HitTestClearUsageHistory(POINT pt);
+    bool HitTestOpenSourceUrl(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestHardwareAcceleration(POINT pt);
     bool HitTestAnimationToggle(POINT pt);
-    bool HitTestAnimationDuration(POINT pt, int& buttonType);
+    bool HitTestFileSelectionValidity(POINT pt, int& buttonType);
+    bool HitTestAnimationDurationSlider(POINT pt);
+    bool HitTestAnimationDurationApply(POINT pt);
     bool HitTestGlobalScaleSlider(POINT pt);
     bool HitTestGlobalScaleApply(POINT pt);
+    int AnimationDurationFromPoint(POINT pt) const;
+    int PendingAnimationDuration();
     int GlobalScaleFromPoint(POINT pt) const;
     int PendingGlobalScalePercent();
     bool HitTestHideTrayIcon(POINT pt);
@@ -103,6 +108,7 @@ private:
     bool m_hoveredExportMigration = false;
     bool m_hoveredImportMigration = false;
     bool m_hoveredClearUsageHistory = false;
+    bool m_hoveredOpenSourceUrl = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredPopupAlignMode = -1;
     int m_hoveredPopupAutoClose = -1;
@@ -115,7 +121,7 @@ private:
     int m_hoveredThemeColor = -1; // 0 to 9
     int m_hoveredWindowMode = -1; // 0 = glow, 1 = acrylic, 2 = glass
 
-    int m_hoveredAppearanceSetting = -1; // 0 to 7
+    int m_hoveredAppearanceSetting = -1; // 0 to 8
     int m_hoveredAppearanceButton = 0;   // 1 = minus, 2 = plus, 0 = none
 
     int m_hoveredThemeDetailSetting = -1; // 0 to 5
@@ -123,8 +129,12 @@ private:
 
     bool m_hoveredAnimationToggle = false;
     bool m_hoveredHardwareAcceleration = false;
-    bool m_hoveredAnimationDuration = false;
-    int m_hoveredAnimationDurationButton = 0; // 1 = minus, 2 = plus, 0 = none
+    bool m_hoveredFileSelectionValidity = false;
+    int m_hoveredFileSelectionValidityButton = 0; // 1 = minus, 2 = plus, 0 = none
+    bool m_hoveredAnimationDurationSlider = false;
+    bool m_hoveredAnimationDurationApply = false;
+    bool m_draggingAnimationDurationSlider = false;
+    int m_pendingAnimationDuration = 0;
     bool m_hoveredGlobalScaleSlider = false;
     bool m_hoveredGlobalScaleApply = false;
     bool m_draggingGlobalScaleSlider = false;

@@ -639,7 +639,7 @@ void ConfigWindow::SetSettingsMode(bool settingsMode)
     if (m_showSettings == settingsMode)
     {
         if (m_showSettings)
-            m_settingsPage.SetCategory(m_currentSettingsCategory);
+            m_settingsPage.SetCategory(m_currentSettingsCategory == 3 ? 4 : (m_currentSettingsCategory == 4 ? 3 : m_currentSettingsCategory));
         return;
     }
 
@@ -648,7 +648,7 @@ void ConfigWindow::SetSettingsMode(bool settingsMode)
     if (m_showSettings)
     {
         m_currentPage = &m_settingsPage;
-        m_settingsPage.SetCategory(m_currentSettingsCategory);
+        m_settingsPage.SetCategory(m_currentSettingsCategory == 3 ? 4 : (m_currentSettingsCategory == 4 ? 3 : m_currentSettingsCategory));
     }
     else
     {
@@ -1200,8 +1200,8 @@ std::wstring ConfigWindow::GetCategoryName(size_t index)
         if (index == 0) return L"系统设置";
         if (index == 1) return L"弹窗外观";
         if (index == 2) return L"弹窗交互";
-        if (index == 3) return L"配置管理";
-        if (index == 4) return L"插件管理";
+        if (index == 3) return L"插件管理";
+        if (index == 4) return L"配置管理";
         if (index == 5) return L"关于软件";
         return L"";
     }
@@ -1225,7 +1225,7 @@ void ConfigWindow::SetCurrentCategoryIndex(int index)
         if (index >= 0 && index < 6)
         {
             m_currentSettingsCategory = index;
-            m_settingsPage.SetCategory(index);
+            m_settingsPage.SetCategory(index == 3 ? 4 : (index == 4 ? 3 : index));
         }
     }
     else
@@ -1395,6 +1395,17 @@ int ConfigWindow::GetPopupIconLabelFontSize()
 void ConfigWindow::SetPopupIconLabelFontSize(int size)
 {
     if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupIconLabelFontSize(size);
+}
+
+int ConfigWindow::GetPopupHeaderSizeLevel()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetPopupHeaderSizeLevel();
+    return 5;
+}
+
+void ConfigWindow::SetPopupHeaderSizeLevel(int level)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetPopupHeaderSizeLevel(level);
 }
 
 int ConfigWindow::GetPopupIconGap()
@@ -1600,6 +1611,17 @@ int ConfigWindow::GetHoverLeaveDelay()
 void ConfigWindow::SetHoverLeaveDelay(int delayMs)
 {
     if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetHoverLeaveDelay(delayMs);
+}
+
+int ConfigWindow::GetFileSelectionValiditySeconds()
+{
+    if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetFileSelectionValiditySeconds();
+    return 15;
+}
+
+void ConfigWindow::SetFileSelectionValiditySeconds(int seconds)
+{
+    if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetFileSelectionValiditySeconds(seconds);
 }
 
 int ConfigWindow::GetSortMode()

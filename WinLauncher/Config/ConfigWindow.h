@@ -90,6 +90,8 @@ public:
     virtual void SetPopupIconSize(int size) override;
     virtual int GetPopupIconLabelFontSize() override;
     virtual void SetPopupIconLabelFontSize(int size) override;
+    virtual int GetPopupHeaderSizeLevel() override;
+    virtual void SetPopupHeaderSizeLevel(int level) override;
     virtual int GetPopupIconGap() override;
     virtual void SetPopupIconGap(int gap) override;
     virtual int GetPopupIconRadius() override;
@@ -114,6 +116,8 @@ public:
     virtual void SetPopupMultiOpenWhenPinned(bool enabled) override;
     virtual int GetHoverLeaveDelay() override;
     virtual void SetHoverLeaveDelay(int delayMs) override;
+    virtual int GetFileSelectionValiditySeconds() override;
+    virtual void SetFileSelectionValiditySeconds(int seconds) override;
     virtual int GetSortMode() override;
     virtual void SetSortMode(int mode) override;
     virtual bool GetAnimationEnabled() override;

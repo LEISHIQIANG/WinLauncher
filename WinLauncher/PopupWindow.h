@@ -41,6 +41,7 @@ public:
     int GetCellMarginX() const;
     int GetCellMarginY() const;
     int GetDockHeight() const;
+    int GetHeaderSizeLevel() const;
 
     void UpdateWindowSize();
 
@@ -51,6 +52,20 @@ protected:
     virtual bool ShouldAutoResizeOnDpiChange() const override { return false; }
 
 private:
+    struct HeaderLayout
+    {
+        int topBarHeight;
+        float controlHeight;
+        float textSize;
+        float tabHoverRadius;
+        float selectionIndicatorWidth;
+        float searchTextInset;
+    };
+
+    HeaderLayout GetHeaderLayout() const;
+    int GetFileSelectionValiditySeconds() const;
+    bool IsFileSelectionValid(double elapsedSeconds) const;
+    void ClearCapturedFileSelection();
     int HitTest(POINT pt);
     int HitTestDot(POINT pt);
     int HitTestDock(POINT pt);
@@ -127,6 +142,7 @@ private:
 
     ComPtr<IDWriteTextFormat> m_popupTextFormat;
     ComPtr<IDWriteTextFormat> m_searchTextFormat;
+    ComPtr<IDWriteTextFormat> m_tabTextFormat;
 
     // Search and Tab bar state variables
     bool m_searchActive;

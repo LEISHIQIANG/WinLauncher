@@ -61,7 +61,12 @@ static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
 static const double POPUP_SLOW_SHOW_MS = 24.0;
 static const double POPUP_SLOW_FRAME_MS = 16.0;
 static const double POPUP_SLOW_ICON_REFRESH_MS = 40.0;
-static const double FILE_SELECTION_VALIDITY_DURATION = 15.0;
+static const int DEFAULT_FILE_SELECTION_VALIDITY_SECONDS = 15;
+
+static bool IsSelectionWithinValidity(double elapsedSeconds, int validitySeconds)
+{
+    return validitySeconds < 0 || elapsedSeconds < validitySeconds;
+}
 
 static bool ShouldRenderGeneratedDefaultIcon(const RendPopupPage& page, const RendShortcutInfo& shortcut)
 {
@@ -283,6 +288,53 @@ int PopupWindow::GetDockHeight() const
 {
     if (m_appCtx && m_appCtx->configService) return m_appCtx->configService->GetDockHeight();
     return 50;
+}
+
+int PopupWindow::GetHeaderSizeLevel() const
+{
+    int level = (m_appCtx && m_appCtx->configService)
+        ? m_appCtx->configService->GetPopupHeaderSizeLevel()
+        : 5;
+    return (level >= 1 && level <= 9) ? level : 5;
+}
+
+PopupWindow::HeaderLayout PopupWindow::GetHeaderLayout() const
+{
+    // Keep the header compact at every level.  The typography has a slightly
+    // wider range, while the total title-bar height changes only one pixel per
+    // level around the default fifth level.
+    static constexpr HeaderLayout kLayouts[] = {
+        { 28, 19.0f,  7.5f, 3.0f, 24.0f, 24.0f },
+        { 29, 20.0f,  8.0f, 3.0f, 26.0f, 25.0f },
+        { 30, 20.5f, 8.5f, 3.5f, 28.0f, 26.0f },
+        { 31, 21.0f, 8.75f,4.0f, 30.0f, 27.0f },
+        { 32, 22.0f, 9.0f, 4.0f, 32.0f, 28.0f },
+        { 33, 22.5f, 9.75f,4.0f, 34.0f, 29.0f },
+        { 34, 23.0f,10.5f, 4.5f, 36.0f, 30.0f },
+        { 35, 24.0f,11.25f,4.5f, 38.0f, 31.0f },
+        { 36, 25.0f,12.0f, 5.0f, 40.0f, 32.0f }
+    };
+    return kLayouts[GetHeaderSizeLevel() - 1];
+}
+
+int PopupWindow::GetFileSelectionValiditySeconds() const
+{
+    const int seconds = (m_appCtx && m_appCtx->configService)
+        ? m_appCtx->configService->GetFileSelectionValiditySeconds()
+        : DEFAULT_FILE_SELECTION_VALIDITY_SECONDS;
+    return (seconds == -1 || (seconds >= 0 && seconds <= 20)) ? seconds : DEFAULT_FILE_SELECTION_VALIDITY_SECONDS;
+}
+
+bool PopupWindow::IsFileSelectionValid(double elapsedSeconds) const
+{
+    return IsSelectionWithinValidity(elapsedSeconds, GetFileSelectionValiditySeconds());
+}
+
+void PopupWindow::ClearCapturedFileSelection()
+{
+    std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
+    m_selectedFilesCtx.filePaths.clear();
+    m_selectedFilesCtx.isPending = false;
 }
 
 
@@ -523,7 +575,7 @@ void PopupWindow::UpdateWindowSize()
     int rows = GetRows();
     int w = cols * CellWidth() + GetWndPadding() * 2 - GetIconGap();
     int indicatorHeight = 0;
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
     int dockRows = GetDockHeight();
     int ch = CellHeight();
     int wndPad = GetWndPadding();
@@ -717,7 +769,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     int rows = this->GetRows();
     int w = cols * this->CellWidth() + this->GetWndPadding() * 2 - this->GetIconGap();
     int indicatorHeight = 0;
-    int topBarHeight = 32;
+    int topBarHeight = this->GetHeaderLayout().topBarHeight;
     int dockRows = this->GetDockHeight();
     int ch = this->CellHeight();
     int wndPad = this->GetWndPadding();
@@ -850,27 +902,29 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         this->m_cursorBlink = true;
         this->ResetPressedShortcut();
 
-        // Initialize or update the bounds of the search textbox
+        // Initialize or update the bounds of the search textbox.  The same
+        // level drives this control and the category title bar.
+        HeaderLayout header = this->GetHeaderLayout();
         D2D1_RECT_F topRect = D2D1::RectF(
             (float)wndPad,
             (float)wndPad,
             (float)w - wndPad,
-            (float)wndPad + 22.0f
+            (float)wndPad + header.controlHeight
         );
+
+        UIStyle::TextBoxStyle style;
+        style.bgNormal = UIStyle::ThemeColor::ButtonBgNormal();
+        style.borderNormal = UIStyle::ThemeColor::ButtonBorderNormal();
+        style.borderFocused = UIStyle::ThemeColor::ButtonBorderNormal();
+        style.paddingLeft = header.searchTextInset;
+        style.paddingTop = std::max(2.0f, (header.controlHeight - header.textSize) * 0.5f - 1.0f);
+        style.paddingBottom = style.paddingTop;
+        style.paddingRight = 8.0f;
+        style.fontSize = this->GetSearchFontSize();
+        this->m_searchTextBox.SetStyle(style);
 
         if (!this->m_searchTextBoxCreated)
         {
-            UIStyle::TextBoxStyle style;
-            style.bgNormal = UIStyle::ThemeColor::ButtonBgNormal();
-            style.borderNormal = UIStyle::ThemeColor::ButtonBorderNormal();
-            style.borderFocused = UIStyle::ThemeColor::ButtonBorderNormal();
-            style.paddingLeft = 28.0f; // Leave space for magnifying glass
-            style.paddingTop = 4.0f;
-            style.paddingBottom = 4.0f;
-            style.paddingRight = 8.0f;
-            style.fontSize = this->GetSearchFontSize();
-            this->m_searchTextBox.SetStyle(style);
-
             this->m_searchTextBox.Create(this->GetHWND(), this->m_dw.Get(), topRect, L"");
             this->m_searchTextBoxCreated = true;
         }
@@ -1133,12 +1187,7 @@ float PopupWindow::GetFontSize() const
 
 float PopupWindow::GetSearchFontSize() const
 {
-    // Keep the search input independent from the icon-label font preference.
-    // Base size is 8.0f at icon size 16.0f, scaling linearly by 0.15f per pixel of icon size.
-    // E.g., at default 24px icon size, fontSize = 8.0f + 8 * 0.15f = 9.2f (minimum 9.0f).
-    // For 32px icon size, fontSize = 8.0f + 16 * 0.15f = 10.4f.
-    float size = 8.0f + (GetIconSize() - 16.0f) * 0.15f;
-    return size < 9.0f ? 9.0f : size; // 限制最小字体尺寸不低于 9.0f，防止中文小字号时缩为一坨黑
+    return GetHeaderLayout().textSize;
 }
 
 int PopupWindow::GetLabelHeight() const
@@ -1153,6 +1202,7 @@ void PopupWindow::UpdateTextFormat()
 
     m_popupTextFormat.Reset();
     m_searchTextFormat.Reset();
+    m_tabTextFormat.Reset();
 
     float fontSize = GetFontSize();
     float searchFontSize = GetSearchFontSize();
@@ -1171,6 +1221,14 @@ void PopupWindow::UpdateTextFormat()
         searchFontSize,
         DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_TEXT_ALIGNMENT_LEADING,
+        DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+    UIStyle::Typography::CreateTextFormat(
+        m_dw.Get(),
+        &m_tabTextFormat,
+        GetHeaderLayout().textSize,
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_CENTER,
         DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 }
 
@@ -1388,7 +1446,7 @@ void PopupWindow::ExecuteSearchResult(int index)
             double now = GetTimeInSeconds();
             if (!m_selectedFilesCtx.isPending &&
                 !m_selectedFilesCtx.filePaths.empty() &&
-                (now - m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
+                IsFileSelectionValid(now - m_selectedFilesCtx.capturedTime))
             {
                 files = m_selectedFilesCtx.filePaths;
                 m_selectedFilesCtx.filePaths.clear();
@@ -1476,6 +1534,7 @@ void PopupWindow::UpdateImeWindowPosition()
 void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 {
     int wndPad = GetWndPadding();
+    HeaderLayout header = GetHeaderLayout();
     RECT cr; GetClientRect(GetHWND(), &cr);
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
@@ -1484,7 +1543,7 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
         (float)wndPad,
         (float)wndPad,
         w - wndPad,
-        (float)wndPad + 22.0f
+        (float)wndPad + header.controlHeight
     );
 
     if (m_searchActive)
@@ -1492,14 +1551,16 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
         // Draw textbox background, border, selection, text, and caret
         m_searchTextBox.Paint(rt, scale);
 
-        // 2. Draw magnifying glass icon centered inside 22px height
-        float cx = topRect.left + 16.0f;
-        float cy = topRect.top + 11.0f;
+        // Keep the search glyph in proportion with the configured header.
+        float cx = topRect.left + header.searchTextInset * 0.55f;
+        float cy = topRect.top + header.controlHeight * 0.5f;
+        float iconRadius = std::max(3.0f, header.controlHeight * 0.18f);
         auto iconBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextMuted().d2d);
         if (iconBrush)
         {
-            rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), 4.0f, 4.0f), iconBrush.Get(), UIStyle::Metrics::IconStroke());
-            rt->DrawLine(D2D1::Point2F(cx + 2.8f, cy + 2.8f), D2D1::Point2F(cx + 6.5f, cy + 6.5f), iconBrush.Get(), UIStyle::Metrics::IconStroke());
+            rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), iconRadius, iconRadius), iconBrush.Get(), UIStyle::Metrics::IconStroke());
+            rt->DrawLine(D2D1::Point2F(cx + iconRadius * 0.7f, cy + iconRadius * 0.7f),
+                D2D1::Point2F(cx + iconRadius * 1.6f, cy + iconRadius * 1.6f), iconBrush.Get(), UIStyle::Metrics::IconStroke());
         }
 
         // 3. Draw placeholder if empty
@@ -1511,7 +1572,7 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
             if (placeholderBrush && m_searchTextFormat)
             {
                 rt->DrawTextW(L"搜索...", 5, m_searchTextFormat.Get(),
-                    D2D1::RectF(topRect.left + 28.0f, topRect.top, topRect.right - 8.0f, topRect.bottom),
+                    D2D1::RectF(topRect.left + header.searchTextInset, topRect.top, topRect.right - 8.0f, topRect.bottom),
                     placeholderBrush.Get());
             }
         }
@@ -1535,7 +1596,7 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 
                 if (i == m_hoveredTab)
                 {
-                    D2D1_ROUNDED_RECT roundedTab = D2D1::RoundedRect(tabRect, 4.0f, 4.0f);
+                    D2D1_ROUNDED_RECT roundedTab = D2D1::RoundedRect(tabRect, header.tabHoverRadius, header.tabHoverRadius);
                     auto hoverBg = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d);
                     if (hoverBg) rt->FillRoundedRectangle(roundedTab, hoverBg.Get());
                 }
@@ -1556,22 +1617,20 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
                 textColor.a = alpha;
 
                 auto tabTextBrush = GetOrCreateBrush(textColor);
-                if (tabTextBrush && m_popupTextFormat)
+                if (tabTextBrush && m_tabTextFormat)
                 {
-                    rt->DrawTextW(m_pages[i].name.c_str(), (UINT32)m_pages[i].name.size(), m_popupTextFormat.Get(),
+                    rt->DrawTextW(m_pages[i].name.c_str(), (UINT32)m_pages[i].name.size(), m_tabTextFormat.Get(),
                         tabRect, tabTextBrush.Get());
                 }
             }
 
-            // Draw one single sliding selection indicator line after the loop
-            float lineW = 32.0f;
-            float lineH = 1.35f;
-            float lineX = topRect.left + m_scrollPosition * tabWidth + (tabWidth - lineW) / 2.0f;
-            float lineY = topRect.bottom - 1.0f;
+            float lineW = std::min(header.selectionIndicatorWidth, std::max(10.0f, tabWidth - 4.0f));
+            float lineH = std::max(1.2f, header.controlHeight * 0.06f);
+            float lineX = topRect.left + m_scrollPosition * tabWidth + (tabWidth - lineW) * 0.5f;
+            float lineY = topRect.bottom - lineH;
             D2D1_ROUNDED_RECT indicatorLine = D2D1::RoundedRect(
                 D2D1::RectF(lineX, lineY, lineX + lineW, lineY + lineH),
-                1.0f, 1.0f
-            );
+                lineH * 0.5f, lineH * 0.5f);
             D2D1_COLOR_F accentLine = UIStyle::ThemeColor::Accent().d2d;
             accentLine.a = 0.82f;
             auto accentBrush = GetOrCreateBrush(accentLine);
@@ -1587,7 +1646,7 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
     float scale = GetWindowScale(GetHWND());
     float w = (float)cr.right / scale;
 
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
 
     if (n == 0)
     {
@@ -1722,6 +1781,7 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
                         subBrush.Get());
                 }
             }
+
         }
     }
 }
@@ -1977,7 +2037,7 @@ void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
     int iconGap = GetIconGap();
     float iconRad = (float)GetIconRadius();
     float cardRad = iconRad + 2.0f;
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
 
     // Card backgrounds
     for (int i = 0; i < n; i++)
@@ -2107,7 +2167,7 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
     int cellMarginY = GetCellMarginY();
     float iconRad = (float)GetIconRadius();
     float cardRad = iconRad + 2.0f;
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
 
     // Gap between upper section and dock = 2 * wndPad, dividing line in the middle
     int mainRows = GetRows();
@@ -2138,7 +2198,7 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
         if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty())
         {
             elapsed = now - m_selectedFilesCtx.capturedTime;
-            if (elapsed < FILE_SELECTION_VALIDITY_DURATION)
+            if (IsFileSelectionValid(elapsed))
             {
                 hasActiveSelection = true;
             }
@@ -2147,7 +2207,10 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
 
     if (hasActiveSelection)
     {
-        float progress = (float)(1.0 - (elapsed / FILE_SELECTION_VALIDITY_DURATION));
+        const int validitySeconds = GetFileSelectionValiditySeconds();
+        float progress = validitySeconds < 0
+            ? 1.0f
+            : (float)(1.0 - (elapsed / validitySeconds));
         if (progress < 0.0f) progress = 0.0f;
         if (progress > 1.0f) progress = 1.0f;
 
@@ -2249,7 +2312,7 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
 
 int PopupWindow::HitTest(POINT pt)
 {
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
     int cols = GetColumns();
     int rows = GetRows();
     int cw = CellWidth(), ch = CellHeight();
@@ -2312,7 +2375,7 @@ int PopupWindow::HitTestDock(POINT pt)
     int wndPad      = GetWndPadding();
     int iconGap     = GetIconGap();
     int mainRows    = GetRows();
-    int topBarHeight = 32;
+    int topBarHeight = GetHeaderLayout().topBarHeight;
 
     int mainGridCardBottom = wndPad + mainRows * ch - iconGap + topBarHeight;
     int lineY = mainGridCardBottom + wndPad;
@@ -2489,7 +2552,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             int cols = GetColumns();
             int rows = GetRows();
             int w = cols * CellWidth() + GetWndPadding() * 2 - GetIconGap();
-            int topBarHeight = 32;
+            int topBarHeight = GetHeaderLayout().topBarHeight;
             int dockRows = GetDockHeight();
             int ch = CellHeight();
             int wndPad = GetWndPadding();
@@ -2575,6 +2638,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();
             if (!autoClose && !m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)
             {
+                ClearCapturedFileSelection();
                 HideSelf();
             }
             return 0;
@@ -2635,6 +2699,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
                 if (!imeActive)
                 {
+                    ClearCapturedFileSelection();
                     HideSelf();
                 }
             }
@@ -2656,10 +2721,12 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 isEmpty = m_selectedFilesCtx.filePaths.empty();
             }
 
-            if (elapsed >= FILE_SELECTION_VALIDITY_DURATION || isEmpty)
+            const int validitySeconds = GetFileSelectionValiditySeconds();
+            const bool selectionExpired = !IsSelectionWithinValidity(elapsed, validitySeconds);
+            if (selectionExpired || isEmpty || validitySeconds < 0)
             {
                 KillTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID);
-                if (elapsed >= FILE_SELECTION_VALIDITY_DURATION)
+                if (selectionExpired)
                 {
                     std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
                     m_selectedFilesCtx.filePaths.clear();
@@ -2759,7 +2826,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
         // Handle tab hover
         int newHoveredTab = -1;
-        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + GetHeaderLayout().controlHeight)
         {
             int numPages = (int)m_pages.size();
             if (numPages > 0)
@@ -2857,7 +2924,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
 
         // Handle search box click when search is active
-        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + GetHeaderLayout().controlHeight)
         {
             RECT cr; GetClientRect(hWnd, &cr);
             float w = (float)cr.right / scale;
@@ -2877,7 +2944,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
 
         // Handle tab click
-        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (!m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + GetHeaderLayout().controlHeight)
         {
             int numPages = (int)m_pages.size();
             if (numPages > 0)
@@ -2964,7 +3031,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
 
         // Handle search box double click
-        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22)
+        if (m_searchActive && pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + GetHeaderLayout().controlHeight)
         {
             RECT cr; GetClientRect(hWnd, &cr);
             float w = (float)cr.right / scale;
@@ -2981,7 +3048,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         // On blank area double-click → refresh icons
         if (!m_searchActive || m_searchQuery.empty())
         {
-            bool onTab = pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + 22;
+            bool onTab = pt.y >= GetWndPadding() && pt.y <= GetWndPadding() + GetHeaderLayout().controlHeight;
             int dockHit = HitTestDock(pt);
             int hit = HitTest(pt);
             bool onShortcut = hit >= 0 && hit < (int)m_pages[m_currentPage].shortcuts.size();
@@ -3374,7 +3441,7 @@ static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, A
         double now = GetTimeInSeconds();
         if (!PopupWindow::s_instance->m_selectedFilesCtx.isPending && 
             !PopupWindow::s_instance->m_selectedFilesCtx.filePaths.empty() && 
-            (now - PopupWindow::s_instance->m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
+            PopupWindow::s_instance->IsFileSelectionValid(now - PopupWindow::s_instance->m_selectedFilesCtx.capturedTime))
         {
             files = PopupWindow::s_instance->m_selectedFilesCtx.filePaths;
         }
@@ -4516,7 +4583,7 @@ void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
     {
         std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
         double now = GetTimeInSeconds();
-        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty() && (now - m_selectedFilesCtx.capturedTime < FILE_SELECTION_VALIDITY_DURATION))
+        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty() && IsFileSelectionValid(now - m_selectedFilesCtx.capturedTime))
         {
             files = m_selectedFilesCtx.filePaths;
             hasFiles = true;

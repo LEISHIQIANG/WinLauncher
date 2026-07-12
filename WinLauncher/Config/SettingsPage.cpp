@@ -27,16 +27,25 @@ namespace
     constexpr float CARD_HEIGHT = 32.0f;
 
     constexpr float GLOBAL_SCALE_CARD_LEFT = 160.0f;
-    constexpr float GLOBAL_SCALE_CARD_TOP = 112.0f;
+    constexpr float ANIMATION_DURATION_CARD_TOP = 112.0f;
+    constexpr float ANIMATION_DURATION_TRACK_Y = 130.0f;
+    constexpr float ANIMATION_DURATION_APPLY_TOP = 118.0f;
+    constexpr float ANIMATION_DURATION_APPLY_BOTTOM = 142.0f;
+    constexpr int ANIMATION_DURATION_MIN_MS = 50;
+    constexpr int ANIMATION_DURATION_MAX_MS = 1000;
+    constexpr int ANIMATION_DURATION_STEP_MS = 50;
+
+    constexpr float GLOBAL_SCALE_CARD_TOP = 154.0f;
     constexpr float GLOBAL_SCALE_CARD_RIGHT = CONTENT_RIGHT;
-    constexpr float GLOBAL_SCALE_CARD_BOTTOM = 148.0f;
+    constexpr float GLOBAL_SCALE_CARD_BOTTOM = 190.0f;
     constexpr float GLOBAL_SCALE_TRACK_LEFT = 250.0f;
     constexpr float GLOBAL_SCALE_TRACK_RIGHT = 402.0f;
-    constexpr float GLOBAL_SCALE_TRACK_Y = 130.0f;
+    constexpr float GLOBAL_SCALE_TRACK_Y = 172.0f;
     constexpr float GLOBAL_SCALE_APPLY_LEFT = 448.0f;
-    constexpr float GLOBAL_SCALE_APPLY_TOP = 118.0f;
+    constexpr float GLOBAL_SCALE_APPLY_TOP = 160.0f;
     constexpr float GLOBAL_SCALE_APPLY_RIGHT = 506.0f;
-    constexpr float GLOBAL_SCALE_APPLY_BOTTOM = 142.0f;
+    constexpr float GLOBAL_SCALE_APPLY_BOTTOM = 184.0f;
+    constexpr float SYSTEM_SETTINGS_CONTENT_OFFSET = 42.0f;
 
     constexpr float TRIGGER_TOP = 108.0f;
     constexpr float TRIGGER_BOTTOM = 136.0f;
@@ -75,6 +84,11 @@ namespace
     D2D1_RECT_F TriggerBlacklistEditRect()
     {
         return D2D1::RectF(438.0f, 436.0f, 502.0f, 456.0f);
+    }
+
+    D2D1_RECT_F AboutOpenSourceLinkRect()
+    {
+        return D2D1::RectF(CONTENT_LEFT, 412.0f, CONTENT_RIGHT, 442.0f);
     }
 
     bool PointInRect(const D2D1_RECT_F& rect, POINT pt)
@@ -358,6 +372,25 @@ int SettingsPage::PendingGlobalScalePercent()
     return UIStyle::Scaling::ClampPercent(m_pendingGlobalScalePercent);
 }
 
+int SettingsPage::PendingAnimationDuration()
+{
+    if (m_pendingAnimationDuration == 0)
+        m_pendingAnimationDuration = m_owner ? m_owner->GetAnimationDuration() : 200;
+    if (m_pendingAnimationDuration < ANIMATION_DURATION_MIN_MS) m_pendingAnimationDuration = ANIMATION_DURATION_MIN_MS;
+    if (m_pendingAnimationDuration > ANIMATION_DURATION_MAX_MS) m_pendingAnimationDuration = ANIMATION_DURATION_MAX_MS;
+    return m_pendingAnimationDuration;
+}
+
+int SettingsPage::AnimationDurationFromPoint(POINT pt) const
+{
+    float x = (float)pt.x;
+    if (x < GLOBAL_SCALE_TRACK_LEFT) x = GLOBAL_SCALE_TRACK_LEFT;
+    if (x > GLOBAL_SCALE_TRACK_RIGHT) x = GLOBAL_SCALE_TRACK_RIGHT;
+    float t = (x - GLOBAL_SCALE_TRACK_LEFT) / (GLOBAL_SCALE_TRACK_RIGHT - GLOBAL_SCALE_TRACK_LEFT);
+    int steps = (int)std::round(t * ((ANIMATION_DURATION_MAX_MS - ANIMATION_DURATION_MIN_MS) / ANIMATION_DURATION_STEP_MS));
+    return ANIMATION_DURATION_MIN_MS + steps * ANIMATION_DURATION_STEP_MS;
+}
+
 int SettingsPage::GlobalScaleFromPoint(POINT pt) const
 {
     float x = (float)pt.x;
@@ -383,6 +416,7 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredClearConfig = false;
     m_hoveredClearConfigHistory = false;
     m_hoveredImportJson = false;
+    m_hoveredOpenSourceUrl = false;
     m_hoveredTrigger = -1;
     m_hoveredPopupAlignMode = -1;
     m_hoveredPopupAutoClose = -1;
@@ -399,8 +433,11 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredThemeDetailButton = 0;
     m_hoveredAnimationToggle = false;
     m_hoveredHardwareAcceleration = false;
-    m_hoveredAnimationDuration = false;
-    m_hoveredAnimationDurationButton = 0;
+    m_hoveredFileSelectionValidity = false;
+    m_hoveredFileSelectionValidityButton = 0;
+    m_hoveredAnimationDurationSlider = false;
+    m_hoveredAnimationDurationApply = false;
+    m_draggingAnimationDurationSlider = false;
     m_hoveredGlobalScaleSlider = false;
     m_hoveredGlobalScaleApply = false;
     m_draggingGlobalScaleSlider = false;
@@ -413,6 +450,7 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredPluginToggle = -1;
     m_hoveredPluginUninstall = -1;
     m_pendingGlobalScalePercent = m_owner ? m_owner->GetGlobalScalePercent() : 100;
+    m_pendingAnimationDuration = m_owner ? m_owner->GetAnimationDuration() : 200;
 }
 
 void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
@@ -501,6 +539,79 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         drawInlineCheckbox(330.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
         drawInlineCheckbox(415.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
 
+        // Animation duration uses the same staged slider/apply pattern as global scale.
+        {
+            const int currentDuration = m_owner->GetAnimationDuration();
+            const int pendingDuration = PendingAnimationDuration();
+            const bool hasPendingChange = pendingDuration != currentDuration;
+            const bool isRowHovered = m_hoveredAnimationDurationSlider || m_hoveredAnimationDurationApply || m_draggingAnimationDurationSlider;
+            const D2D1_RECT_F cardRect = D2D1::RectF(
+                GLOBAL_SCALE_CARD_LEFT, ANIMATION_DURATION_CARD_TOP, GLOBAL_SCALE_CARD_RIGHT, ANIMATION_DURATION_CARD_TOP + CARD_HEIGHT);
+            const D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
+
+            ID2D1SolidColorBrush* cardBrush = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isRowHovered ? 0.06f : 0.018f), &cardBrush);
+            if (cardBrush) { rt->FillRoundedRectangle(roundedCard, cardBrush); cardBrush->Release(); }
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isRowHovered ? 0.105f : 0.045f), &cardBrush);
+            if (cardBrush) { rt->DrawRoundedRectangle(roundedCard, cardBrush, UIStyle::Metrics::ControlStroke()); cardBrush->Release(); }
+
+            if (tfDefault)
+            {
+                ID2D1SolidColorBrush* textBrush = nullptr;
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
+                if (textBrush)
+                {
+                    rt->DrawTextW(L"动画时长", 4, tfDefault, D2D1::RectF(170.0f, ANIMATION_DURATION_CARD_TOP + 8.0f, 240.0f, ANIMATION_DURATION_CARD_TOP + 28.0f), textBrush);
+                    wchar_t valueBuf[32];
+                    swprintf_s(valueBuf, L"%dms", pendingDuration);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(valueBuf, (UINT32)wcslen(valueBuf), tfDefault, D2D1::RectF(406.0f, ANIMATION_DURATION_CARD_TOP + 8.0f, 444.0f, ANIMATION_DURATION_CARD_TOP + 28.0f), textBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    textBrush->Release();
+                }
+            }
+
+            ID2D1SolidColorBrush* trackBrush = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, m_hoveredAnimationDurationSlider ? 0.20f : 0.12f), &trackBrush);
+            if (trackBrush)
+            {
+                rt->DrawLine(D2D1::Point2F(GLOBAL_SCALE_TRACK_LEFT, ANIMATION_DURATION_TRACK_Y), D2D1::Point2F(GLOBAL_SCALE_TRACK_RIGHT, ANIMATION_DURATION_TRACK_Y), trackBrush, 3.0f);
+                trackBrush->Release();
+            }
+            const float sliderT = (pendingDuration - ANIMATION_DURATION_MIN_MS) / (float)(ANIMATION_DURATION_MAX_MS - ANIMATION_DURATION_MIN_MS);
+            const float thumbX = GLOBAL_SCALE_TRACK_LEFT + sliderT * (GLOBAL_SCALE_TRACK_RIGHT - GLOBAL_SCALE_TRACK_LEFT);
+            ID2D1SolidColorBrush* accentBrush = nullptr;
+            rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
+            if (accentBrush)
+            {
+                rt->DrawLine(D2D1::Point2F(GLOBAL_SCALE_TRACK_LEFT, ANIMATION_DURATION_TRACK_Y), D2D1::Point2F(thumbX, ANIMATION_DURATION_TRACK_Y), accentBrush, 3.0f);
+                rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(thumbX, ANIMATION_DURATION_TRACK_Y), 6.0f, 6.0f), accentBrush);
+                accentBrush->Release();
+            }
+
+            D2D1_COLOR_F applyColor = hasPendingChange ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+            applyColor.a = hasPendingChange ? (m_hoveredAnimationDurationApply ? 0.28f : 0.20f) : (m_hoveredAnimationDurationApply ? 0.075f : 0.035f);
+            ID2D1SolidColorBrush* applyBrush = nullptr;
+            const D2D1_ROUNDED_RECT applyRect = D2D1::RoundedRect(D2D1::RectF(GLOBAL_SCALE_APPLY_LEFT, ANIMATION_DURATION_APPLY_TOP, GLOBAL_SCALE_APPLY_RIGHT, ANIMATION_DURATION_APPLY_BOTTOM), 5.0f, 5.0f);
+            rt->CreateSolidColorBrush(applyColor, &applyBrush);
+            if (applyBrush) { rt->FillRoundedRectangle(applyRect, applyBrush); applyBrush->Release(); }
+            D2D1_COLOR_F applyBorder = hasPendingChange ? UIStyle::ThemeColor::Accent().d2d : baseClr;
+            applyBorder.a = hasPendingChange ? 0.62f : 0.12f;
+            rt->CreateSolidColorBrush(applyBorder, &applyBrush);
+            if (applyBrush) { rt->DrawRoundedRectangle(applyRect, applyBrush, UIStyle::Metrics::ControlStroke()); applyBrush->Release(); }
+            if (tfDefault)
+            {
+                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &applyBrush);
+                if (applyBrush)
+                {
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(L"应用", 2, tfDefault, D2D1::RectF(GLOBAL_SCALE_APPLY_LEFT, ANIMATION_DURATION_APPLY_TOP + 2.0f, GLOBAL_SCALE_APPLY_RIGHT, ANIMATION_DURATION_APPLY_BOTTOM), applyBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    applyBrush->Release();
+                }
+            }
+        }
+
         // Draw Global Scale Slider
         {
             int currentScale = m_owner->GetGlobalScalePercent();
@@ -536,14 +647,14 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     std::wstring label = L"全局缩放";
                     rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                        D2D1::RectF(170.0f, 120.0f, 240.0f, 140.0f), textBrush);
+                        D2D1::RectF(170.0f, GLOBAL_SCALE_CARD_TOP + 8.0f, 240.0f, GLOBAL_SCALE_CARD_TOP + 28.0f), textBrush);
 
                     wchar_t valueBuf[32];
                     swprintf_s(valueBuf, L"%d%%", pendingScale);
                     std::wstring valueText = valueBuf;
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(valueText.c_str(), (UINT32)valueText.size(), tfDefault,
-                        D2D1::RectF(406.0f, 120.0f, 444.0f, 140.0f), textBrush);
+                        D2D1::RectF(406.0f, GLOBAL_SCALE_CARD_TOP + 8.0f, 444.0f, GLOBAL_SCALE_CARD_TOP + 28.0f), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -626,7 +737,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"软件主题";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 158, 510, 178), tb);
+                    D2D1::RectF(160, 158 + SYSTEM_SETTINGS_CONTENT_OFFSET, 510, 178 + SYSTEM_SETTINGS_CONTENT_OFFSET), tb);
                 tb->Release();
             }
         }
@@ -636,14 +747,14 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         std::wstring themeLabels[] = { L"深色主题", L"浅色主题" };
         {
             float selectedX = (currentTheme == 0) ? 160.0f : 345.0f;
-            DrawSelectionHighlight(rt, GetSelectionRect(m_themeSelection, D2D1::RectF(selectedX, 180.0f, selectedX + 165.0f, 212.0f)), 6.0f);
+            DrawSelectionHighlight(rt, GetSelectionRect(m_themeSelection, D2D1::RectF(selectedX, 180.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, selectedX + 165.0f, 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)), 6.0f);
         }
         for (int i = 0; i < 2; i++)
         {
             bool isSelected = (i == currentTheme);
             bool isHovered = (i == m_hoveredTheme);
             float xStart = (i == 0) ? 160.0f : 345.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 180.0f, xStart + 165.0f, 212.0f);
+            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 180.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, xStart + 165.0f, 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -676,7 +787,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(themeLabels[i].c_str(), (UINT32)themeLabels[i].size(), tfDefault,
-                        D2D1::RectF(xStart, 186.0f, xStart + 165.0f, 212.0f), textBrush);
+                        D2D1::RectF(xStart, 186.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, xStart + 165.0f, 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -693,11 +804,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"主题颜色";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 218, 260, 238), tb);
+                    D2D1::RectF(160, 218 + SYSTEM_SETTINGS_CONTENT_OFFSET, 260, 238 + SYSTEM_SETTINGS_CONTENT_OFFSET), tb);
 
                 std::wstring currentLabel = UIStyle::GetThemeColorPresetName(currentThemeColor);
                 rt->DrawTextW(currentLabel.c_str(), (UINT32)currentLabel.size(), tfDefault,
-                    D2D1::RectF(430, 218, 510, 238), tb);
+                    D2D1::RectF(430, 218 + SYSTEM_SETTINGS_CONTENT_OFFSET, 510, 238 + SYSTEM_SETTINGS_CONTENT_OFFSET), tb);
                 tb->Release();
             }
         }
@@ -711,7 +822,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             bool isSelected = (i == currentThemeColor);
             bool isHovered = (i == m_hoveredThemeColor);
             float x = swatchLeft + i * swatchStep;
-            D2D1_RECT_F swatchRect = D2D1::RectF(x, 244.0f, x + swatchSize, 262.0f);
+            D2D1_RECT_F swatchRect = D2D1::RectF(x, 244.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, x + swatchSize, 262.0f + SYSTEM_SETTINGS_CONTENT_OFFSET);
             D2D1_ROUNDED_RECT roundedSwatch = D2D1::RoundedRect(swatchRect, 5.0f, 5.0f);
 
             ID2D1SolidColorBrush* swatchBrush = nullptr;
@@ -738,8 +849,8 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextOnAccent().d2d, &checkBrush);
                 if (checkBrush)
                 {
-                    rt->DrawLine(D2D1::Point2F(x + 5.0f, 253.0f), D2D1::Point2F(x + 8.0f, 256.0f), checkBrush, 1.4f);
-                    rt->DrawLine(D2D1::Point2F(x + 8.0f, 256.0f), D2D1::Point2F(x + 14.0f, 249.0f), checkBrush, 1.4f);
+                    rt->DrawLine(D2D1::Point2F(x + 5.0f, 253.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), D2D1::Point2F(x + 8.0f, 256.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), checkBrush, 1.4f);
+                    rt->DrawLine(D2D1::Point2F(x + 8.0f, 256.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), D2D1::Point2F(x + 14.0f, 249.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), checkBrush, 1.4f);
                     checkBrush->Release();
                 }
             }
@@ -750,7 +861,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const float swatchSize = 18.0f;
             const float swatchStep = (swatchRight - swatchLeft - swatchSize) / (float)(UIStyle::ThemeColorPresetCount() - 1);
             float x = swatchLeft + currentThemeColor * swatchStep;
-            D2D1_RECT_F ringRect = GetSelectionRect(m_themeColorSelection, D2D1::RectF(x - 2.0f, 242.0f, x + swatchSize + 2.0f, 264.0f));
+            D2D1_RECT_F ringRect = GetSelectionRect(m_themeColorSelection, D2D1::RectF(x - 2.0f, 242.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, x + swatchSize + 2.0f, 264.0f + SYSTEM_SETTINGS_CONTENT_OFFSET));
             ID2D1SolidColorBrush* ringBrush = nullptr;
             D2D1_COLOR_F ringClr = UIStyle::GetThemeColorPresetColor(currentThemeColor).d2d;
             ringClr.a = 0.92f;
@@ -772,7 +883,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 std::wstring label = L"窗口材质";
                 rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                    D2D1::RectF(160, 276, 510, 294), tb);
+                    D2D1::RectF(160, 276 + SYSTEM_SETTINGS_CONTENT_OFFSET, 510, 294 + SYSTEM_SETTINGS_CONTENT_OFFSET), tb);
                 tb->Release();
             }
         }
@@ -780,13 +891,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         // Draw Window Mode Buttons side-by-side
         std::wstring modeLabels[] = { L"发光材质", L"亚克力材质", L"玻璃材质" };
         DrawSelectionHighlight(rt, GetSelectionRect(m_windowModeSelection,
-            D2D1::RectF(160.0f + currentWindowMode * 120.0f, 298.0f, 270.0f + currentWindowMode * 120.0f, 326.0f)), 6.0f);
+            D2D1::RectF(160.0f + currentWindowMode * 120.0f, 298.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, 270.0f + currentWindowMode * 120.0f, 326.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
             bool isSelected = (i == currentWindowMode);
             bool isHovered = (i == m_hoveredWindowMode);
             float xStart = 160.0f + i * 120.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 298.0f, xStart + 110.0f, 326.0f);
+            D2D1_RECT_F cardRect = D2D1::RectF(xStart, 298.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, xStart + 110.0f, 326.0f + SYSTEM_SETTINGS_CONTENT_OFFSET);
             D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
 
             ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -819,7 +930,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                     rt->DrawTextW(modeLabels[i].c_str(), (UINT32)modeLabels[i].size(), tfDefault,
-                        D2D1::RectF(xStart, 302.0f, xStart + 110.0f, 326.0f), textBrush);
+                        D2D1::RectF(xStart, 302.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, xStart + 110.0f, 326.0f + SYSTEM_SETTINGS_CONTENT_OFFSET), textBrush);
                     tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
                     textBrush->Release();
                 }
@@ -837,7 +948,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 {
                     std::wstring label = L"背景效果调节";
                     rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                        D2D1::RectF(160, 338, 510, 354), tb);
+                        D2D1::RectF(160, 338 + SYSTEM_SETTINGS_CONTENT_OFFSET, 510, 354 + SYSTEM_SETTINGS_CONTENT_OFFSET), tb);
                     tb->Release();
                 }
             }
@@ -865,9 +976,9 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             {
                 int col = i % 2;
                 int row = i / 2;
-                D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + row * 38.0f);
+                D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + SYSTEM_SETTINGS_CONTENT_OFFSET + row * 38.0f);
                 float ix = cardRect.left;
-                float iy = 360.0f + row * 38.0f;
+                float iy = 360.0f + SYSTEM_SETTINGS_CONTENT_OFFSET + row * 38.0f;
                 float cy = iy + 16.0f;
                 bool isRowHovered = (m_hoveredThemeDetailSetting == activeItems[i].originalIdx);
 
@@ -986,28 +1097,30 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     else if (m_categoryIndex == 1) // 弹窗外观
     {
         std::wstring labels[] = {
+            L"标题大小",
+            L"窗口边距",
             L"图标列数",
             L"图标行数",
             L"图标大小",
             L"图标字号",
             L"图标间距",
             L"图标圆角",
-            L"窗口边距",
-            L"DOCK行数"
+            L"停靠行数"
         };
 
         int values[] = {
+            m_owner->GetPopupHeaderSizeLevel(),
+            m_owner->GetPopupWndPadding(),
             m_owner->GetPopupColumns(),
             m_owner->GetPopupRows(),
             m_owner->GetPopupIconSize(),
             m_owner->GetPopupIconLabelFontSize(),
             m_owner->GetPopupIconGap(),
             m_owner->GetPopupIconRadius(),
-            m_owner->GetPopupWndPadding(),
             m_owner->GetDockHeight()
         };
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 9; i++)
         {
             int col = i % 2;
             int row = i / 2;
@@ -1317,9 +1430,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         swprintf_s(delayBuf, L"%dms", m_owner->GetHoverLeaveDelay());
         drawStepperCard(TwoColumnRect(0, 386.0f).left, 386.0f, L"消失延迟", delayBuf, m_hoveredHoverLeaveDelay, m_hoveredHoverLeaveDelayButton);
 
-        wchar_t animBuf[32];
-        swprintf_s(animBuf, L"%dms", m_owner->GetAnimationDuration());
-        drawStepperCard(TwoColumnRect(1, 386.0f).left, 386.0f, L"动画时长", animBuf, m_hoveredAnimationDuration, m_hoveredAnimationDurationButton);
+        wchar_t selectionBuf[32];
+        const int selectionValiditySeconds = m_owner->GetFileSelectionValiditySeconds();
+        if (selectionValiditySeconds < 0)
+            wcscpy_s(selectionBuf, L"无限");
+        else
+            swprintf_s(selectionBuf, L"%d秒", selectionValiditySeconds);
+        drawStepperCard(TwoColumnRect(1, 386.0f).left, 386.0f, L"选中时限", selectionBuf, m_hoveredFileSelectionValidity, m_hoveredFileSelectionValidityButton);
 
         const D2D1_RECT_F blacklistRect = TriggerBlacklistRect();
         const D2D1_RECT_F editRect = TriggerBlacklistEditRect();
@@ -1675,14 +1792,67 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
             if (tbNormal && tbMuted)
             {
-                // App Name & Version
-                rt->DrawTextW(L"WinLauncher", 11, tfTitle, D2D1::RectF(160, 90, 510, 115), tbNormal);
+                if (tfTitle)
+                    rt->DrawTextW(L"WinLauncher", 11, tfTitle, D2D1::RectF(160, 82, 510, 107), tbNormal);
                 std::wstring verText = std::wstring(L"版本: v") + WINLAUNCHER_VERSION_WSTR;
-                rt->DrawTextW(verText.c_str(), (UINT32)verText.size(), tfDefault, D2D1::RectF(160, 125, 510, 145), tbMuted);
+                rt->DrawTextW(verText.c_str(), (UINT32)verText.size(), tfDefault, D2D1::RectF(160, 112, 510, 130), tbMuted);
+                const wchar_t* tagline = L"原生 Windows 桌面启动器 · 快速、轻量、本地优先";
+                rt->DrawTextW(tagline, (UINT32)wcslen(tagline), tfDefault,
+                    D2D1::RectF(160, 132, CONTENT_RIGHT, 150), tbMuted);
 
-                // Description
-                std::wstring desc = L"一个极简、快速、带毛玻璃特效的快捷方式启动工具。\n可以通过鼠标中键或侧键快速唤醒，方便管理并运行常用程序。";
-                rt->DrawTextW(desc.c_str(), (UINT32)desc.size(), tfDefault, D2D1::RectF(160, 160, CONTENT_RIGHT, 235), tbNormal);
+                auto drawInfoCard = [&](const D2D1_RECT_F& cardRect, const wchar_t* title, const wchar_t* body)
+                {
+                    D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
+                    ID2D1SolidColorBrush* cardBrush = nullptr;
+                    rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.025f), &cardBrush);
+                    if (cardBrush)
+                    {
+                        rt->FillRoundedRectangle(roundedCard, cardBrush);
+                        cardBrush->Release();
+                    }
+                    rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.065f), &cardBrush);
+                    if (cardBrush)
+                    {
+                        rt->DrawRoundedRectangle(roundedCard, cardBrush, UIStyle::Metrics::ControlStroke());
+                        cardBrush->Release();
+                    }
+                    rt->DrawTextW(title, (UINT32)wcslen(title), tfDefault,
+                        D2D1::RectF(cardRect.left + 10.0f, cardRect.top + 6.0f, cardRect.right - 10.0f, cardRect.top + 24.0f), tbNormal);
+                    rt->DrawTextW(body, (UINT32)wcslen(body), tfDefault,
+                        D2D1::RectF(cardRect.left + 10.0f, cardRect.top + 24.0f, cardRect.right - 10.0f, cardRect.bottom - 5.0f), tbMuted);
+                };
+
+                drawInfoCard(TwoColumnRect(0, 164.0f, 68.0f), L"快速启动", L"通过鼠标手势或快捷键\n在光标处唤出快捷方式面板");
+                drawInfoCard(TwoColumnRect(1, 164.0f, 68.0f), L"搜索与分类", L"分页管理常用项目，支持\n即时搜索、智能排序与场景筛选");
+                drawInfoCard(TwoColumnRect(0, 242.0f, 68.0f), L"命令与自动化", L"运行自定义命令、批量启动与宏；\n可使用已选文件作为命令输入");
+                drawInfoCard(TwoColumnRect(1, 242.0f, 68.0f), L"外观与扩展", L"可调主题、材质、布局与动画；\n支持 DLL 插件、/ 命令与搜索源");
+                drawInfoCard(D2D1::RectF(CONTENT_LEFT, 320.0f, CONTENT_RIGHT, 400.0f), L"本地优先与诊断", L"配置、使用记录、日志和崩溃诊断均保留在本机，不会自动上传。\n可在“配置管理”中生成脱敏诊断包、创建备份或迁移到新设备。");
+
+                const D2D1_RECT_F sourceLinkRect = AboutOpenSourceLinkRect();
+                const D2D1_ROUNDED_RECT roundedSourceLink = D2D1::RoundedRect(sourceLinkRect, 5.0f, 5.0f);
+                ID2D1SolidColorBrush* sourceBrush = nullptr;
+                const D2D1_COLOR_F accent = UIStyle::ThemeColor::Accent().d2d;
+                rt->CreateSolidColorBrush(D2D1::ColorF(accent.r, accent.g, accent.b, m_hoveredOpenSourceUrl ? 0.16f : 0.075f), &sourceBrush);
+                if (sourceBrush)
+                {
+                    rt->FillRoundedRectangle(roundedSourceLink, sourceBrush);
+                    sourceBrush->Release();
+                }
+                rt->CreateSolidColorBrush(D2D1::ColorF(accent.r, accent.g, accent.b, m_hoveredOpenSourceUrl ? 0.62f : 0.36f), &sourceBrush);
+                if (sourceBrush)
+                {
+                    rt->DrawRoundedRectangle(roundedSourceLink, sourceBrush, UIStyle::Metrics::ControlStroke());
+                    sourceBrush->Release();
+                }
+                const wchar_t* sourceLabel = L"开源地址  github.com/LEISHIQIANG/WinLauncher";
+                rt->CreateSolidColorBrush(accent, &sourceBrush);
+                if (sourceBrush)
+                {
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                    rt->DrawTextW(sourceLabel, (UINT32)wcslen(sourceLabel), tfDefault, sourceLinkRect, sourceBrush);
+                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+                    sourceBrush->Release();
+                }
             }
 
             if (tbNormal) tbNormal->Release();
@@ -1727,6 +1897,30 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         if (hhw != m_hoveredHardwareAcceleration)
         {
             m_hoveredHardwareAcceleration = hhw;
+            repaint = true;
+        }
+
+        bool had = HitTestAnimationDurationSlider(pt);
+        if (m_draggingAnimationDurationSlider)
+        {
+            int nextDuration = AnimationDurationFromPoint(pt);
+            if (nextDuration != m_pendingAnimationDuration)
+            {
+                m_pendingAnimationDuration = nextDuration;
+                repaint = true;
+            }
+            had = true;
+        }
+        if (had != m_hoveredAnimationDurationSlider)
+        {
+            m_hoveredAnimationDurationSlider = had;
+            repaint = true;
+        }
+
+        bool haa = HitTestAnimationDurationApply(pt);
+        if (haa != m_hoveredAnimationDurationApply)
+        {
+            m_hoveredAnimationDurationApply = haa;
             repaint = true;
         }
 
@@ -1861,11 +2055,11 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         }
 
         buttonType = 0;
-        bool htd = HitTestAnimationDuration(pt, buttonType);
-        if (htd != m_hoveredAnimationDuration || buttonType != m_hoveredAnimationDurationButton)
+        bool htd = HitTestFileSelectionValidity(pt, buttonType);
+        if (htd != m_hoveredFileSelectionValidity || buttonType != m_hoveredFileSelectionValidityButton)
         {
-            m_hoveredAnimationDuration = htd;
-            m_hoveredAnimationDurationButton = buttonType;
+            m_hoveredFileSelectionValidity = htd;
+            m_hoveredFileSelectionValidityButton = buttonType;
             repaint = true;
         }
 
@@ -1941,11 +2135,20 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             repaint = true;
         }
     }
+    else if (m_categoryIndex == 5)
+    {
+        const bool hoverSourceUrl = HitTestOpenSourceUrl(pt);
+        if (hoverSourceUrl != m_hoveredOpenSourceUrl)
+        {
+            m_hoveredOpenSourceUrl = hoverSourceUrl;
+            repaint = true;
+        }
+    }
 }
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredTriggerBlacklist || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredAnimationDuration || m_hoveredAnimationDurationButton != 0 || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
+    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredOpenSourceUrl || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredTriggerBlacklist || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredFileSelectionValidity || m_hoveredFileSelectionValidityButton != 0 || m_hoveredAnimationDurationSlider || m_hoveredAnimationDurationApply || m_draggingAnimationDurationSlider || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
     {
         m_hoveredAutoStart = false;
         m_hoveredHideTrayIcon = false;
@@ -1958,6 +2161,7 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredClearConfig = false;
         m_hoveredClearConfigHistory = false;
         m_hoveredImportJson = false;
+        m_hoveredOpenSourceUrl = false;
         m_hoveredTrigger = -1;
         m_hoveredPopupAlignMode = -1;
         m_hoveredPopupAutoClose = -1;
@@ -1975,8 +2179,11 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredThemeDetailButton = 0;
         m_hoveredAnimationToggle = false;
         m_hoveredHardwareAcceleration = false;
-        m_hoveredAnimationDuration = false;
-        m_hoveredAnimationDurationButton = 0;
+        m_hoveredFileSelectionValidity = false;
+        m_hoveredFileSelectionValidityButton = 0;
+        m_hoveredAnimationDurationSlider = false;
+        m_hoveredAnimationDurationApply = false;
+        m_draggingAnimationDurationSlider = false;
         m_hoveredGlobalScaleSlider = false;
         m_hoveredGlobalScaleApply = false;
         m_draggingGlobalScaleSlider = false;
@@ -2019,6 +2226,24 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             bool current = m_owner->GetHardwareAccelerationEnabled();
             m_owner->SetHardwareAccelerationEnabled(!current);
             m_owner->NotifyConfigChanged();
+            repaint = true;
+        }
+        else if (HitTestAnimationDurationSlider(pt))
+        {
+            m_draggingAnimationDurationSlider = true;
+            m_pendingAnimationDuration = AnimationDurationFromPoint(pt);
+            if (HWND hwnd = m_owner->GetWindowHWND())
+                SetCapture(hwnd);
+            repaint = true;
+        }
+        else if (HitTestAnimationDurationApply(pt))
+        {
+            const int pendingDuration = PendingAnimationDuration();
+            if (pendingDuration != m_owner->GetAnimationDuration())
+            {
+                m_owner->SetAnimationDuration(pendingDuration);
+                m_pendingAnimationDuration = pendingDuration;
+            }
             repaint = true;
         }
         else if (HitTestGlobalScaleSlider(pt))
@@ -2168,42 +2393,47 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             {
                 int step = (buttonType == 2) ? 1 : -1;
                 
-                if (settingIdx == 0) // Columns
+                if (settingIdx == 0) // Header Size Level
                 {
-                    int val = m_owner->GetPopupColumns() + step;
-                    if (val >= 1 && val <= 20) m_owner->SetPopupColumns(val);
+                    int val = m_owner->GetPopupHeaderSizeLevel() + step;
+                    if (val >= 1 && val <= 9) m_owner->SetPopupHeaderSizeLevel(val);
                 }
-                else if (settingIdx == 1) // Rows
-                {
-                    int val = m_owner->GetPopupRows() + step;
-                    if (val >= 1 && val <= 20) m_owner->SetPopupRows(val);
-                }
-                else if (settingIdx == 2) // Icon Size
-                {
-                    int val = m_owner->GetPopupIconSize() + step * 2;
-                    if (val >= 16 && val <= 64) m_owner->SetPopupIconSize(val);
-                }
-                else if (settingIdx == 3) // Icon Label Font Size
-                {
-                    int val = m_owner->GetPopupIconLabelFontSize() + step;
-                    if (val >= 8 && val <= 32) m_owner->SetPopupIconLabelFontSize(val);
-                }
-                else if (settingIdx == 4) // Icon Gap
-                {
-                    int val = m_owner->GetPopupIconGap() + step;
-                    if (val >= 0 && val <= 30) m_owner->SetPopupIconGap(val);
-                }
-                else if (settingIdx == 5) // Icon Radius
-                {
-                    int val = m_owner->GetPopupIconRadius() + step;
-                    if (val >= 0 && val <= 30) m_owner->SetPopupIconRadius(val);
-                }
-                else if (settingIdx == 6) // Window Padding
+                else if (settingIdx == 1) // Window Padding
                 {
                     int val = m_owner->GetPopupWndPadding() + step;
                     if (val >= 0 && val <= 50) m_owner->SetPopupWndPadding(val);
                 }
-                else if (settingIdx == 7) // DOCK Rows
+                else if (settingIdx == 2) // Columns
+                {
+                    int val = m_owner->GetPopupColumns() + step;
+                    if (val >= 1 && val <= 20) m_owner->SetPopupColumns(val);
+                }
+                else if (settingIdx == 3) // Rows
+                {
+                    int val = m_owner->GetPopupRows() + step;
+                    if (val >= 1 && val <= 20) m_owner->SetPopupRows(val);
+                }
+                else if (settingIdx == 4) // Icon Size
+                {
+                    int val = m_owner->GetPopupIconSize() + step * 2;
+                    if (val >= 16 && val <= 64) m_owner->SetPopupIconSize(val);
+                }
+                else if (settingIdx == 5) // Icon Label Font Size
+                {
+                    int val = m_owner->GetPopupIconLabelFontSize() + step;
+                    if (val >= 8 && val <= 32) m_owner->SetPopupIconLabelFontSize(val);
+                }
+                else if (settingIdx == 6) // Icon Gap
+                {
+                    int val = m_owner->GetPopupIconGap() + step;
+                    if (val >= 0 && val <= 30) m_owner->SetPopupIconGap(val);
+                }
+                else if (settingIdx == 7) // Icon Radius
+                {
+                    int val = m_owner->GetPopupIconRadius() + step;
+                    if (val >= 0 && val <= 30) m_owner->SetPopupIconRadius(val);
+                }
+                else if (settingIdx == 8) // DOCK Rows
                 {
                     int val = m_owner->GetDockHeight() + step;
                     if (val >= 1 && val <= 5) m_owner->SetDockHeight(val);
@@ -2281,18 +2511,26 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
                                 repaint = true;
                             }
                         }
-                        else if (m_hoveredAnimationDuration)
+                        else if (m_hoveredFileSelectionValidity)
                         {
-                            if (m_hoveredAnimationDurationButton == 1)
+                            if (m_hoveredFileSelectionValidityButton == 1)
                             {
-                                int current = m_owner->GetAnimationDuration();
-                                if (current > 50) m_owner->SetAnimationDuration(current - 50);
+                                int current = m_owner->GetFileSelectionValiditySeconds();
+                                if (current < 0) m_owner->SetFileSelectionValiditySeconds(20);
+                                else if (current > 0) m_owner->SetFileSelectionValiditySeconds(current - 1);
+                                m_owner->NotifyConfigChanged();
                                 repaint = true;
                             }
-                            else if (m_hoveredAnimationDurationButton == 2)
+                            else if (m_hoveredFileSelectionValidityButton == 2)
                             {
-                                int current = m_owner->GetAnimationDuration();
-                                if (current < 1000) m_owner->SetAnimationDuration(current + 50);
+                                int current = m_owner->GetFileSelectionValiditySeconds();
+                                if (current < 0)
+                                {
+                                    // Infinite is the final selectable state.
+                                }
+                                else if (current >= 20) m_owner->SetFileSelectionValiditySeconds(-1);
+                                else m_owner->SetFileSelectionValiditySeconds(current + 1);
+                                m_owner->NotifyConfigChanged();
                                 repaint = true;
                             }
                         }
@@ -2497,11 +2735,24 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             }
         }
     }
+    else if (m_categoryIndex == 5 && HitTestOpenSourceUrl(pt))
+    {
+        HWND hwnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+        ShellExecuteW(hwnd, L"open", L"https://github.com/LEISHIQIANG/WinLauncher", nullptr, nullptr, SW_SHOWNORMAL);
+        repaint = true;
+    }
 }
 
 void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
 {
-    if (m_draggingGlobalScaleSlider)
+    if (m_draggingAnimationDurationSlider)
+    {
+        m_draggingAnimationDurationSlider = false;
+        m_pendingAnimationDuration = AnimationDurationFromPoint(pt);
+        ReleaseCapture();
+        repaint = true;
+    }
+    else if (m_draggingGlobalScaleSlider)
     {
         m_draggingGlobalScaleSlider = false;
         m_pendingGlobalScalePercent = GlobalScaleFromPoint(pt);
@@ -2618,7 +2869,7 @@ bool SettingsPage::IsPluginPackagePath(const std::wstring& filePath) const
 bool SettingsPage::HitTestAppearance(POINT pt, int& settingIdx, int& buttonType)
 {
     if (m_categoryIndex != 1) return false;
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 9; i++)
     {
         int col = i % 2;
         int row = i / 2;
@@ -2754,7 +3005,7 @@ bool SettingsPage::HitTestHoverLeaveDelay(POINT pt, int& buttonType)
 int SettingsPage::HitTestTheme(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y >= 180.0f && pt.y <= 212.0f)
+    if (pt.y >= 180.0f + SYSTEM_SETTINGS_CONTENT_OFFSET && pt.y <= 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)
     {
         if (pt.x >= 160.0f && pt.x <= 325.0f) return 0; // Dark
         if (pt.x >= 345.0f && pt.x <= 510.0f) return 1; // Light
@@ -2765,7 +3016,7 @@ int SettingsPage::HitTestTheme(POINT pt)
 int SettingsPage::HitTestThemeColor(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y < 241.0f || pt.y > 265.0f) return -1;
+    if (pt.y < 241.0f + SYSTEM_SETTINGS_CONTENT_OFFSET || pt.y > 265.0f + SYSTEM_SETTINGS_CONTENT_OFFSET) return -1;
 
     const float swatchLeft = 160.0f;
     const float swatchRight = 510.0f;
@@ -2787,7 +3038,7 @@ int SettingsPage::HitTestThemeColor(POINT pt)
 int SettingsPage::HitTestWindowMode(POINT pt)
 {
     if (m_categoryIndex != 0) return -1;
-    if (pt.y >= 298.0f && pt.y <= 326.0f)
+    if (pt.y >= 298.0f + SYSTEM_SETTINGS_CONTENT_OFFSET && pt.y <= 326.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)
     {
         for (int i = 0; i < 3; i++)
         {
@@ -2860,6 +3111,11 @@ bool SettingsPage::HitTestExportMigration(POINT pt) { return m_categoryIndex == 
 bool SettingsPage::HitTestImportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 436.0f), pt); }
 bool SettingsPage::HitTestClearUsageHistory(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 436.0f), pt); }
 
+bool SettingsPage::HitTestOpenSourceUrl(POINT pt)
+{
+    return m_categoryIndex == 5 && PointInRect(AboutOpenSourceLinkRect(), pt);
+}
+
 bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType)
 {
     if (m_categoryIndex != 0) return false;
@@ -2871,9 +3127,9 @@ bool SettingsPage::HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonTyp
     {
         int col = i % 2;
         int row = i / 2;
-        D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + row * 38.0f);
+        D2D1_RECT_F cardRect = TwoColumnRect(col, 360.0f + SYSTEM_SETTINGS_CONTENT_OFFSET + row * 38.0f);
         float ix = cardRect.left;
-        float iy = 360.0f + row * 38.0f;
+        float iy = 360.0f + SYSTEM_SETTINGS_CONTENT_OFFSET + row * 38.0f;
         float cy = iy + 16.0f;
 
         if (PointInRect(cardRect, pt))
@@ -2903,7 +3159,7 @@ bool SettingsPage::HitTestAnimationToggle(POINT pt)
     return (pt.x >= 415 && pt.x <= 505 && pt.y >= 80 && pt.y <= 110);
 }
 
-bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
+bool SettingsPage::HitTestFileSelectionValidity(POINT pt, int& buttonType)
 {
     if (m_categoryIndex != 2) return false;
     D2D1_RECT_F cardRect = TwoColumnRect(1, 386.0f);
@@ -2928,6 +3184,24 @@ bool SettingsPage::HitTestAnimationDuration(POINT pt, int& buttonType)
         return true;
     }
     return false;
+}
+
+bool SettingsPage::HitTestAnimationDurationSlider(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return pt.x >= (int)(GLOBAL_SCALE_TRACK_LEFT - 8.0f) &&
+        pt.x <= (int)(GLOBAL_SCALE_TRACK_RIGHT + 8.0f) &&
+        pt.y >= (int)(ANIMATION_DURATION_TRACK_Y - 12.0f) &&
+        pt.y <= (int)(ANIMATION_DURATION_TRACK_Y + 12.0f);
+}
+
+bool SettingsPage::HitTestAnimationDurationApply(POINT pt)
+{
+    if (m_categoryIndex != 0) return false;
+    return pt.x >= (int)GLOBAL_SCALE_APPLY_LEFT &&
+        pt.x <= (int)GLOBAL_SCALE_APPLY_RIGHT &&
+        pt.y >= (int)ANIMATION_DURATION_APPLY_TOP &&
+        pt.y <= (int)ANIMATION_DURATION_APPLY_BOTTOM;
 }
 
 bool SettingsPage::HitTestGlobalScaleSlider(POINT pt)

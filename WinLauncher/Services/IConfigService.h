@@ -50,6 +50,8 @@ public:
     virtual void SetPopupIconSize(int size) = 0;
     virtual int GetPopupIconLabelFontSize() = 0;
     virtual void SetPopupIconLabelFontSize(int size) = 0;
+    virtual int GetPopupHeaderSizeLevel() = 0;
+    virtual void SetPopupHeaderSizeLevel(int level) = 0;
     virtual int GetPopupIconGap() = 0;
     virtual void SetPopupIconGap(int gap) = 0;
     virtual int GetPopupIconRadius() = 0;
@@ -77,6 +79,9 @@ public:
     virtual void SetPopupMultiOpenWhenPinned(bool enabled) = 0;
     virtual int GetHoverLeaveDelay() = 0;
     virtual void SetHoverLeaveDelay(int delayMs) = 0;
+    // -1 keeps a captured file selection valid while the popup remains visible.
+    virtual int GetFileSelectionValiditySeconds() = 0;
+    virtual void SetFileSelectionValiditySeconds(int seconds) = 0;
     virtual int GetSortMode() = 0;
     virtual void SetSortMode(int mode) = 0;
 

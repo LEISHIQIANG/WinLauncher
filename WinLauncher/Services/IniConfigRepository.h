@@ -37,6 +37,7 @@ public:
         , m_popupRows(4)
         , m_popupIconSize(24)
         , m_popupIconLabelFontSize(9)
+        , m_popupHeaderSizeLevel(5)
         , m_popupIconGap(4)
         , m_popupIconRadius(6)
         , m_popupWndPadding(8)
@@ -50,6 +51,7 @@ public:
         , m_popupAutoClose(true)
         , m_popupMultiOpenWhenPinned(false)
         , m_hoverLeaveDelay(200)
+        , m_fileSelectionValiditySeconds(15)
         , m_sortMode(0)
         , m_animationEnabled(true)
         , m_animationDuration(200)
@@ -231,6 +233,11 @@ public:
                         try { m_popupIconLabelFontSize = std::stoi(val); } catch (...) { m_popupIconLabelFontSize = 9; }
                         if (m_popupIconLabelFontSize < 8 || m_popupIconLabelFontSize > 32) m_popupIconLabelFontSize = 9;
                     }
+                    else if (key == L"PopupHeaderSizeLevel")
+                    {
+                        try { m_popupHeaderSizeLevel = std::stoi(val); } catch (...) { m_popupHeaderSizeLevel = 5; }
+                        if (m_popupHeaderSizeLevel < 1 || m_popupHeaderSizeLevel > 9) m_popupHeaderSizeLevel = 5;
+                    }
                     else if (key == L"PopupIconGap")
                     {
                         try { m_popupIconGap = std::stoi(val); } catch (...) { m_popupIconGap = 4; }
@@ -282,6 +289,10 @@ public:
                     else if (key == L"HoverLeaveDelay")
                     {
                         try { SetHoverLeaveDelay(std::stoi(val)); } catch (...) { m_hoverLeaveDelay = 200; }
+                    }
+                    else if (key == L"FileSelectionValiditySeconds")
+                    {
+                        try { SetFileSelectionValiditySeconds(std::stoi(val)); } catch (...) { m_fileSelectionValiditySeconds = 15; }
                     }
                     else if (key == L"SortMode")
                     {
@@ -631,6 +642,7 @@ public:
         content += L"PopupRows=" + std::to_wstring(m_popupRows) + L"\r\n";
         content += L"PopupIconSize=" + std::to_wstring(m_popupIconSize) + L"\r\n";
         content += L"PopupIconLabelFontSize=" + std::to_wstring(m_popupIconLabelFontSize) + L"\r\n";
+        content += L"PopupHeaderSizeLevel=" + std::to_wstring(m_popupHeaderSizeLevel) + L"\r\n";
         content += L"PopupIconGap=" + std::to_wstring(m_popupIconGap) + L"\r\n";
         content += L"PopupIconRadius=" + std::to_wstring(m_popupIconRadius) + L"\r\n";
         content += L"PopupWndPadding=" + std::to_wstring(m_popupWndPadding) + L"\r\n";
@@ -647,6 +659,7 @@ public:
         content += L"PopupAutoClose=" + std::to_wstring(m_popupAutoClose ? 1 : 0) + L"\r\n";
         content += L"PopupMultiOpenWhenPinned=" + std::to_wstring(m_popupMultiOpenWhenPinned ? 1 : 0) + L"\r\n";
         content += L"HoverLeaveDelay=" + std::to_wstring(m_hoverLeaveDelay) + L"\r\n";
+        content += L"FileSelectionValiditySeconds=" + std::to_wstring(m_fileSelectionValiditySeconds) + L"\r\n";
         content += L"SortMode=" + std::to_wstring(m_sortMode) + L"\r\n";
         content += L"AnimationEnabled=" + std::to_wstring(m_animationEnabled ? 1 : 0) + L"\r\n";
         content += L"AnimationDuration=" + std::to_wstring(m_animationDuration) + L"\r\n";
@@ -890,6 +903,8 @@ public:
     virtual void SetPopupIconSize(int size) override { m_popupIconSize = size; }
     virtual int GetPopupIconLabelFontSize() override { return m_popupIconLabelFontSize; }
     virtual void SetPopupIconLabelFontSize(int size) override { m_popupIconLabelFontSize = size; }
+    virtual int GetPopupHeaderSizeLevel() override { return m_popupHeaderSizeLevel; }
+    virtual void SetPopupHeaderSizeLevel(int level) override { m_popupHeaderSizeLevel = (level < 1 || level > 9) ? 5 : level; }
     virtual int GetPopupIconGap() override { return m_popupIconGap; }
     virtual void SetPopupIconGap(int gap) override { m_popupIconGap = gap; }
     virtual int GetPopupIconRadius() override { return m_popupIconRadius; }
@@ -941,6 +956,11 @@ public:
         if (delayMs < 0) delayMs = 0;
         if (delayMs > 5000) delayMs = 5000;
         m_hoverLeaveDelay = delayMs;
+    }
+    virtual int GetFileSelectionValiditySeconds() override { return m_fileSelectionValiditySeconds; }
+    virtual void SetFileSelectionValiditySeconds(int seconds) override
+    {
+        m_fileSelectionValiditySeconds = (seconds == -1 || (seconds >= 0 && seconds <= 20)) ? seconds : 15;
     }
     virtual int GetSortMode() override { return m_sortMode; }
     virtual void SetSortMode(int mode) override
@@ -1188,6 +1208,8 @@ private:
         m_popupColumns = 6;
         m_popupRows = 4;
         m_popupIconSize = 24;
+        m_popupIconLabelFontSize = 9;
+        m_popupHeaderSizeLevel = 5;
         m_popupIconGap = 4;
         m_popupIconRadius = 6;
         m_popupWndPadding = 8;
@@ -1202,6 +1224,7 @@ private:
         m_popupAutoClose = true;
         m_popupMultiOpenWhenPinned = false;
         m_hoverLeaveDelay = 200;
+        m_fileSelectionValiditySeconds = 15;
         m_sortMode = 0;
         m_animationEnabled = true;
         m_animationDuration = 200;
@@ -1453,6 +1476,7 @@ private:
     int m_popupRows = 4;
     int m_popupIconSize = 24;
     int m_popupIconLabelFontSize = 9;
+    int m_popupHeaderSizeLevel = 5;
     int m_popupIconGap = 4;
     int m_popupIconRadius = 6;
     int m_popupWndPadding = 8;
@@ -1467,6 +1491,7 @@ private:
     bool m_popupAutoClose = true;
     bool m_popupMultiOpenWhenPinned = false;
     int m_hoverLeaveDelay = 200;
+    int m_fileSelectionValiditySeconds = 15;
     int m_sortMode = 0;
     bool m_animationEnabled = true;
     int m_animationDuration = 200;

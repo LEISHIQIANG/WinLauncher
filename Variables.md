@@ -397,18 +397,16 @@ else
 
 ### 5.4 文件选择有效期
 
-**源码：** `PopupWindow.cpp` 行 59, 2756–2761
+**源码：** `PopupWindow.cpp` 与用户配置 `FileSelectionValiditySeconds`
 
-```cpp
-static const double FILE_SELECTION_VALIDITY_DURATION = 15.0;
-```
-
-文件选择有 **15 秒有效期**。超过 15 秒前的选择将被视为过期：
+文件选择有效期可在“设置 → 弹窗交互”中设为 **0–20 秒**；默认 15 秒。时间调至 20 秒后再增加会切换为“无限”，仅在中键弹窗持续显示时保持有效。
 
 | 条件 | 行为 |
 | :--- | :--- |
-| 选择在 15 秒内 | selectedFiles 正常传入 |
-| 选择超过 15 秒 | selectedFiles 被清空，所有文件变量返回空字符串 |
+| 选择在设置时限内 | selectedFiles 正常传入 |
+| 选择超过设置时限 | selectedFiles 被清空，所有文件变量返回空字符串 |
+| 设置为“无限”且弹窗仍显示 | selectedFiles 保持有效 |
+| 弹窗自动关闭 | 即使设置为“无限”，已捕获的 selectedFiles 也会失效 |
 | 选择状态为 `isPending` | 同样视为无效，不传入 |
 
 这确保用户不会因为旧的、可能已不相关的文件选择而意外执行错误操作。
