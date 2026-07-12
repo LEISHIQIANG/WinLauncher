@@ -259,6 +259,7 @@ LRESULT PromptWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
 
     case WM_ACTIVATE:
+        GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         if (LOWORD(wParam) != WA_INACTIVE) SetFocus(hWnd);
         return 0;
 

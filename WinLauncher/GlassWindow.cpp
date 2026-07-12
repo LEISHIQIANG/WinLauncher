@@ -1343,11 +1343,18 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_ACTIVATE:
-        if (LOWORD(wParam) != WA_INACTIVE && m_shadowWindow)
+        // Activation changes can reorder a top-level window even though it remains
+        // visible. Let the default procedure finish that reorder first, then put
+        // the shadow directly behind the window for both active and inactive states.
+        // This keeps unfocused secondary windows from losing their shadow again.
         {
-            m_shadowWindow->SyncPosition(true);
+            LRESULT activationResult = DefWindowProcW(hWnd, uMsg, wParam, lParam);
+            if (m_shadowWindow)
+            {
+                m_shadowWindow->SyncPosition(IsWindowVisible(hWnd) && !IsIconic(hWnd));
+            }
+            return activationResult;
         }
-        break;
 
     case WM_ERASEBKGND:
         return 1;

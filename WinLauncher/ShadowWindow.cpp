@@ -90,13 +90,19 @@ void ShadowWindow::CreateShadowWindow()
 {
     RegisterShadowClass();
 
+    // A secondary dialog is normally an owned popup.  Its shadow must be a
+    // sibling in that same owner group (rather than an unrelated top-level
+    // window), otherwise Windows can move the shadow behind the dialog's
+    // owner when the dialog loses activation.
+    HWND shadowOwner = m_hMainWnd ? GetWindow(m_hMainWnd, GW_OWNER) : nullptr;
+
     m_hShadowWnd = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
         L"WinLauncherShadow",
         L"",
         WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT, 100, 100,
-        nullptr, // No owner - managed Z-order manually
+        shadowOwner,
         nullptr,
         GetModuleHandle(nullptr),
         nullptr
@@ -146,7 +152,7 @@ void ShadowWindow::SyncPosition(bool mainVisible)
         shadowY = (int)(centerY + (-m_animCenter.y - (float)margin + (float)offsetY) * m_animScale + 0.5f);
     }
 
-    UINT flags = SWP_NOACTIVATE | SWP_NOSENDCHANGING;
+    UINT flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
     if (show)
     {
         flags |= SWP_SHOWWINDOW;
@@ -496,7 +502,7 @@ void ShadowWindow::SetOpacityAndScale(float factor, float animScale, POINT animC
         }
     }
 
-    UINT flags = SWP_NOACTIVATE | SWP_NOSENDCHANGING;
+    UINT flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
     if (IsWindowVisible(m_hMainWnd) && !IsIconic(m_hMainWnd))
     {
         flags |= SWP_SHOWWINDOW;

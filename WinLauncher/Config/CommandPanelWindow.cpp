@@ -387,6 +387,7 @@ LRESULT CommandPanelWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, L
     }
     case WM_ACTIVATE:
     {
+        GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         if (LOWORD(wParam) != WA_INACTIVE)
         {
             SetFocus(hWnd);

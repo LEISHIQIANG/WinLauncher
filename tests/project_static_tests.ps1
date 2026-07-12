@@ -120,6 +120,32 @@ $commandPanelHeader = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.h"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
+$glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
+$shadowWindowSource = Read-RepoFile "WinLauncher\ShadowWindow.cpp"
+$shortcutDialogSource = Read-RepoFile "WinLauncher\Config\ShortcutDialog.cpp"
+$confirmWindowSource = Read-RepoFile "WinLauncher\Config\ConfirmWindow.cpp"
+$promptWindowSource = Read-RepoFile "WinLauncher\Config\PromptWindow.cpp"
+$trayMenuSource = Read-RepoFile "WinLauncher\TrayMenuWindow.cpp"
+$contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
+$dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
+
+Add-TestResult `
+    -Name "Visible secondary windows retain shadows after deactivation" `
+    -Passed (
+        $glassWindowSource -match 'case\s+WM_ACTIVATE:[\s\S]{0,500}activationResult\s*=\s*DefWindowProcW\([\s\S]{0,300}SyncPosition\(IsWindowVisible\(hWnd\)\s*&&\s*!IsIconic\(hWnd\)\)[\s\S]{0,120}return\s+activationResult' -and
+        $shadowWindowSource -match 'GetWindow\(m_hMainWnd,\s*GW_OWNER\)' -and
+        $shadowWindowSource -match 'shadowOwner' -and
+        $shadowWindowSource -match 'SWP_NOOWNERZORDER' -and
+        $shortcutDialogSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
+        $confirmWindowSource -match 'case\s+WM_ACTIVATE:\s*\{\s*GlassWindow::HandleMessage' -and
+        $promptWindowSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
+        $commandPanelSource -match 'case\s+WM_ACTIVATE:\s*\{\s*GlassWindow::HandleMessage' -and
+        $popupSource -match 'case\s+WM_ACTIVATE:\s*\{\s*[\s\S]{0,400}GlassWindow::HandleMessage' -and
+        $trayMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
+        $contextMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
+        $dropDownMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage'
+    ) `
+    -Detail "Activation handlers must retain the shared shadow for visible dialogs whether focused or not"
 
 Add-TestResult `
     -Name "Detached threads are isolated to bounded shutdown fallback" `

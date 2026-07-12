@@ -2755,6 +2755,10 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_ACTIVATE:
     {
+        // The popup can remain open while inactive (for example when it is
+        // pinned or auto-close is disabled).  Always forward activation to
+        // GlassWindow so its companion shadow stays directly behind it.
+        GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         if (LOWORD(wParam) == WA_INACTIVE)
         {
             bool autoClose = !m_appCtx || !m_appCtx->configService || m_appCtx->configService->GetPopupAutoClose();

@@ -296,6 +296,7 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     switch (uMsg)
     {
     case WM_ACTIVATE:
+        GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         if (LOWORD(wParam) == WA_INACTIVE)
             Hide();
         return 0;
