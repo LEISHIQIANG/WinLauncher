@@ -23,6 +23,14 @@ class BackgroundTaskService;
 class EnvironmentDetector
 {
 public:
+    struct PythonInterpreter
+    {
+        // Major.minor, for example L"3.12".
+        std::wstring version;
+        // Direct executable path. Never the Windows Store app-execution alias.
+        std::wstring executablePath;
+    };
+
     // Start background detection. Safe to call multiple times (no-op after first).
     static void StartDetection(const std::shared_ptr<BackgroundTaskService>& tasks);
 
@@ -33,6 +41,17 @@ public:
 
     // Returns true once the background detection thread has finished.
     static bool IsDetectionComplete();
+
+    // Returns the Python installations found during the startup probe, ordered from
+    // newest to oldest. The returned snapshot is safe to use from UI and worker threads.
+    static std::vector<PythonInterpreter> GetPythonInterpreters();
+
+    // Resolves a persisted Python command type. "python" retains legacy default-Python
+    // behavior; "python:<major.minor>" resolves only that discovered version.
+    static bool TryGetPythonInterpreter(const std::wstring& commandType, PythonInterpreter& interpreter);
+
+    static bool IsVersionedPythonCommandType(const std::wstring& commandType);
+    static std::wstring GetPythonDisplayName(const std::wstring& commandType);
 
 private:
     struct DetectEntry
@@ -47,6 +66,8 @@ private:
     static void RunDetection();
 
     static std::vector<DetectEntry> s_detectList;
+    static std::vector<PythonInterpreter> s_pythonInterpreters;
+    static PythonInterpreter             s_defaultPython;
     static std::mutex               s_mutex;
     static std::atomic<bool>        s_done;
     static std::atomic<bool>        s_started;

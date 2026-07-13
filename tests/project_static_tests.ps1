@@ -194,18 +194,23 @@ Add-TestResult `
     -Detail "Multi-select menus must omit edit actions and batch-fetch only URL icons through cancellable background tasks"
 
 Add-TestResult `
-    -Name "Command type selection reuses the startup environment snapshot" `
+    -Name "Command type selection uses versioned Python startup snapshots" `
     -Passed (
         $commandEditFormSource -match '#include "\.\./Services/EnvironmentDetector\.h"' -and
         $commandEditFormSource -match 'EnvironmentDetector::IsDetectionComplete\(\)' -and
-        $commandEditFormSource -match 'EnvironmentDetector::IsAvailable\(L"python"\)' -and
+        $commandEditFormSource -match 'EnvironmentDetector::GetPythonInterpreters\(\)' -and
+        $commandEditFormSource -match 'L"python:" \+ interpreter\.version' -and
         $commandEditFormSource -match 'EnvironmentDetector::IsAvailable\(L"gitbash"\)' -and
         $commandEditFormSource -notmatch 'CheckPythonAvailable' -and
         $commandEditFormSource -notmatch 'CheckGitBashAvailable' -and
         $environmentDetectorSource -match 'L"py\.exe"' -and
-        $environmentDetectorSource -match 'L"C:\\\\Python313\\\\python\.exe"'
+        $environmentDetectorSource -match 'L"-0p"' -and
+        $environmentDetectorSource -match 'SOFTWARE\\\\Python\\\\PythonCore' -and
+        $environmentDetectorSource -match 'TryGetPythonInterpreter' -and
+        $popupSource -match 'EnvironmentDetector::TryGetPythonInterpreter\(type, python\)' -and
+        $popupSource -match 'GetPythonUnavailableMessage\(type\)'
     ) `
-    -Detail "Optional command types must use the startup probe and stay out of the menu when unavailable"
+    -Detail "Python command choices must be versioned startup-snapshot entries and execution must not fall back to another version"
 
 Add-TestResult `
     -Name "Glow and glass material frames use one DPI-aligned clean edge" `

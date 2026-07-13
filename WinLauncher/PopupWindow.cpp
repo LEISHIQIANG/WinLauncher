@@ -33,6 +33,7 @@
 #include "Services/MacroService.h"
 #include "Services/BatchLaunchService.h"
 #include "Services/CommandVariableService.h"
+#include "Services/EnvironmentDetector.h"
 
 PopupWindow* PopupWindow::s_instance = nullptr;
 std::vector<PopupWindow*> PopupWindow::s_extraWindows;
@@ -3543,56 +3544,18 @@ static std::wstring FindBashExe()
     return L""; // not found
 }
 
-static bool IsUsableExecutablePath(const std::wstring& path)
+static std::wstring GetPythonUnavailableMessage(const std::wstring& commandType)
 {
-    if (path.empty())
-        return false;
+    if (!EnvironmentDetector::IsDetectionComplete())
+        return L"Python 运行环境仍在检测中，请稍候再试。";
 
-    DWORD attrs = GetFileAttributesW(path.c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
-        return false;
-
-    std::wstring lower = path;
-    std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-
-    // Windows Store app execution aliases are placeholders, not reliable script runtimes.
-    return lower.find(L"\\microsoft\\windowsapps\\") == std::wstring::npos;
-}
-
-struct CommandInterpreter
-{
-    std::wstring path;
-    std::wstring argsBeforeScript;
-};
-
-static CommandInterpreter FindPythonInterpreter()
-{
-    wchar_t foundPath[MAX_PATH]{};
-
-    DWORD len = SearchPathW(nullptr, L"python.exe", nullptr, MAX_PATH, foundPath, nullptr);
-    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
-        return { foundPath, L"" };
-
-    len = SearchPathW(nullptr, L"py.exe", nullptr, MAX_PATH, foundPath, nullptr);
-    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
-        return { foundPath, L"-3" };
-
-    static const wchar_t* commonPaths[] = {
-        L"E:\\Python313\\python.exe",
-        L"E:\\Python312\\python.exe",
-        L"E:\\Python311\\python.exe",
-        L"C:\\Python313\\python.exe",
-        L"C:\\Python312\\python.exe",
-        L"C:\\Python311\\python.exe",
-    };
-
-    for (auto p : commonPaths)
+    if (EnvironmentDetector::IsVersionedPythonCommandType(commandType))
     {
-        if (IsUsableExecutablePath(p))
-            return { p, L"" };
+        return L"未找到指定的 " + EnvironmentDetector::GetPythonDisplayName(commandType) +
+            L" 解释器。该命令不会改用其他 Python 版本，请在命令编辑器中重新选择可用版本。";
     }
 
-    return {};
+    return L"未找到可用的 Python 解释器。请安装 Python，或确认 python.exe / py.exe 在 PATH 中可用。";
 }
 
 static std::wstring QuoteArg(const std::wstring& value)
@@ -4468,23 +4431,20 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
                         maxChars,
                         append);
                 }
-                else if (type == L"python")
+                else if (type == L"python" || EnvironmentDetector::IsVersionedPythonCommandType(type))
                 {
-                    CommandInterpreter python = FindPythonInterpreter();
-                    if (python.path.empty())
+                    EnvironmentDetector::PythonInterpreter python;
+                    if (!EnvironmentDetector::TryGetPythonInterpreter(type, python))
                     {
-                        append(L"\r\n未找到可用的 Python 解释器。\r\n请安装 Python，或确认 python.exe / py.exe 在 PATH 中可用。\r\n");
+                        append(L"\r\n" + GetPythonUnavailableMessage(type) + L"\r\n");
                         append(L"\r\n状态: 失败\r\n");
                     }
                     else
                     {
-                        std::wstring pyArgs = python.argsBeforeScript;
-                        if (!pyArgs.empty()) pyArgs += L" ";
-                        pyArgs += L"-u";
                         ExecuteScriptViaTempFileStreaming(
-                            python.path,
+                            python.executablePath,
                             L".py",
-                            pyArgs,
+                            L"-u",
                             resolvedCmd,
                             false,
                             timeoutSeconds,
@@ -4534,21 +4494,18 @@ static bool LaunchCommand(const RendShortcutInfo& sc, HWND parent, AppContext* c
     {
         ok = ExecuteScriptViaTempFile(L"powershell.exe", L".ps1", L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
     }
-    else if (type == L"python")
+    else if (type == L"python" || EnvironmentDetector::IsVersionedPythonCommandType(type))
     {
-        CommandInterpreter python = FindPythonInterpreter();
-        if (python.path.empty())
+        EnvironmentDetector::PythonInterpreter python;
+        if (!EnvironmentDetector::TryGetPythonInterpreter(type, python))
         {
-            LOG_G_ERRA(L"LaunchCommand: python interpreter not found");
-            output = L"未找到可用的 Python 解释器。\r\n请安装 Python，或确认 python.exe / py.exe 在 PATH 中可用。";
+            LOG_G_ERRA(L"LaunchCommand: requested python interpreter not found: %s", type.c_str());
+            output = GetPythonUnavailableMessage(type);
             ok = false;
         }
         else
         {
-            std::wstring pyArgs = python.argsBeforeScript;
-            if (!pyArgs.empty()) pyArgs += L" ";
-            pyArgs += L"-u";
-            ok = ExecuteScriptViaTempFile(python.path, L".py", pyArgs, resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
+            ok = ExecuteScriptViaTempFile(python.executablePath, L".py", L"-u", resolvedCmd, showWindow, captureOutput, timeoutSeconds, maxChars, output, ctx);
         }
     }
     else if (type == L"gitbash")

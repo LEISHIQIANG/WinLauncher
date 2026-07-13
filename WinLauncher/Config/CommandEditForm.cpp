@@ -109,8 +109,18 @@ bool CommandEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, con
     // Command Type Display Box
     std::wstring typeDisp = L"CMD";
     if (m_commandType == L"powershell") typeDisp = L"PowerShell";
-    else if (m_commandType == L"python") typeDisp = L"Python";
     else if (m_commandType == L"gitbash") typeDisp = L"GitBash";
+    else if (m_commandType == L"python" || EnvironmentDetector::IsVersionedPythonCommandType(m_commandType))
+    {
+        typeDisp = EnvironmentDetector::GetPythonDisplayName(m_commandType);
+        if (EnvironmentDetector::IsDetectionComplete() &&
+            EnvironmentDetector::IsVersionedPythonCommandType(m_commandType))
+        {
+            EnvironmentDetector::PythonInterpreter interpreter;
+            if (!EnvironmentDetector::TryGetPythonInterpreter(m_commandType, interpreter))
+                typeDisp += L"（当前不可用）";
+        }
+    }
 
     m_typeBox.SetStyle(style);
     m_typeBox.Create(parentHWND, dwriteFactory, D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_TYPE, m_bounds.left + W - 125, m_bounds.top + Y_BOX_TYPE + 24), typeDisp);
@@ -484,9 +494,15 @@ void CommandEditForm::SelectCommandType(HWND hWnd)
     }
     else
     {
-        if (EnvironmentDetector::IsAvailable(L"python"))
+        for (const auto& interpreter : EnvironmentDetector::GetPythonInterpreters())
         {
-            items.push_back({ L"Python", [this, hWnd]() { m_commandType = L"python"; m_typeBox.SetText(L"Python"); InvalidateRect(hWnd, nullptr, FALSE); } });
+            const std::wstring commandType = L"python:" + interpreter.version;
+            const std::wstring displayName = L"Python" + interpreter.version;
+            items.push_back({ displayName, [this, hWnd, commandType, displayName]() {
+                m_commandType = commandType;
+                m_typeBox.SetText(displayName);
+                InvalidateRect(hWnd, nullptr, FALSE);
+            } });
         }
         if (EnvironmentDetector::IsAvailable(L"gitbash"))
         {
