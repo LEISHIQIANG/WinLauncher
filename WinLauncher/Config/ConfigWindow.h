@@ -137,7 +137,8 @@ private:
     void EnsureIcons();
     void ClearPages();
     void LoadConfig();
-    void SaveConfig();
+    void SaveConfig(bool publishConfigChanged = true, bool flushPending = false);
+    void PersistAppearanceConfig();
     void ReloadAfterConfigFileOperation();
     static void ShowMode(HWND parent, AppContext* ctx, bool settingsMode);
     void SetSettingsMode(bool settingsMode);

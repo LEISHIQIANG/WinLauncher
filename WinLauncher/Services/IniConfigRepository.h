@@ -27,7 +27,6 @@ class IniConfigRepository : public IConfigService
 {
 public:
     static constexpr int AutoBackupDebounceSeconds = 180;
-    static constexpr int ConfigSaveDebounceMilliseconds = 1500;
 
     explicit IniConfigRepository(Logger* logger = nullptr, HWND notifyHwnd = nullptr, UINT notifyMessage = 0)
         : m_logger(logger)
@@ -755,21 +754,14 @@ public:
             }
             pageIndex++;
         }
-        QueueConfigWrite(std::move(content), pages.size());
+        WriteConfigContent(content, pages.size());
     }
 
     virtual bool FlushPendingConfig() override
     {
-        std::wstring content;
-        size_t pageCount = 0;
-        {
-            std::lock_guard<std::mutex> lock(m_configSaveMutex);
-            if (!m_configSavePending) return true;
-            content = std::move(m_pendingConfigContent);
-            pageCount = m_pendingConfigPageCount;
-            m_configSavePending = false;
-        }
-        return WriteConfigContent(content, pageCount);
+        // Configuration writes are synchronous.  This remains an interface
+        // compatibility no-op for callers that used to flush the old queue.
+        return true;
     }
 
     virtual std::wstring GetConfigDir() const override { return m_configDir; }
@@ -1004,7 +996,6 @@ public:
 
     virtual ~IniConfigRepository() override
     {
-        StopConfigSaveWorker();
         StopAutoBackupWorker();
         m_folderWatcher.Stop();
     }
@@ -1292,25 +1283,9 @@ private:
         return false;
     }
 
-    void QueueConfigWrite(std::wstring content, size_t pageCount)
-    {
-        {
-            std::lock_guard<std::mutex> lock(m_configSaveMutex);
-            m_pendingConfigContent = std::move(content);
-            m_pendingConfigPageCount = pageCount;
-            m_configSavePending = true;
-            m_configSaveDue = std::chrono::steady_clock::now() + std::chrono::milliseconds(ConfigSaveDebounceMilliseconds);
-            if (!m_configSaveWorkerStarted)
-            {
-                m_configSaveWorkerStarted = true;
-                m_configSaveThread = std::thread([this]() { ConfigSaveWorkerLoop(); });
-            }
-        }
-        m_configSaveCv.notify_one();
-    }
-
     bool WriteConfigContent(const std::wstring& content, size_t pageCount)
     {
+        std::lock_guard<std::mutex> writeLock(m_configWriteMutex);
         ConfigPath::EnsureDirectoryExists(m_configDir);
         if (ProtectedWriteFile(m_configFilePath, content))
         {
@@ -1319,39 +1294,6 @@ private:
         }
         LOG_ERROR(m_logger, L"Failed to save config");
         return false;
-    }
-
-    void ConfigSaveWorkerLoop()
-    {
-        std::unique_lock<std::mutex> lock(m_configSaveMutex);
-        while (!m_configSaveStopping)
-        {
-            if (!m_configSavePending)
-            {
-                m_configSaveCv.wait(lock, [this] { return m_configSaveStopping || m_configSavePending; });
-                continue;
-            }
-            const auto due = m_configSaveDue;
-            if (m_configSaveCv.wait_until(lock, due, [this, due] { return m_configSaveStopping || !m_configSavePending || m_configSaveDue != due; }))
-                continue;
-            std::wstring content = std::move(m_pendingConfigContent);
-            const size_t pageCount = m_pendingConfigPageCount;
-            m_configSavePending = false;
-            lock.unlock();
-            WriteConfigContent(content, pageCount);
-            lock.lock();
-        }
-    }
-
-    void StopConfigSaveWorker()
-    {
-        FlushPendingConfig();
-        {
-            std::lock_guard<std::mutex> lock(m_configSaveMutex);
-            m_configSaveStopping = true;
-        }
-        m_configSaveCv.notify_one();
-        if (m_configSaveThread.joinable()) m_configSaveThread.join();
     }
 
     void ScheduleAutoBackup()
@@ -1581,14 +1523,6 @@ private:
     bool m_autoBackupStopping = false;
     bool m_autoBackupPending = false;
     std::chrono::steady_clock::time_point m_autoBackupDue{};
-    std::mutex m_configSaveMutex;
-    std::condition_variable m_configSaveCv;
-    std::thread m_configSaveThread;
-    bool m_configSaveWorkerStarted = false;
-    bool m_configSaveStopping = false;
-    bool m_configSavePending = false;
-    std::chrono::steady_clock::time_point m_configSaveDue{};
-    std::wstring m_pendingConfigContent;
-    size_t m_pendingConfigPageCount = 0;
+    std::mutex m_configWriteMutex;
     FolderWatcher m_folderWatcher;
 };

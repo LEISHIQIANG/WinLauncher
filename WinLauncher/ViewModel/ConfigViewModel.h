@@ -32,13 +32,13 @@ public:
             m_currentCategory = 0;
     }
 
-    void SaveConfig()
+    void SaveConfig(bool publishConfigChanged = true)
     {
         if (m_ctx && m_ctx->configService)
         {
             m_ctx->configService->SaveConfig(m_pages);
         }
-        if (m_ctx && m_ctx->eventBus)
+        if (publishConfigChanged && m_ctx && m_ctx->eventBus)
         {
             m_ctx->eventBus->Publish(EventType::ConfigChanged);
         }

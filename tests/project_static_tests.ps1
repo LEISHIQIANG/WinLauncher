@@ -120,6 +120,8 @@ $commandPanelSource = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.cpp"
 $commandPanelHeader = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.h"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
+$configViewModelSource = Read-RepoFile "WinLauncher\ViewModel\ConfigViewModel.h"
+$iniConfigSource = Read-RepoFile "WinLauncher\Services\IniConfigRepository.h"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 $glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
 $shadowWindowSource = Read-RepoFile "WinLauncher\ShadowWindow.cpp"
@@ -274,13 +276,17 @@ Add-TestResult `
     -Detail "A saturated task queue must not leave a reused or new command panel spinning indefinitely"
 
 Add-TestResult `
-    -Name "Config file operations cancel pending delayed saves" `
+    -Name "Configuration writes are immediate and observers reload only saved state" `
     -Passed (
-        ([regex]::Matches($configWindowSource, 'KillTimer\(hwnd, CONFIG_SAVE_TIMER_ID\)')).Count -ge 3 -and
-        $configWindowSource -match 'RestoreConfigBackup\(' -and
-        $configWindowSource -match 'ClearConfig\('
+        $iniConfigSource -match 'WriteConfigContent\(content, pages\.size\(\)\);' -and
+        $iniConfigSource -match 'std::lock_guard<std::mutex> writeLock\(m_configWriteMutex\)' -and
+        $iniConfigSource -notmatch 'QueueConfigWrite' -and
+        $iniConfigSource -notmatch 'ConfigSaveWorkerLoop' -and
+        $configViewModelSource -match 'void\s+SaveConfig\(bool\s+publishConfigChanged\s*=\s*true\)' -and
+        $configWindowSource -match 'SaveConfig\(false, true\);' -and
+        $configWindowSource -match 'm_appCtx->eventBus->Publish\(EventType::ConfigChanged\);'
     ) `
-    -Detail "Restoring or clearing config must not be overwritten by an older debounced save"
+    -Detail "Config state must reach disk before popup or settings observers reload it; only logs retain batching"
 
 Add-TestResult `
     -Name "Plugin UI and shutdown use guarded lifetimes" `

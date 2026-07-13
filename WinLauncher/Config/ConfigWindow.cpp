@@ -26,10 +26,6 @@
 static const int ICON_SIZE = 24;
 static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
 static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 8;
-static constexpr UINT_PTR CONFIG_SAVE_TIMER_ID = 101;
-static constexpr UINT_PTR CONFIG_BACKGROUND_STYLE_TIMER_ID = 102;
-static constexpr UINT CONFIG_SAVE_DEBOUNCE_MS = 500;
-static constexpr UINT CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS = 120;
 static constexpr size_t SHORTCUT_HISTORY_LIMIT = 5;
 
 namespace
@@ -263,13 +259,12 @@ void ConfigWindow::LoadConfig()
         m_shortcutPage.SetPageData(nullptr);
 }
 
-void ConfigWindow::SaveConfig()
+void ConfigWindow::SaveConfig(bool publishConfigChanged, bool flushPending)
 {
-    if (HWND hwnd = GetHWND())
+    if (publishConfigChanged)
     {
-        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
+        m_ignoreConfigChangedCount++;
     }
-    m_ignoreConfigChangedCount++;
     if (m_viewModel)
     {
         // Sync pages back to ViewModel
@@ -303,11 +298,16 @@ void ConfigWindow::SaveConfig()
             }
             viewPages.push_back(std::move(vp));
         }
-        m_viewModel->SaveConfig();
+        m_viewModel->SaveConfig(publishConfigChanged);
     }
     else
     {
         ShortcutManager::SaveConfig(m_configDir, m_pages);
+    }
+
+    if (flushPending && m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->FlushPendingConfig();
     }
 }
 
@@ -710,37 +710,36 @@ void ConfigWindow::NotifyConfigChanged(bool onlyBackgroundStyle)
     {
         m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
     }
-    
-    // Coalesce disk writes and expensive background refreshes during rapid tuning.
-    if (HWND hwnd = GetHWND())
-    {
-        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
-        SetTimer(hwnd, CONFIG_SAVE_TIMER_ID, CONFIG_SAVE_DEBOUNCE_MS, nullptr);
-    }
-    else
-    {
-        SaveConfig();
-    }
+
+    // Configuration is an immediate, durable source of truth.  In particular,
+    // popup/config views can reload it while the settings window is still
+    // open, so publishing before the new file exists can restore stale state.
+    SaveConfig(false, true);
 
     if (m_appCtx && m_appCtx->eventBus)
     {
         if (onlyBackgroundStyle)
         {
-            if (HWND hwnd = GetHWND())
-            {
-                KillTimer(hwnd, CONFIG_BACKGROUND_STYLE_TIMER_ID);
-                SetTimer(hwnd, CONFIG_BACKGROUND_STYLE_TIMER_ID, CONFIG_BACKGROUND_STYLE_DEBOUNCE_MS, nullptr);
-            }
-            else
-            {
-                m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);
-            }
+            m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);
         }
         else
         {
+            // SaveConfig intentionally suppresses its own event so observers
+            // only reload after the synchronous write above has completed.
+            m_ignoreConfigChangedCount++;
+            m_appCtx->eventBus->Publish(EventType::ConfigChanged);
             m_appCtx->eventBus->Publish(EventType::ThemeChanged);
         }
     }
+}
+
+void ConfigWindow::PersistAppearanceConfig()
+{
+    if (m_appCtx && m_appCtx->configService)
+    {
+        m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
+    }
+    SaveConfig(false, true);
 }
 
 HWND ConfigWindow::GetWindowHWND()
@@ -953,9 +952,6 @@ void ConfigWindow::RestoreLatestConfigBackup()
     if (!ConfirmWindow::Show(GetHWND(), L"回滚配置", prompt.c_str(), m_appCtx))
         return;
 
-    if (HWND hwnd = GetHWND())
-        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
-
     bool ok = m_appCtx->configService->RestoreConfigBackup(history.front().filePath);
     if (ok)
     {
@@ -981,9 +977,6 @@ void ConfigWindow::ClearConfigData()
     }
 
     SaveConfig();
-    if (HWND hwnd = GetHWND())
-        KillTimer(hwnd, CONFIG_SAVE_TIMER_ID);
-
     bool ok = m_appCtx->configService->ClearConfig();
     if (ok)
     {
@@ -1463,7 +1456,11 @@ void ConfigWindow::SetTheme(int theme, POINT clickPt)
 
         m_appCtx->configService->SetTheme(theme);
         UIStyle::SetThemeMode((UIStyle::ThemeMode)theme);
-        NotifyConfigChanged();
+        PersistAppearanceConfig();
+        if (m_appCtx->eventBus)
+        {
+            m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        }
     }
 }
 
@@ -1488,7 +1485,11 @@ void ConfigWindow::SetThemeColor(int colorIndex, POINT clickPt)
 
         m_appCtx->configService->SetThemeColor(colorIndex);
         UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
-        NotifyConfigChanged();
+        PersistAppearanceConfig();
+        if (m_appCtx->eventBus)
+        {
+            m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        }
     }
 }
 
@@ -1514,7 +1515,11 @@ void ConfigWindow::SetWindowMode(int mode, POINT clickPt)
         m_appCtx->configService->SetWindowMode(mode);
         UIStyle::SetWindowMode(mode);
         RefreshAllWinLauncherDisplayAffinity();
-        NotifyConfigChanged();
+        PersistAppearanceConfig();
+        if (m_appCtx->eventBus)
+        {
+            m_appCtx->eventBus->Publish(EventType::ThemeChanged);
+        }
     }
 }
 
@@ -2241,21 +2246,6 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
     }
 
     case WM_TIMER:
-        if (wParam == CONFIG_SAVE_TIMER_ID)
-        {
-            KillTimer(hWnd, CONFIG_SAVE_TIMER_ID);
-            SaveConfig();
-            return 0;
-        }
-        if (wParam == CONFIG_BACKGROUND_STYLE_TIMER_ID)
-        {
-            KillTimer(hWnd, CONFIG_BACKGROUND_STYLE_TIMER_ID);
-            if (m_appCtx && m_appCtx->eventBus)
-            {
-                m_appCtx->eventBus->Publish(EventType::BackgroundStyleChanged);
-            }
-            return 0;
-        }
         if (wParam == CONFIG_ANIMATION_TIMER_ID)
         {
             if (m_animating)
