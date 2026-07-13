@@ -1,7 +1,6 @@
 #define NOMINMAX
 #include "EnvironmentDetector.h"
 #include <windows.h>
-#include <thread>
 #include "../App/BackgroundTaskService.h"
 
 // Static members
@@ -63,6 +62,20 @@ bool EnvironmentDetector::IsDetectionComplete()
 }
 
 // Helper: find an exe by SearchPathW in the system PATH
+static bool IsUsableExecutablePath(const std::wstring& path)
+{
+    if (path.empty())
+        return false;
+
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+        return false;
+
+    std::wstring lower = path;
+    CharLowerBuffW(lower.data(), static_cast<DWORD>(lower.size()));
+    return lower.find(L"\\microsoft\\windowsapps\\") == std::wstring::npos;
+}
+
 static bool FindExeInPath(const wchar_t* exeName, std::wstring& outPath)
 {
     wchar_t foundPath[MAX_PATH]{};
@@ -70,7 +83,7 @@ static bool FindExeInPath(const wchar_t* exeName, std::wstring& outPath)
     if (len > 0 && len < MAX_PATH)
     {
         outPath = foundPath;
-        return true;
+        return IsUsableExecutablePath(outPath);
     }
     return false;
 }
@@ -78,8 +91,7 @@ static bool FindExeInPath(const wchar_t* exeName, std::wstring& outPath)
 // Helper: check if a file exists at the given path
 static bool FileExists(const wchar_t* path)
 {
-    DWORD attr = GetFileAttributesW(path);
-    return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+    return IsUsableExecutablePath(path);
 }
 
 // Helper: from a git.exe path like "E:\Git\cmd\git.exe", derive bash.exe paths
@@ -169,11 +181,31 @@ void EnvironmentDetector::RunDetection()
 
             entry.available = found;
         }
+        else if (entry.type == L"python")
+        {
+            std::wstring pythonPath;
+            bool found = FindExeInPath(L"python.exe", pythonPath)
+                      || FindExeInPath(L"py.exe", pythonPath);
+
+            static const wchar_t* commonPaths[] = {
+                L"E:\\Python313\\python.exe",
+                L"E:\\Python312\\python.exe",
+                L"E:\\Python311\\python.exe",
+                L"C:\\Python313\\python.exe",
+                L"C:\\Python312\\python.exe",
+                L"C:\\Python311\\python.exe",
+            };
+            for (const auto* path : commonPaths)
+            {
+                if (!found && FileExists(path))
+                    found = true;
+            }
+            entry.available = found;
+        }
         else
         {
-            // Generic: SearchPathW
-            std::wstring dummy;
-            entry.available = FindExeInPath(entry.exeName.c_str(), dummy);
+            std::wstring executablePath;
+            entry.available = FindExeInPath(entry.exeName.c_str(), executablePath);
         }
     }
 

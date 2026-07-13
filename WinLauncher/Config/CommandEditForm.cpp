@@ -4,6 +4,7 @@
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
+#include "../Services/EnvironmentDetector.h"
 #include "ContextMenu.h"
 #include "DropDownMenu.h"
 #include <windowsx.h>
@@ -466,107 +467,32 @@ bool CommandEditForm::Validate(HWND hWnd)
     return true;
 }
 
-static bool CheckExecutableAvailable(const wchar_t* name)
-{
-    wchar_t dummy[MAX_PATH];
-    return SearchPathW(nullptr, name, nullptr, MAX_PATH, dummy, nullptr) > 0;
-}
-
-static bool IsUsableExecutablePath(const std::wstring& path)
-{
-    if (path.empty())
-        return false;
-
-    DWORD attrs = GetFileAttributesW(path.c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
-        return false;
-
-    std::wstring lower = path;
-    std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-    return lower.find(L"\\microsoft\\windowsapps\\") == std::wstring::npos;
-}
-
-static bool CheckPythonAvailable()
-{
-    wchar_t foundPath[MAX_PATH]{};
-    DWORD len = SearchPathW(nullptr, L"python.exe", nullptr, MAX_PATH, foundPath, nullptr);
-    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
-        return true;
-
-    len = SearchPathW(nullptr, L"py.exe", nullptr, MAX_PATH, foundPath, nullptr);
-    if (len > 0 && len < MAX_PATH && IsUsableExecutablePath(foundPath))
-        return true;
-
-    static const wchar_t* commonPaths[] = {
-        L"E:\\Python313\\python.exe",
-        L"E:\\Python312\\python.exe",
-        L"E:\\Python311\\python.exe",
-        L"C:\\Python313\\python.exe",
-        L"C:\\Python312\\python.exe",
-        L"C:\\Python311\\python.exe",
-    };
-
-    for (auto p : commonPaths)
-    {
-        if (IsUsableExecutablePath(p))
-            return true;
-    }
-
-    return false;
-}
-
-static bool CheckGitBashAvailable()
-{
-    wchar_t foundPath[MAX_PATH]{};
-    DWORD len = SearchPathW(nullptr, L"git.exe", nullptr, MAX_PATH, foundPath, nullptr);
-    if (len > 0 && len < MAX_PATH)
-    {
-        std::wstring gp(foundPath);
-        size_t cmdPos = gp.rfind(L"\\cmd\\");
-        if (cmdPos != std::wstring::npos)
-        {
-            std::wstring root = gp.substr(0, cmdPos);
-            std::wstring candidate = root + L"\\bin\\bash.exe";
-            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
-                return true;
-            candidate = root + L"\\usr\\bin\\bash.exe";
-            if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
-                return true;
-        }
-    }
-
-    static const wchar_t* commonPaths[] = {
-        L"C:\\Program Files\\Git\\bin\\bash.exe",
-        L"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-        L"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-        L"C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
-    };
-    for (auto p : commonPaths)
-    {
-        if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES)
-            return true;
-    }
-
-    return false;
-}
-
 void CommandEditForm::SelectCommandType(HWND hWnd)
 {
     float W = m_bounds.right - m_bounds.left;
     POINT clientPt = { (int)(m_bounds.left + W - 120), (int)(m_bounds.top + Y_BOX_TYPE + 24) };
     POINT screenPt = DpiHelper::LogicalClientToScreen(hWnd, clientPt);
 
-    bool cmdOK = CheckExecutableAvailable(L"cmd.exe");
-    bool psOK = CheckExecutableAvailable(L"powershell.exe");
-    bool pyOK = CheckPythonAvailable();
-    bool gitOK = CheckGitBashAvailable();
-
     std::vector<DropDownMenu::Item> items = {
-        { L"CMD", [this, hWnd]() { m_commandType = L"cmd"; m_typeBox.SetText(L"CMD"); InvalidateRect(hWnd, nullptr, FALSE); }, !cmdOK },
-        { L"PowerShell", [this, hWnd]() { m_commandType = L"powershell"; m_typeBox.SetText(L"PowerShell"); InvalidateRect(hWnd, nullptr, FALSE); }, !psOK },
-        { L"Python", [this, hWnd]() { m_commandType = L"python"; m_typeBox.SetText(L"Python"); InvalidateRect(hWnd, nullptr, FALSE); }, !pyOK },
-        { L"GitBash", [this, hWnd]() { m_commandType = L"gitbash"; m_typeBox.SetText(L"GitBash"); InvalidateRect(hWnd, nullptr, FALSE); }, !gitOK }
+        { L"CMD", [this, hWnd]() { m_commandType = L"cmd"; m_typeBox.SetText(L"CMD"); InvalidateRect(hWnd, nullptr, FALSE); } },
+        { L"PowerShell", [this, hWnd]() { m_commandType = L"powershell"; m_typeBox.SetText(L"PowerShell"); InvalidateRect(hWnd, nullptr, FALSE); } }
     };
+
+    if (!EnvironmentDetector::IsDetectionComplete())
+    {
+        items.push_back({ L"正在检测 Python 和 Git Bash...", nullptr, true });
+    }
+    else
+    {
+        if (EnvironmentDetector::IsAvailable(L"python"))
+        {
+            items.push_back({ L"Python", [this, hWnd]() { m_commandType = L"python"; m_typeBox.SetText(L"Python"); InvalidateRect(hWnd, nullptr, FALSE); } });
+        }
+        if (EnvironmentDetector::IsAvailable(L"gitbash"))
+        {
+            items.push_back({ L"GitBash", [this, hWnd]() { m_commandType = L"gitbash"; m_typeBox.SetText(L"GitBash"); InvalidateRect(hWnd, nullptr, FALSE); } });
+        }
+    }
     DropDownMenu::Show(hWnd, screenPt, items, m_ctx, 100.0f);
 }
 

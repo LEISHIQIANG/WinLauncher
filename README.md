@@ -11,7 +11,7 @@
 
 **WinLauncher** 是一个原生 Windows 桌面应用启动器 —— 极速、轻量、零依赖。完全基于 Win32 API + Direct2D 渲染构建，常驻系统托盘，通过鼠标手势或键盘快捷键在光标处弹出精美的毛玻璃快捷方式面板。可以把它看作你桌面上的个人命令面板。
 
-> 版本 **0.5.1.8** | C++17 | MSVC v143 | Windows 10+
+> 版本 **0.5.1.9** | C++17 | MSVC v143 | Windows 10+
 
 ---
 
@@ -281,7 +281,13 @@ WinLauncher/
     |   +-- AppMessages.h                 # 自定义 WM_APP+N 消息
     |   +-- EventBus.h                    # 发布/订阅事件系统
     |   +-- Logger.h/.cpp                 # 线程安全文件日志
-    |   \-- PluginHost.h                  # 插件系统 (IPlugin)
+    |   +-- BackgroundTaskService.h/.cpp   # 可取消后台任务与关闭协调
+    |   +-- UiDispatcher.h/.cpp            # 带生命周期保护的 UI 回调
+    |   +-- PluginManager.h/.cpp           # 插件生命周期与命令管理
+    |   +-- PluginInstaller.h/.cpp         # 插件安装与卸载
+    |   +-- PluginManifest.h/.cpp          # 插件清单校验
+    |   +-- PluginStateStore.h/.cpp        # 插件启用状态与私有配置
+    |   \-- CrashReporter.h/.cpp          # 崩溃记录与诊断面包屑
     |
     +-- Model/                            # 数据模型
     |   +-- ShortcutInfo.h                # ShortcutInfo、PopupPage、枚举
@@ -419,7 +425,7 @@ WinLauncher 是从零开始的 C++ 重写项目，受 QuickLauncher Python 项�
 
 **WinLauncher** is a native Windows desktop application launcher — fast, lightweight, zero-dependency. Built entirely with Win32 API + Direct2D rendering, it stays in your system tray and pops up a sleek, frosted-glass shortcut panel at your cursor via mouse gesture or keyboard shortcut. Think of it as a personal command palette for your desktop.
 
-> Version **0.5.1.8** | C++17 | MSVC v143 | Windows 10+
+> Version **0.5.1.9** | C++17 | MSVC v143 | Windows 10+
 
 ---
 
@@ -687,7 +693,13 @@ WinLauncher/
     |   +-- AppMessages.h                 # Custom WM_APP+N messages
     |   +-- EventBus.h                    # Pub/sub event system
     |   +-- Logger.h/.cpp                 # Thread-safe file logger
-    |   \-- PluginHost.h                  # Plugin system (IPlugin)
+    |   +-- BackgroundTaskService.h/.cpp   # Cancellable background work and shutdown coordination
+    |   +-- UiDispatcher.h/.cpp            # Lifetime-guarded UI callbacks
+    |   +-- PluginManager.h/.cpp           # Plugin lifecycle and command management
+    |   +-- PluginInstaller.h/.cpp         # Plugin installation and removal
+    |   +-- PluginManifest.h/.cpp          # Plugin manifest validation
+    |   +-- PluginStateStore.h/.cpp        # Plugin state and private configuration
+    |   \-- CrashReporter.h/.cpp          # Crash reporting and diagnostic breadcrumbs
     |
     +-- Model/                            # Data models
     |   +-- ShortcutInfo.h                # ShortcutInfo, PopupPage, enums

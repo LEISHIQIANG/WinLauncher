@@ -156,6 +156,8 @@ $contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
 $dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $shortcutPageHeader = Read-RepoFile "WinLauncher\Config\ShortcutPage.h"
+$commandEditFormSource = Read-RepoFile "WinLauncher\Config\CommandEditForm.cpp"
+$environmentDetectorSource = Read-RepoFile "WinLauncher\Services\EnvironmentDetector.cpp"
 
 Add-TestResult `
     -Name "Visible secondary windows retain shadows after deactivation" `
@@ -190,6 +192,20 @@ Add-TestResult `
         $shortcutPageHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_batchFaviconTasks'
     ) `
     -Detail "Multi-select menus must omit edit actions and batch-fetch only URL icons through cancellable background tasks"
+
+Add-TestResult `
+    -Name "Command type selection reuses the startup environment snapshot" `
+    -Passed (
+        $commandEditFormSource -match '#include "\.\./Services/EnvironmentDetector\.h"' -and
+        $commandEditFormSource -match 'EnvironmentDetector::IsDetectionComplete\(\)' -and
+        $commandEditFormSource -match 'EnvironmentDetector::IsAvailable\(L"python"\)' -and
+        $commandEditFormSource -match 'EnvironmentDetector::IsAvailable\(L"gitbash"\)' -and
+        $commandEditFormSource -notmatch 'CheckPythonAvailable' -and
+        $commandEditFormSource -notmatch 'CheckGitBashAvailable' -and
+        $environmentDetectorSource -match 'L"py\.exe"' -and
+        $environmentDetectorSource -match 'L"C:\\\\Python313\\\\python\.exe"'
+    ) `
+    -Detail "Optional command types must use the startup probe and stay out of the menu when unavailable"
 
 Add-TestResult `
     -Name "Glow and glass material frames use one DPI-aligned clean edge" `

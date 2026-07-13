@@ -3,7 +3,6 @@
 #include "../ShortcutManager.h"
 #include "../ViewModel/ConfigViewModel.h"
 #include "../Services/IIconService.h"
-#include "../Services/IIconService.h"
 #include "IConfigWindow.h"
 #include "CategoryList.h"
 #include "ShortcutPage.h"
