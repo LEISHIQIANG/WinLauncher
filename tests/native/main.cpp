@@ -73,18 +73,19 @@ int wmain(int argc, wchar_t** argv)
     {
         HANDLE thread = CreateThread(nullptr, 0, CooperativeHookLikeThread, nullptr, 0, nullptr);
         if (!thread) return Fail(L"unable to start cooperative hook-like thread");
-        const auto result = InputHookThreadStop::RequestStopAndClose(thread, GetThreadId(thread), 1000, []() {});
-        if (!result.quitPosted || result.waitResult != WAIT_OBJECT_0 || result.forceTerminated || result.exitCode != 37)
+        const auto result = InputHookThreadStop::RequestStop(thread, GetThreadId(thread), 1000);
+        if (!result.quitPosted || result.waitResult != WAIT_OBJECT_0 || result.timedOut || result.exitCode != 37)
             return Fail(L"cooperative input-hook shutdown did not complete cleanly");
+        CloseHandle(thread);
     }
 
     {
         HANDLE thread = CreateThread(nullptr, 0, BlockedHookLikeThread, nullptr, 0, nullptr);
         if (!thread) return Fail(L"unable to start blocked hook-like thread");
-        bool cleanupCalled = false;
-        const auto result = InputHookThreadStop::RequestStopAndClose(thread, GetThreadId(thread), 20, [&cleanupCalled]() { cleanupCalled = true; });
-        if (result.waitResult != WAIT_TIMEOUT || !cleanupCalled || !result.forceTerminated)
-            return Fail(L"input-hook timeout fallback did not run after cooperative shutdown timed out");
+        const auto result = InputHookThreadStop::RequestStop(thread, GetThreadId(thread), 20);
+        if (result.waitResult != WAIT_TIMEOUT || !result.timedOut || InputHookThreadStop::ReapIfExited(thread))
+            return Fail(L"input-hook timeout must retain a live thread for safe later reaping");
+        CloseHandle(thread);
     }
 
     {

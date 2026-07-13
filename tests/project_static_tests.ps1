@@ -112,6 +112,7 @@ $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
 $keyboardHookSource = Read-RepoFile "WinLauncher\KeyboardHook.cpp"
 $mouseHookSource = Read-RepoFile "WinLauncher\MouseHook.cpp"
 $macroServiceSource = Read-RepoFile "WinLauncher\Services\MacroService.cpp"
+$macroEditFormSource = Read-RepoFile "WinLauncher\Config\MacroEditForm.cpp"
 $batchLaunchSource = Read-RepoFile "WinLauncher\Services\BatchLaunchService.cpp"
 $applicationSource = Read-RepoFile "WinLauncher\App\Application.cpp"
 $popupHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
@@ -279,9 +280,9 @@ Add-TestResult `
     -Detail "Unhandled exceptions must use the dedicated dump thread, not the normal log mutex"
 
 Add-TestResult `
-    -Name "Normal logging uses a bounded async queue" `
-    -Passed ($loggerSource -match 'MaxPendingLogEntries\s*=\s*4096' -and $loggerSource -match 'm_pendingLogs' -and $loggerSource -match 'milliseconds\(100\)') `
-    -Detail "UI callers must not flush the log file on every entry"
+    -Name "Normal logging uses a bounded JSONL batch queue" `
+    -Passed ($loggerSource -match 'kMaxPendingLogEntries\s*=\s*4096' -and $loggerSource -match 'm_pendingLogs' -and $loggerSource -match 'kFlushBytes\s*=\s*64 \* 1024' -and $loggerSource -match 'std::chrono::seconds\(1\)' -and $loggerSource -match 'jsonl') `
+    -Detail "INFO and WARN records must use a bounded batch queue while DEBUG stays in the in-memory ring"
 
 Add-TestResult `
     -Name "Input hook threads use one bounded shutdown primitive" `
@@ -289,16 +290,53 @@ Add-TestResult `
         $inputHookStopHeader -match 'PostThreadMessageW\(threadId, WM_QUIT' -and
         $inputHookStopHeader -match 'GetTickCount64\(\) \+ timeoutMs' -and
         $inputHookStopHeader -match 'WaitForSingleObject\(thread, remainingMs\)' -and
-        $inputHookStopHeader -match 'cleanupBeforeForce\(\)' -and
-        $inputHookStopHeader -match 'TerminateThread\(thread, 0\)' -and
-        $keyboardHookSource -match 'InputHookThreadStop::RequestStopAndClose' -and
-        $mouseHookSource -match 'InputHookThreadStop::RequestStopAndClose' -and
-        $macroServiceSource -match 'InputHookThreadStop::RequestStopAndClose' -and
+        $inputHookStopHeader -match 'bool\s+timedOut' -and
+        $inputHookStopHeader -match 'bool\s+ReapIfExited' -and
+        $inputHookStopHeader -notmatch 'TerminateThread\(' -and
+        $keyboardHookSource -match 'InputHookThreadStop::RequestStop' -and
+        $mouseHookSource -match 'InputHookThreadStop::RequestStop' -and
+        $macroServiceSource -match 'InputHookThreadStop::RequestStop' -and
         $keyboardHookSource -notmatch 'TerminateThread\(' -and
         $mouseHookSource -notmatch 'TerminateThread\(' -and
         $macroServiceSource -notmatch 'TerminateThread\('
     ) `
-    -Detail "Keyboard, mouse, and macro hook threads must quit cooperatively before the explicit timeout fallback"
+    -Detail "Keyboard, mouse, and macro hook threads must quit cooperatively and retain timed-out handles for safe reaping"
+
+Add-TestResult `
+    -Name "Paused popup triggers pass all input through and coalesce pending requests" `
+    -Passed (
+        $mouseHookSource -match 'void\s+MouseHook::SetTriggerEnabled\s*\(' -and
+        $mouseHookSource -match 's_suppressButtonUpMask\.store\(0' -and
+        $mouseHookSource -match 's_popupRequestPending\.compare_exchange_strong' -and
+        $mouseHookSource -match 'void\s+MouseHook::AcknowledgePopupRequest\s*\(' -and
+        $applicationSource -match 'MouseHook::SetTriggerEnabled\(!m_popupPaused\)' -and
+        $applicationSource -match 'MouseHook::AcknowledgePopupRequest\(\)'
+    ) `
+    -Detail "Paused triggers must not consume mouse input, while active high-frequency presses keep one pending UI request"
+
+Add-TestResult `
+    -Name "Macro playback interruption stays non-blocking and ignores injected input" `
+    -Passed (
+        $macroServiceSource -match 'RequestInterruptFromKeyboard' -and
+        $macroServiceSource -match 'RequestInterruptFromMouse' -and
+        $macroServiceSource -match 'LLKHF_INJECTED' -and
+        $macroServiceSource -match 'LLMHF_INJECTED' -and
+        $macroServiceSource -match 'MacroSendInputSignature' -and
+        $keyboardHookSource -match 'MacroPlayer::RequestInterruptFromKeyboard' -and
+        $mouseHookSource -match 'MacroPlayer::RequestInterruptFromMouse'
+    ) `
+    -Detail "Physical input may request playback cancellation without blocking a low-level hook callback"
+
+Add-TestResult `
+    -Name "Macro recording batches high-frequency preview updates by session" `
+    -Passed (
+        $macroServiceSource -match 'SetTimer\(nullptr, 0, 33, UiUpdateTimerCallback\)' -and
+        $macroServiceSource -match 's_uiUpdateSession' -and
+        $macroServiceSource -match 'scheduledSession != CurrentSession\(\)' -and
+        $macroEditFormSource -match 'm_recordingSession' -and
+        $macroEditFormSource -match 'wParam != m_recordingSession'
+    ) `
+    -Detail "Drag recording must throttle preview messages and reject an obsolete recording session"
 
 Add-TestResult `
     -Name "Macro hook shutdown clears stale UI and input state" `

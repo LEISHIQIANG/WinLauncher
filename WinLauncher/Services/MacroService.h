@@ -39,6 +39,7 @@ public:
     static void Stop(bool discardTrailingMouseClick = false);
     static void Clear();
     static bool IsRecording();
+    static uint64_t CurrentSession();
     static std::vector<MacroEvent> GetEvents();
     static void AddEvent(const MacroEvent& ev);
 
@@ -47,6 +48,7 @@ private:
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
     static void DiscardTrailingMouseClick();
+    static void CALLBACK UiUpdateTimerCallback(HWND, UINT, UINT_PTR id, DWORD);
 
     static std::atomic<HWND> s_hNotifyWnd;
     static std::atomic<bool> s_recording;
@@ -61,6 +63,11 @@ private:
     static std::atomic<bool> s_ignoreMouseUntilReleased;
     static std::atomic<int32_t> s_lastMouseMoveX;
     static std::atomic<int32_t> s_lastMouseMoveY;
+    static std::atomic<uint64_t> s_lastMouseMoveTimeUs;
+    static std::atomic<UINT_PTR> s_uiUpdateTimerId;
+    static std::atomic<bool> s_uiUpdatePending;
+    static std::atomic<uint64_t> s_uiUpdateSession;
+    static std::atomic<uint64_t> s_recordingSession;
 };
 
 class MacroPlayer
@@ -69,6 +76,8 @@ public:
     static bool Play(const std::vector<MacroEvent>& events, double speed, const std::wstring& triggerMode, HWND hParentWnd, HWND hRestoreForegroundWnd = nullptr);
     static void Cancel();
     static bool IsPlaying();
+    static void RequestInterruptFromKeyboard(const KBDLLHOOKSTRUCT& input);
+    static void RequestInterruptFromMouse(const MSLLHOOKSTRUCT& input);
 
 private:
     static DWORD WINAPI PlayThreadProc(LPVOID lpParam);
@@ -84,6 +93,8 @@ private:
     };
 
     static std::atomic<bool> s_playing;
+    static std::atomic<bool> s_interruptRequested;
+    static std::atomic<bool> s_interruptArmed;
     static HANDLE s_hPlayThread;
     static std::mutex s_playMutex;
 };

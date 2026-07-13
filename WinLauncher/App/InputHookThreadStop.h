@@ -2,9 +2,10 @@
 
 #include <Windows.h>
 
-// Shared shutdown primitive for low-level input hook threads.  The caller owns
-// its state reset and supplies the hook cleanup that must happen before the
-// explicitly requested TerminateThread fallback.
+// Shared shutdown primitive for low-level input hook threads.  A low-level
+// hook can hold Win32/CRT state while it is inside a callback, so terminating
+// its thread is unsafe.  Callers retain a timed-out handle, disable their
+// input path, and reap it once the thread exits naturally.
 namespace InputHookThreadStop
 {
     struct Result
@@ -12,11 +13,21 @@ namespace InputHookThreadStop
         DWORD waitResult = WAIT_OBJECT_0;
         DWORD exitCode = STILL_ACTIVE;
         bool quitPosted = false;
-        bool forceTerminated = false;
+        bool timedOut = false;
     };
 
-    template <typename TimeoutCleanup>
-    Result RequestStopAndClose(HANDLE thread, DWORD threadId, DWORD timeoutMs, TimeoutCleanup&& cleanupBeforeForce)
+    inline bool ReapIfExited(HANDLE& thread)
+    {
+        if (!thread)
+            return true;
+        if (WaitForSingleObject(thread, 0) != WAIT_OBJECT_0)
+            return false;
+        CloseHandle(thread);
+        thread = nullptr;
+        return true;
+    }
+
+    inline Result RequestStop(HANDLE thread, DWORD threadId, DWORD timeoutMs)
     {
         Result result{};
         if (!thread)
@@ -42,7 +53,6 @@ namespace InputHookThreadStop
             {
                 result.waitResult = WAIT_OBJECT_0;
                 GetExitCodeThread(thread, &result.exitCode);
-                CloseHandle(thread);
                 return result;
             }
         }
@@ -50,16 +60,9 @@ namespace InputHookThreadStop
         const ULONGLONG now = GetTickCount64();
         const DWORD remainingMs = now >= deadline ? 0 : static_cast<DWORD>(deadline - now);
         result.waitResult = WaitForSingleObject(thread, remainingMs);
-        if (result.waitResult == WAIT_TIMEOUT)
-        {
-            cleanupBeforeForce();
-            result.forceTerminated = TerminateThread(thread, 0) != FALSE;
-            if (result.forceTerminated)
-                WaitForSingleObject(thread, 250);
-        }
+        result.timedOut = result.waitResult == WAIT_TIMEOUT;
 
         GetExitCodeThread(thread, &result.exitCode);
-        CloseHandle(thread);
         return result;
     }
 }

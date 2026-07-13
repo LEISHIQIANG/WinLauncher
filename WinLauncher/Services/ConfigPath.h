@@ -54,6 +54,11 @@ namespace ConfigPath
         return GetUserRoamingDirectory() + L"\\WinLauncher";
     }
 
+    inline std::wstring GetUserLogDirectory()
+    {
+        return GetUserDataDirectory() + L"\\logs";
+    }
+
     inline std::wstring GetUserPluginDirectory()
     {
         return GetUserDataDirectory() + L"\\plugins";
@@ -79,6 +84,13 @@ namespace ConfigPath
         std::wstring userConfigDir = GetUserConfigDirectory();
         EnsureDirectoryExists(userConfigDir);
         return userConfigDir;
+    }
+
+    inline std::wstring PrepareUserLogDirectory()
+    {
+        std::wstring logDir = GetUserLogDirectory();
+        EnsureDirectoryExists(logDir);
+        return logDir;
     }
 
     inline std::wstring PrepareUserPluginDirectory()

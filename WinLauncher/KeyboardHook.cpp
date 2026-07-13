@@ -71,8 +71,8 @@ static DWORD CurrentModifiers()
 
 static void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
 {
-    LOG_G_INFO(L"KeyboardHook::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
-        operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+    LOG_G_INFO(L"KeyboardHook::%ls: quitPosted=%d wait=%lu timedOut=%d exitCode=%lu",
+        operation, result.quitPosted, result.waitResult, result.timedOut, result.exitCode);
 }
 
 // ============================================================
@@ -83,6 +83,18 @@ bool KeyboardHook::Install()
 {
     LOG_G_INFO(L"KeyboardHook::Install called");
     if (s_running.load()) return IsInstalled();
+    HANDLE previousThread = s_hThread.load();
+    if (previousThread)
+    {
+        if (WaitForSingleObject(previousThread, 0) != WAIT_OBJECT_0)
+        {
+            LOG_G_WORNING(L"KeyboardHook::Install: previous hook thread is still stopping");
+            return false;
+        }
+        CloseHandle(previousThread);
+        s_hThread.store(nullptr);
+        if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    }
 
     s_hookThreadId.store(0);
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -128,14 +140,14 @@ bool KeyboardHook::Install()
     }
 
     s_running.store(false);
-    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-        hThread, s_hookThreadId.load(), 1000, []() {
-            HHOOK hook = KeyboardHook::s_hHook.exchange(nullptr);
-            if (hook) UnhookWindowsHookEx(hook);
-        });
+    const auto stopResult = InputHookThreadStop::RequestStop(hThread, s_hookThreadId.load(), 1000);
     LogHookThreadStopResult(L"InstallFailureCleanup", stopResult);
-    s_hThread.store(nullptr);
-    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    if (stopResult.waitResult == WAIT_OBJECT_0)
+    {
+        CloseHandle(hThread);
+        s_hThread.store(nullptr);
+    }
+    if (!stopResult.timedOut && s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hookThreadId.store(0);
     return false;
 }
@@ -143,22 +155,21 @@ bool KeyboardHook::Install()
 void KeyboardHook::Uninstall()
 {
     LOG_G_INFO(L"KeyboardHook::Uninstall called");
-    if (!s_running.load()) return;
-
     s_running.store(false);
     StopRecording();
 
     HANDLE hThread = s_hThread.load();
-    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-        hThread, s_hookThreadId.load(), 2000, []() {
-            HHOOK hook = KeyboardHook::s_hHook.exchange(nullptr);
-            if (hook) UnhookWindowsHookEx(hook);
-        });
+    if (!hThread) return;
+    const auto stopResult = InputHookThreadStop::RequestStop(hThread, s_hookThreadId.load(), 2000);
     LogHookThreadStopResult(L"Uninstall", stopResult);
-    s_hThread.store(nullptr);
+    if (stopResult.waitResult == WAIT_OBJECT_0)
+    {
+        CloseHandle(hThread);
+        s_hThread.store(nullptr);
+    }
 
-    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
-    s_hHook.store(nullptr);
+    if (!stopResult.timedOut && s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    if (!stopResult.timedOut) s_hHook.store(nullptr);
     s_hookThreadId.store(0);
     LOG_G_INFO(L"KeyboardHook::Uninstall: done");
 }
@@ -385,12 +396,23 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
         return 1;
     }
 
+    // Playback interruption is intentionally non-blocking.  The worker owns
+    // cleanup of its injected key/button state; this hook only records the
+    // request and always passes the user's real input through.
+    if (nCode == HC_ACTION && MacroPlayer::IsPlaying())
+    {
+        const auto* kbdll = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+        if (kbdll)
+            MacroPlayer::RequestInterruptFromKeyboard(*kbdll);
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
     // -----------------------------------------------------------------------
     // Double-Alt detection (runs when NOT in recording mode)
     // We track Alt-only taps: Alt down then up without any other key pressed.
     // If two such taps occur within s_doubleAltMs, fire DoubleAltPressed.
     // -----------------------------------------------------------------------
-    if (nCode == HC_ACTION && !s_recording.load() && !MacroRecorder::IsRecording() && !MacroPlayer::IsPlaying())
+    if (nCode == HC_ACTION && !s_recording.load() && !MacroRecorder::IsRecording())
     {
         HWND hDoubleAltWnd = s_hDoubleAltWnd.load();
         if (hDoubleAltWnd)

@@ -20,6 +20,7 @@ public:
 
     virtual std::vector<Model::PopupPage> LoadConfig() = 0;
     virtual void SaveConfig(const std::vector<Model::PopupPage>& pages) = 0;
+    virtual bool FlushPendingConfig() = 0;
     virtual std::wstring GetConfigDir() const = 0;
     virtual std::wstring GetConfigFilePath() const = 0;
     virtual std::wstring GetConfigHistoryDir() const = 0;

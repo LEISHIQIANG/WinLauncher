@@ -24,18 +24,18 @@ static void SetWindowDisplayAffinitySafe(HWND hwnd)
     {
         // Clear any display affinity previously set when switching from glass to other modes.
         BOOL res = SetWindowDisplayAffinity(hwnd, 0);
-        LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Cleared): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+        LOG_G_DEBUG(L"SetWindowDisplayAffinitySafe (Cleared): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
             hwnd, className, windowMode, res, GetLastError());
         return;
     }
 
     BOOL res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR | 0x10);
-    LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Set 0x11): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+    LOG_G_DEBUG(L"SetWindowDisplayAffinitySafe (Set 0x11): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
         hwnd, className, windowMode, res, GetLastError());
     if (!res)
     {
         res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
-        LOG_G_INFO(L"SetWindowDisplayAffinitySafe (Fallback 0x01): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
+        LOG_G_DEBUG(L"SetWindowDisplayAffinitySafe (Fallback 0x01): hwnd=%p, class=%s, mode=%d, res=%d, err=%lu",
             hwnd, className, windowMode, res, GetLastError());
     }
 }

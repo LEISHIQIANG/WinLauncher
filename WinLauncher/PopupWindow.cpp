@@ -962,7 +962,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             }
             bgElapsedMs = (GetTimeInSeconds() - bgStart) * 1000.0;
         }
-        LOG_G_INFO(L"PopupWindow perf: show_state sceneChanged=%d geometryChanged=%d dpiChanged=%d bgRefresh=%d bgMs=%.2f pages=%d",
+        LOG_G_DEBUG(L"PopupWindow perf: show_state sceneChanged=%d geometryChanged=%d dpiChanged=%d bgRefresh=%d bgMs=%.2f pages=%d",
                    sceneAppChanged ? 1 : 0, geometryChanged ? 1 : 0, dpiChanged ? 1 : 0,
                    backgroundRefreshNeeded ? 1 : 0, bgElapsedMs, static_cast<int>(this->m_pages.size()));
 
@@ -1887,7 +1887,9 @@ void PopupWindow::RefreshIcons()
     if (!m_rt || !m_appCtx || !m_appCtx->backgroundTasks) return;
     if (m_refreshingIcons)
     {
-        m_iconRefreshPending = true;
+        // One active Shell extraction already reflects the latest shortcut
+        // state.  Coalesce repeated refresh gestures rather than enqueueing a
+        // second whole-dataset disk pass.
         return;
     }
     m_refreshingIcons = true;
@@ -2009,7 +2011,7 @@ void PopupWindow::ApplyRefreshedIcons()
     m_iconRefreshTask = {};
     EnsureIcons();
     InvalidateRect(GetHWND(), nullptr, FALSE);
-    LOG_G_INFO(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
+    LOG_G_DEBUG(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
                applied, results.size(), (GetTimeInSeconds() - started) * 1000.0,
                static_cast<unsigned long long>(m_iconRefreshGeneration));
     if (m_iconRefreshPending)

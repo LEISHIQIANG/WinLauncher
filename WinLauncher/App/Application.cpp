@@ -376,6 +376,12 @@ void Application::Shutdown()
 
     if (m_appCtx)
     {
+        if (m_appCtx->usageHistory)
+            m_appCtx->usageHistory->Flush();
+        if (m_appCtx->configService)
+            m_appCtx->configService->FlushPendingConfig();
+        if (m_appCtx->logger)
+            m_appCtx->logger->Flush();
         m_appCtx->iconService.reset();
         m_appCtx->configService.reset();
         m_appCtx.reset();
@@ -446,7 +452,8 @@ void Application::UpdateTrayIconState()
 
 void Application::ShowPopupAtCursor()
 {
-    if (m_popupPaused) return;   // 暂停状态下忽略弹窗请求
+    MouseHook::AcknowledgePopupRequest();
+    if (m_popupPaused) return;
 
     POINT pt;
     GetCursorPos(&pt);
@@ -473,6 +480,7 @@ void Application::ShowTrayMenuAtCursor()
 void Application::TogglePopupPause()
 {
     m_popupPaused = !m_popupPaused;
+    MouseHook::SetTriggerEnabled(!m_popupPaused);
     TrayMenuWindow::SetPaused(m_popupPaused);
 
     // 在屏幕中央显示简短 Toast 提示
@@ -497,6 +505,7 @@ void Application::RestartHook()
     if (mouseInstalled)
     {
         m_mouseHookInstalled = true;
+        MouseHook::SetTriggerEnabled(!m_popupPaused);
         LOG_INFO(m_appCtx->logger, L"Application::RestartHook: mouse hook restarted successfully");
     }
     else

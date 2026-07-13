@@ -8,6 +8,7 @@
 #include <atomic>
 #include <vector>
 #include <deque>
+#include <cstdarg>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -53,15 +54,20 @@ public:
     void LogWorning(const wchar_t* fmt, ...);
     void LogDebug(const wchar_t* fmt, ...);
 
+    // Flushes queued INFO/WARN records. ERROR records request this immediately;
+    // callers use this at durable lifecycle boundaries such as application exit.
+    void Flush();
+    std::vector<std::string> GetRecentDebugJsonLines() const;
+
     static std::wstring HrToString(HRESULT hr);
 
 private:
     static LONG WINAPI UnhandledCrashHandler(EXCEPTION_POINTERS* exceptionInfo);
 
     void CleanupLoop();
-    void PruneLogFile();
-    void TrimLogFileBySizeLocked();
-    bool ParseLogTime(const std::string& line, std::chrono::system_clock::time_point& outTime);
+    void WritePending();
+    void RotateIfNeededLocked();
+    void PruneArchiveLocked();
 
     std::ofstream m_file;
     std::mutex m_mutex;
@@ -70,18 +76,22 @@ private:
 
     // Pruning and Thread variables
     std::wstring m_logFilePath;
+    std::wstring m_archiveDirectory;
+    std::string m_sessionId;
     std::thread m_cleanupThread;
     std::atomic<bool> m_stopCleanup{false};
     std::condition_variable m_cv;
-    std::mutex m_cleanupMutex;
-    ULONGLONG m_lastSizeTrimTick = 0;
+    mutable std::mutex m_cleanupMutex;
     struct PendingLogEntry
     {
         Level level = INFO;
         std::string utf8;
     };
     std::deque<PendingLogEntry> m_pendingLogs;
-    size_t m_droppedDebugLogs = 0;
+    std::deque<std::string> m_recentDebugLogs;
+    size_t m_pendingBytes = 0;
+    size_t m_droppedLogs = 0;
+    bool m_forceFlush = false;
 };
 
 // Logging Macros capturing file, line, and function details

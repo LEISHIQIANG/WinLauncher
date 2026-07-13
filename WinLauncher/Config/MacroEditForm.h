@@ -123,6 +123,7 @@ private:
     std::wstring m_lastPreviewPath;
     std::wstring m_lastPreviewText;
     ID2D1Factory* m_d2dFactoryCache = nullptr;
+    uint64_t m_recordingSession = 0;
 
     // Fonts
     ComPtr<IDWriteTextFormat> m_tfLabel;

@@ -177,7 +177,7 @@ void CrashReporter::PruneOldReports()
     WIN32_FIND_DATAW data{};
     HANDLE find = FindFirstFileW((m_crashDirectory + L"\\WinLauncher_*.*").c_str(), &data);
     if (find == INVALID_HANDLE_VALUE) return;
-    struct Entry { std::wstring path; FILETIME time; };
+    struct Entry { std::wstring path; FILETIME time; unsigned long long bytes = 0; };
     std::vector<Entry> entries;
     FILETIME nowFileTime{};
     GetSystemTimeAsFileTime(&nowFileTime);
@@ -196,12 +196,27 @@ void CrashReporter::PruneOldReports()
             if (now.QuadPart > modified.QuadPart && now.QuadPart - modified.QuadPart > ThirtyDays100ns)
                 DeleteFileW(path.c_str());
             else
-                entries.push_back({ std::move(path), data.ftLastWriteTime });
+                ULARGE_INTEGER bytes{};
+                bytes.LowPart = data.nFileSizeLow;
+                bytes.HighPart = data.nFileSizeHigh;
+                entries.push_back({ std::move(path), data.ftLastWriteTime, bytes.QuadPart });
         }
     } while (FindNextFileW(find, &data));
     FindClose(find);
     std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
         return CompareFileTime(&a.time, &b.time) > 0;
     });
-    for (size_t i = 20; i < entries.size(); ++i) DeleteFileW(entries[i].path.c_str());
+    // A crash report is a dump plus its companion text file.  Retain at most
+    // five recent pairs and cap the folder so repeated crashes cannot consume
+    // unbounded disk space.
+    constexpr size_t MaxCrashFiles = 10;
+    constexpr unsigned long long MaxCrashBytes = 50ULL * 1024ULL * 1024ULL;
+    unsigned long long retainedBytes = 0;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        if (i >= MaxCrashFiles || retainedBytes + entries[i].bytes > MaxCrashBytes)
+            DeleteFileW(entries[i].path.c_str());
+        else
+            retainedBytes += entries[i].bytes;
+    }
 }

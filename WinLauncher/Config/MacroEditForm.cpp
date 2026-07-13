@@ -332,6 +332,7 @@ void MacroEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repain
     {
         if (MacroRecorder::Start(hWnd))
         {
+            m_recordingSession = MacroRecorder::CurrentSession();
             // Clear focus so keyboard events are captured by recorder, not text boxes
             if (m_focusedBox)
             {
@@ -456,6 +457,7 @@ bool MacroEditForm::HandleHookMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 {
     if (uMsg == AppMessages::MacroRecordingUpdated)
     {
+        if (wParam != m_recordingSession) return true;
         RefreshScriptText(hWnd);
         repaint = true;
         return true;
@@ -463,6 +465,7 @@ bool MacroEditForm::HandleHookMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
     if (uMsg == AppMessages::MacroRecordingStopped)
     {
+        if (wParam != m_recordingSession) return true;
         RefreshScriptText(hWnd);
         // Restore focus to name box after recording
         if (m_focusedBox) m_focusedBox->SetFocus(false);

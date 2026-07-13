@@ -1,121 +1,176 @@
 #include "Logger.h"
 #include <cwchar>
 #include <cstdarg>
-#include <sstream>
 #include <algorithm>
+#include <sstream>
+#include <iomanip>
+#include <shlobj.h>
+#include <cstring>
 
-// Define static members
 Logger* Logger::s_defaultLogger = nullptr;
 
 namespace
 {
+    constexpr size_t kMaxPendingLogEntries = 4096;
+    constexpr size_t kMaxDebugRecords = 2048;
+    constexpr size_t kFlushBytes = 64 * 1024;
+    constexpr ULONGLONG kRotateBytes = 2ULL * 1024ULL * 1024ULL;
+    constexpr ULONGLONG kArchiveBytes = 20ULL * 1024ULL * 1024ULL;
+    constexpr ULONGLONG kArchiveAge100ns = 14ULL * 24ULL * 60ULL * 60ULL * 10000000ULL;
+
     thread_local uint64_t t_logTaskId = 0;
     thread_local std::wstring t_logTaskName;
-}
 
-Logger::Logger(const std::wstring& logFile)
-    : m_logFilePath(logFile)
-{
-    GetInstanceRef() = this;
-    if (s_defaultLogger == nullptr)
+    const char* GetFileName(const char* path)
     {
-        s_defaultLogger = this;
+        if (!path) return "";
+        const char* slash = strrchr(path, '\\');
+        if (!slash) slash = strrchr(path, '/');
+        return slash ? slash + 1 : path;
     }
 
+    std::wstring ParentDirectory(const std::wstring& path)
+    {
+        const size_t at = path.find_last_of(L"\\/");
+        return at == std::wstring::npos ? L"" : path.substr(0, at);
+    }
+
+    void EnsureDirectory(const std::wstring& path)
+    {
+        if (!path.empty()) SHCreateDirectoryExW(nullptr, path.c_str(), nullptr);
+    }
+
+    std::string ToUtf8(const std::wstring& value)
+    {
+        if (value.empty()) return {};
+        const int length = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+        std::string result(length, '\0');
+        if (length > 0) WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), length, nullptr, nullptr);
+        return result;
+    }
+
+    std::wstring FromAnsi(const char* value)
+    {
+        if (!value || !*value) return L"";
+        const int length = MultiByteToWideChar(CP_ACP, 0, value, -1, nullptr, 0);
+        std::wstring result(length > 0 ? length : 0, L'\0');
+        if (length > 1)
+        {
+            MultiByteToWideChar(CP_ACP, 0, value, -1, result.data(), length);
+            result.pop_back();
+        }
+        return result;
+    }
+
+    std::wstring JsonEscape(const std::wstring& value)
+    {
+        std::wstring result;
+        result.reserve(value.size() + 16);
+        for (const wchar_t ch : value)
+        {
+            switch (ch)
+            {
+            case L'\\': result += L"\\\\"; break;
+            case L'\"': result += L"\\\""; break;
+            case L'\n': result += L"\\n"; break;
+            case L'\r': result += L"\\r"; break;
+            case L'\t': result += L"\\t"; break;
+            default:
+                if (ch < 0x20) { wchar_t escaped[8]{}; swprintf_s(escaped, L"\\u%04x", static_cast<unsigned>(ch)); result += escaped; }
+                else result += ch;
+                break;
+            }
+        }
+        return result;
+    }
+
+    std::wstring SanitizeMessage(std::wstring value)
+    {
+        wchar_t userProfile[MAX_PATH]{};
+        if (GetEnvironmentVariableW(L"USERPROFILE", userProfile, MAX_PATH) > 0)
+        {
+            const std::wstring needle(userProfile);
+            size_t position = 0;
+            while ((position = value.find(needle, position)) != std::wstring::npos)
+            {
+                value.replace(position, needle.size(), L"<user-path>");
+                position += 11;
+            }
+        }
+        return value;
+    }
+
+    std::wstring UtcTimestamp()
+    {
+        SYSTEMTIME now{};
+        GetSystemTime(&now);
+        wchar_t buffer[40]{};
+        swprintf_s(buffer, L"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+        return buffer;
+    }
+
+    std::wstring RotationTimestamp()
+    {
+        SYSTEMTIME now{};
+        GetLocalTime(&now);
+        wchar_t buffer[40]{};
+        swprintf_s(buffer, L"%04u%02u%02u-%02u%02u%02u-%03u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+        return buffer;
+    }
+
+    const wchar_t* LevelName(Logger::Level level)
+    {
+        switch (level) { case Logger::DEBUG: return L"debug"; case Logger::WORNING: return L"warn"; case Logger::ERRA: return L"error"; default: return L"info"; }
+    }
+}
+
+Logger::Logger(const std::wstring& logFile) : m_logFilePath(logFile)
+{
+    GetInstanceRef() = this;
+    if (!s_defaultLogger) s_defaultLogger = this;
     if (!m_logFilePath.empty())
     {
-        m_file.open(m_logFilePath, std::ios::app);
+        EnsureDirectory(ParentDirectory(m_logFilePath));
+        m_archiveDirectory = ParentDirectory(m_logFilePath) + L"\\archive";
+        EnsureDirectory(m_archiveDirectory);
+        m_file.open(m_logFilePath, std::ios::app | std::ios::binary);
+        m_sessionId = std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
         m_cleanupThread = std::thread(&Logger::CleanupLoop, this);
     }
 }
 
 Logger::~Logger()
 {
-    if (m_cleanupThread.joinable())
     {
-        {
-            std::lock_guard<std::mutex> lock(m_cleanupMutex);
-            m_stopCleanup = true;
-        }
-        m_cv.notify_all();
-        m_cleanupThread.join();
+        std::lock_guard<std::mutex> lock(m_cleanupMutex);
+        m_stopCleanup = true;
     }
-
-    if (m_file.is_open())
-    {
-        m_file.close();
-    }
-    if (GetInstanceRef() == this)
-    {
-        GetInstanceRef() = nullptr;
-    }
-    if (s_defaultLogger == this)
-    {
-        s_defaultLogger = nullptr;
-    }
+    m_cv.notify_all();
+    if (m_cleanupThread.joinable()) m_cleanupThread.join();
+    if (m_file.is_open()) m_file.close();
+    if (GetInstanceRef() == this) GetInstanceRef() = nullptr;
+    if (s_defaultLogger == this) s_defaultLogger = nullptr;
 }
 
-Logger* Logger::GetDefault()
-{
-    return s_defaultLogger;
-}
-
-void Logger::SetDefault(Logger* logger)
-{
-    s_defaultLogger = logger;
-}
+Logger* Logger::GetDefault() { return s_defaultLogger; }
+void Logger::SetDefault(Logger* logger) { s_defaultLogger = logger; }
 
 bool Logger::ShouldLogEvery(ULONGLONG& lastLogTick, DWORD intervalMs)
 {
-    ULONGLONG now = GetTickCount64();
-    if (lastLogTick != 0 && now - lastLogTick < intervalMs)
-    {
-        return false;
-    }
+    const ULONGLONG now = GetTickCount64();
+    if (lastLogTick != 0 && now - lastLogTick < intervalMs) return false;
     lastLogTick = now;
     return true;
 }
 
 bool Logger::ShouldLogElapsed(ULONGLONG& lastLogTick, double elapsedMs, double thresholdMs, DWORD intervalMs)
 {
-    if (elapsedMs < thresholdMs)
-    {
-        return false;
-    }
-    return ShouldLogEvery(lastLogTick, intervalMs);
+    return elapsedMs >= thresholdMs && ShouldLogEvery(lastLogTick, intervalMs);
 }
 
-void Logger::SetThreadTaskContext(uint64_t taskId, const std::wstring& taskName)
-{
-    t_logTaskId = taskId;
-    t_logTaskName = taskName;
-}
-
-void Logger::ClearThreadTaskContext()
-{
-    t_logTaskId = 0;
-    t_logTaskName.clear();
-}
-
-Logger*& Logger::GetInstanceRef()
-{
-    static Logger* s_instance = nullptr;
-    return s_instance;
-}
-
-namespace {
-    constexpr std::streamoff MaxLogFileBytes = 8 * 1024 * 1024;
-    constexpr std::streamoff TargetLogFileBytes = 4 * 1024 * 1024;
-    constexpr size_t MaxPendingLogEntries = 4096;
-
-    const char* GetFileName(const char* path)
-    {
-        if (!path) return "";
-        const char* lastSlash = strrchr(path, '\\');
-        if (!lastSlash) lastSlash = strrchr(path, '/');
-        return lastSlash ? lastSlash + 1 : path;
-    }
-}
+void Logger::SetThreadTaskContext(uint64_t taskId, const std::wstring& taskName) { t_logTaskId = taskId; t_logTaskName = taskName; }
+void Logger::ClearThreadTaskContext() { t_logTaskId = 0; t_logTaskName.clear(); }
+Logger*& Logger::GetInstanceRef() { static Logger* instance = nullptr; return instance; }
 
 void Logger::Log(Level level, const char* file, int line, const char* func, const wchar_t* format, ...)
 {
@@ -127,440 +182,168 @@ void Logger::Log(Level level, const char* file, int line, const char* func, cons
 
 void Logger::LogV(Level level, const char* file, int line, const char* func, const wchar_t* format, va_list args)
 {
-    va_list argsCopy;
-    va_copy(argsCopy, args);
-    int len = _vsnwprintf(nullptr, 0, format, argsCopy);
-    va_end(argsCopy);
-    if (len <= 0) return;
+    va_list copy;
+    va_copy(copy, args);
+    const int length = _vsnwprintf(nullptr, 0, format, copy);
+    va_end(copy);
+    if (length <= 0) return;
 
-    std::wstring msg(len, L'\0');
-    _vsnwprintf(&msg[0], len + 1, format, args);
+    std::wstring message(length, L'\0');
+    _vsnwprintf(message.data(), length + 1, format, args);
+    message = SanitizeMessage(std::move(message));
 
-    auto now = std::chrono::system_clock::now();
-    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    auto tt = std::chrono::system_clock::to_time_t(now);
-    tm tm{};
-    localtime_s(&tm, &tt);
-
-    const wchar_t* levelStr = L"INFO";
-    switch (level)
+    std::wstring component = FromAnsi(GetFileName(file ? file : "logger"));
+    std::wstring event = func ? FromAnsi(func) : L"message";
+    constexpr wchar_t nodePrefix[] = L"[node=";
+    if (message.rfind(nodePrefix, 0) == 0)
     {
-    case INFO:    levelStr = L"INFO"; break;
-    case WORNING: levelStr = L"WARN"; break;
-    case DEBUG:   levelStr = L"DEBUG"; break;
-    case ERRA:    levelStr = L"ERROR"; break;
-    }
-
-    wchar_t prefix[384];
-    DWORD threadId = GetCurrentThreadId();
-    if (file && func)
-    {
-        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s][tid=%lu][task=%llu:%s][%hs:%d (%hs)] ",
-            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-            tm.tm_hour, tm.tm_min, tm.tm_sec, (int)now_ms.count(),
-            levelStr, threadId, static_cast<unsigned long long>(t_logTaskId),
-            t_logTaskName.empty() ? L"-" : t_logTaskName.c_str(), GetFileName(file), line, func);
-    }
-    else
-    {
-        swprintf_s(prefix, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d][%s][tid=%lu][task=%llu:%s] ",
-            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-            tm.tm_hour, tm.tm_min, tm.tm_sec, (int)now_ms.count(),
-            levelStr, threadId, static_cast<unsigned long long>(t_logTaskId),
-            t_logTaskName.empty() ? L"-" : t_logTaskName.c_str());
-    }
-
-    std::wstring output = prefix + msg + L"\n";
-    OutputDebugStringW(output.c_str());
-
-    if (!m_logFilePath.empty())
-    {
-        int clen = WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), nullptr, 0, nullptr, nullptr);
-        if (clen > 0)
+        const size_t nodeEnd = message.find(L"]", 6);
+        const size_t eventPrefix = message.find(L"[event=", nodeEnd);
+        const size_t eventEnd = eventPrefix == std::wstring::npos ? std::wstring::npos : message.find(L"]", eventPrefix + 7);
+        if (nodeEnd != std::wstring::npos && eventEnd != std::wstring::npos)
         {
-            std::string utf8(clen, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, output.c_str(), (int)output.size(), &utf8[0], clen, nullptr, nullptr);
-            {
-                std::lock_guard<std::mutex> queueLock(m_cleanupMutex);
-                if (m_pendingLogs.size() >= MaxPendingLogEntries)
-                {
-                    if (level == DEBUG)
-                    {
-                        ++m_droppedDebugLogs;
-                        return;
-                    }
-                    auto debugIt = std::find_if(m_pendingLogs.begin(), m_pendingLogs.end(), [](const PendingLogEntry& entry) {
-                        return entry.level == DEBUG;
-                    });
-                    if (debugIt != m_pendingLogs.end()) m_pendingLogs.erase(debugIt);
-                    else m_pendingLogs.pop_front();
-                }
-                m_pendingLogs.push_back({ level, std::move(utf8) });
-            }
-            if (level == ERRA)
-            {
-                m_cv.notify_one();
-            }
+            component = message.substr(6, nodeEnd - 6);
+            event = message.substr(eventPrefix + 7, eventEnd - (eventPrefix + 7));
+            message.erase(0, eventEnd + 1);
+            if (!message.empty() && message.front() == L' ') message.erase(0, 1);
         }
     }
-}
 
-// Backward compatibility methods
-void Logger::LogInfo(const wchar_t* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    LogV(INFO, nullptr, 0, nullptr, fmt, args);
-    va_end(args);
-}
+    std::wostringstream record;
+    record << L"{\"ts\":\"" << UtcTimestamp()
+           << L"\",\"level\":\"" << LevelName(level)
+           << L"\",\"session\":\"" << FromAnsi(m_sessionId.c_str())
+           << L"\",\"pid\":" << GetCurrentProcessId()
+           << L",\"tid\":" << GetCurrentThreadId()
+           << L",\"task\":{\"id\":" << t_logTaskId << L",\"name\":\"" << JsonEscape(t_logTaskName)
+           << L"\"},\"component\":\"" << JsonEscape(component)
+           << L"\",\"event\":\"" << JsonEscape(event)
+           << L"\",\"message\":\"" << JsonEscape(message)
+           << L"\",\"source\":{\"file\":\"" << JsonEscape(FromAnsi(GetFileName(file ? file : "")))
+           << L"\",\"line\":" << line << L",\"function\":\"" << JsonEscape(func ? FromAnsi(func) : L"") << L"\"}}\n";
+    const std::string utf8 = ToUtf8(record.str());
+    OutputDebugStringW(record.str().c_str());
 
-void Logger::LogError(const wchar_t* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    LogV(ERRA, nullptr, 0, nullptr, fmt, args);
-    va_end(args);
-}
-
-void Logger::LogWorning(const wchar_t* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    LogV(WORNING, nullptr, 0, nullptr, fmt, args);
-    va_end(args);
-}
-
-void Logger::LogDebug(const wchar_t* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    LogV(DEBUG, nullptr, 0, nullptr, fmt, args);
-    va_end(args);
-}
-
-std::wstring Logger::HrToString(HRESULT hr)
-{
-    wchar_t buf[256];
-    swprintf_s(buf, L"HRESULT=0x%08X", hr);
-    return buf;
-}
-
-LONG WINAPI Logger::UnhandledCrashHandler(EXCEPTION_POINTERS* exceptionInfo)
-{
-    Logger* logger = GetInstanceRef();
-    if (logger)
+    std::lock_guard<std::mutex> lock(m_cleanupMutex);
+    if (level == DEBUG)
     {
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"==================================================");
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"!!! CRASH DETECTED !!!");
-        
-        DWORD code = exceptionInfo->ExceptionRecord->ExceptionCode;
-        void* address = exceptionInfo->ExceptionRecord->ExceptionAddress;
-        
-        const wchar_t* codeStr = L"Unknown Exception";
-        switch (code)
-        {
-        case EXCEPTION_ACCESS_VIOLATION:          codeStr = L"Access Violation (0xC0000005)"; break;
-        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:     codeStr = L"Array Bounds Exceeded (0xC000008C)"; break;
-        case EXCEPTION_BREAKPOINT:                codeStr = L"Breakpoint (0x80000003)"; break;
-        case EXCEPTION_DATATYPE_MISALIGNMENT:     codeStr = L"Datatype Misalignment (0x80000002)"; break;
-        case EXCEPTION_FLT_DENORMAL_OPERAND:      codeStr = L"Float Denormal Operand (0xC000008D)"; break;
-        case EXCEPTION_FLT_DIVIDE_BY_ZERO:       codeStr = L"Float Divide by Zero (0xC000008E)"; break;
-        case EXCEPTION_FLT_INEXACT_RESULT:       codeStr = L"Float Inexact Result (0xC000008F)"; break;
-        case EXCEPTION_FLT_INVALID_OPERATION:     codeStr = L"Float Invalid Operation (0xC0000090)"; break;
-        case EXCEPTION_FLT_OVERFLOW:              codeStr = L"Float Overflow (0xC0000091)"; break;
-        case EXCEPTION_FLT_STACK_CHECK:           codeStr = L"Float Stack Check (0xC0000092)"; break;
-        case EXCEPTION_FLT_UNDERFLOW:             codeStr = L"Float Underflow (0xC0000093)"; break;
-        case EXCEPTION_INT_DIVIDE_BY_ZERO:        codeStr = L"Integer Divide by Zero (0xC0000094)"; break;
-        case EXCEPTION_INT_OVERFLOW:               codeStr = L"Integer Overflow (0xC0000095)"; break;
-        case EXCEPTION_PRIV_INSTRUCTION:          codeStr = L"Privileged Instruction (0xC0000096)"; break;
-        case EXCEPTION_IN_PAGE_ERROR:             codeStr = L"In Page Error (0xC0000006)"; break;
-        case EXCEPTION_ILLEGAL_INSTRUCTION:       codeStr = L"Illegal Instruction (0xC000001D)"; break;
-        case EXCEPTION_NONCONTINUABLE_EXCEPTION:  codeStr = L"Noncontinuable Exception (0xC0000025)"; break;
-        case EXCEPTION_STACK_OVERFLOW:            codeStr = L"Stack Overflow (0xC0000FD)"; break;
-        case EXCEPTION_INVALID_DISPOSITION:       codeStr = L"Invalid Disposition (0xC0000026)"; break;
-        case 0xC0000374:                          codeStr = L"Heap Corruption (0xC0000374)"; break;
-        }
-
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Exception Code: %s", codeStr);
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Exception Address: 0x%p", address);
-
-        if (code == EXCEPTION_ACCESS_VIOLATION && exceptionInfo->ExceptionRecord->NumberParameters >= 2)
-        {
-            ULONG_PTR type = exceptionInfo->ExceptionRecord->ExceptionInformation[0];
-            ULONG_PTR faultAddr = exceptionInfo->ExceptionRecord->ExceptionInformation[1];
-            logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Details: %s location 0x%p",
-                type == 0 ? L"Read from" : (type == 1 ? L"Write to" : L"Execute at"), (void*)faultAddr);
-        }
-
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Stack Backtrace:");
-        void* stack[32];
-        USHORT frames = CaptureStackBackTrace(0, 32, stack, nullptr);
-        for (USHORT i = 0; i < frames; i++)
-        {
-            HMODULE hMod = nullptr;
-            wchar_t modPath[MAX_PATH] = L"unknown";
-            if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                (LPCWSTR)stack[i], &hMod))
-            {
-                GetModuleFileNameW(hMod, modPath, MAX_PATH);
-                wchar_t* lastSlash = wcsrchr(modPath, L'\\');
-                if (lastSlash)
-                {
-                    wcscpy_s(modPath, lastSlash + 1);
-                }
-            }
-            logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"  [%d] %s (0x%p)", i, modPath, stack[i]);
-        }
-
-        // Auto-detect GPU driver crashes and write recovery marker
-        {
-            void* gpuStack[32];
-            USHORT gpuFrames = CaptureStackBackTrace(0, 32, gpuStack, nullptr);
-            bool gpuCrash = false;
-            for (USHORT i = 0; i < gpuFrames && !gpuCrash; i++)
-            {
-                HMODULE hMod = nullptr;
-                wchar_t modName[MAX_PATH] = L"";
-                if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    (LPCWSTR)gpuStack[i], &hMod))
-                {
-                    GetModuleFileNameW(hMod, modName, MAX_PATH);
-                    wchar_t* lastSlash = wcsrchr(modName, L'\\');
-                    if (lastSlash) wcscpy_s(modName, lastSlash + 1);
-                    _wcslwr_s(modName);
-                    if (wcsstr(modName, L"nvwgf2umx") || wcsstr(modName, L"nvldumd") ||
-                        wcsstr(modName, L"atidxx64") || wcsstr(modName, L"atiumd") ||
-                        wcsstr(modName, L"igdumd")  || wcsstr(modName, L"dxgkrnl"))
-                    {
-                        gpuCrash = true;
-                    }
-                }
-            }
-            if (gpuCrash)
-            {
-                logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"GPU driver detected in crash stack — writing recovery marker");
-                wchar_t markerPath[MAX_PATH]{};
-                if (GetEnvironmentVariableW(L"APPDATA", markerPath, MAX_PATH))
-                {
-                    wcscat_s(markerPath, L"\\WinLauncher\\config\\gpu_crash_recovery.marker");
-                    HANDLE hMarker = CreateFileW(markerPath, GENERIC_WRITE, 0, nullptr,
-                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-                    if (hMarker != INVALID_HANDLE_VALUE)
-                    {
-                        const char* content = "GPU_CRASH";
-                        DWORD written = 0;
-                        WriteFile(hMarker, content, (DWORD)strlen(content), &written, nullptr);
-                        CloseHandle(hMarker);
-                        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Wrote GPU crash recovery marker to %s", markerPath);
-                    }
-                }
-            }
-        }
-
-        logger->Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"==================================================");
+        m_recentDebugLogs.push_back(utf8);
+        if (m_recentDebugLogs.size() > kMaxDebugRecords) m_recentDebugLogs.pop_front();
+        return;
     }
-    return EXCEPTION_CONTINUE_SEARCH;
+    if (m_pendingLogs.size() >= kMaxPendingLogEntries)
+    {
+        m_pendingBytes -= m_pendingLogs.front().utf8.size();
+        m_pendingLogs.pop_front();
+        ++m_droppedLogs;
+    }
+    m_pendingLogs.push_back({ level, utf8 });
+    m_pendingBytes += utf8.size();
+    if (level == ERRA) m_forceFlush = true;
+    if (m_forceFlush || m_pendingBytes >= kFlushBytes) m_cv.notify_one();
 }
 
-// Threaded Cleanup Loop
+void Logger::LogInfo(const wchar_t* fmt, ...) { va_list args; va_start(args, fmt); LogV(INFO, nullptr, 0, nullptr, fmt, args); va_end(args); }
+void Logger::LogError(const wchar_t* fmt, ...) { va_list args; va_start(args, fmt); LogV(ERRA, nullptr, 0, nullptr, fmt, args); va_end(args); }
+void Logger::LogWorning(const wchar_t* fmt, ...) { va_list args; va_start(args, fmt); LogV(WORNING, nullptr, 0, nullptr, fmt, args); va_end(args); }
+void Logger::LogDebug(const wchar_t* fmt, ...) { va_list args; va_start(args, fmt); LogV(DEBUG, nullptr, 0, nullptr, fmt, args); va_end(args); }
+
+void Logger::Flush() { WritePending(); }
+
+std::vector<std::string> Logger::GetRecentDebugJsonLines() const
+{
+    std::lock_guard<std::mutex> lock(m_cleanupMutex);
+    return { m_recentDebugLogs.begin(), m_recentDebugLogs.end() };
+}
+
+std::wstring Logger::HrToString(HRESULT hr) { wchar_t buffer[64]{}; swprintf_s(buffer, L"HRESULT=0x%08X", hr); return buffer; }
+
+LONG WINAPI Logger::UnhandledCrashHandler(EXCEPTION_POINTERS*) { return EXCEPTION_CONTINUE_SEARCH; }
+
 void Logger::CleanupLoop()
 {
-    PruneLogFile();
-    ULONGLONG lastPrune = GetTickCount64();
     while (true)
     {
-        std::deque<PendingLogEntry> pending;
-        size_t dropped = 0;
         std::unique_lock<std::mutex> lock(m_cleanupMutex);
-        m_cv.wait_for(lock, std::chrono::milliseconds(100), [this]() {
-            return m_stopCleanup.load() || !m_pendingLogs.empty();
-        });
-        pending.swap(m_pendingLogs);
-        dropped = m_droppedDebugLogs;
-        m_droppedDebugLogs = 0;
-        bool stopping = m_stopCleanup.load();
+        m_cv.wait_for(lock, std::chrono::seconds(1), [this] { return m_stopCleanup || m_forceFlush || m_pendingBytes >= kFlushBytes; });
+        const bool stopping = m_stopCleanup;
         lock.unlock();
-
-        if (!pending.empty() || dropped != 0)
-        {
-            std::lock_guard<std::mutex> fileLock(m_mutex);
-            if (m_file.is_open())
-            {
-                if (dropped != 0)
-                    m_file << "[log-maintenance] dropped " << dropped << " debug entries because the async queue was full\n";
-                for (const auto& entry : pending)
-                    m_file.write(entry.utf8.data(), entry.utf8.size());
-                m_file.flush();
-                std::streampos pos = m_file.tellp();
-                if (pos != std::streampos(-1) && static_cast<std::streamoff>(pos) > MaxLogFileBytes &&
-                    ShouldLogEvery(m_lastSizeTrimTick, 60000))
-                    TrimLogFileBySizeLocked();
-            }
-        }
-
-        ULONGLONG now = GetTickCount64();
-        if (!stopping && now - lastPrune >= 60 * 60 * 1000ULL)
-        {
-            PruneLogFile();
-            lastPrune = now;
-        }
-        if (stopping && pending.empty()) break;
+        WritePending();
+        if (stopping) return;
     }
 }
 
-// Helper to parse log timestamps
-bool Logger::ParseLogTime(const std::string& line, std::chrono::system_clock::time_point& outTime)
+void Logger::WritePending()
 {
-    const char* p = line.c_str();
-    size_t len = line.size();
-
-    // Skip UTF-8 BOM if present
-    if (len >= 3 && (unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
+    std::deque<PendingLogEntry> pending;
+    size_t dropped = 0;
     {
-        p += 3;
-        len -= 3;
+        std::lock_guard<std::mutex> lock(m_cleanupMutex);
+        if (m_pendingLogs.empty() && m_droppedLogs == 0) return;
+        pending.swap(m_pendingLogs);
+        m_pendingBytes = 0;
+        m_forceFlush = false;
+        dropped = m_droppedLogs;
+        m_droppedLogs = 0;
     }
 
-    if (len < 24 || p[0] != '[') return false;
-
-    int year, month, day, hour, minute, second, ms;
-    if (sscanf_s(p + 1, "%d-%d-%d %d:%d:%d.%d", 
-                 &year, &month, &day, &hour, &minute, &second, &ms) == 7)
+    std::lock_guard<std::mutex> fileLock(m_mutex);
+    if (!m_file.is_open()) return;
+    for (const auto& entry : pending) m_file.write(entry.utf8.data(), static_cast<std::streamsize>(entry.utf8.size()));
+    if (dropped)
     {
-        tm t{};
-        t.tm_year = year - 1900;
-        t.tm_mon = month - 1;
-        t.tm_mday = day;
-        t.tm_hour = hour;
-        t.tm_min = minute;
-        t.tm_sec = second;
-        t.tm_isdst = -1;
-
-        time_t tt = mktime(&t);
-        if (tt != -1)
-        {
-            outTime = std::chrono::system_clock::from_time_t(tt) + std::chrono::milliseconds(ms);
-            return true;
-        }
+        const std::wstring maintenance = L"{\"ts\":\"" + UtcTimestamp() + L"\",\"level\":\"warn\",\"component\":\"logger\",\"event\":\"queue_dropped\",\"message\":\"queued records were discarded\",\"count\":" + std::to_wstring(dropped) + L"}\n";
+        const std::string utf8 = ToUtf8(maintenance);
+        m_file.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
     }
-    return false;
+    m_file.flush();
+    RotateIfNeededLocked();
 }
 
-// Log File Pruning
-void Logger::PruneLogFile()
+void Logger::RotateIfNeededLocked()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    HANDLE file = CreateFileW(m_logFilePath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    LARGE_INTEGER size{};
+    GetFileSizeEx(file, &size);
+    CloseHandle(file);
+    if (size.QuadPart < static_cast<LONGLONG>(kRotateBytes)) return;
 
-    if (m_logFilePath.empty()) return;
-
-    // Close the file stream so we can read and rewrite it
-    if (m_file.is_open())
+    m_file.close();
+    const std::wstring archived = m_archiveDirectory + L"\\winlauncher-" + RotationTimestamp() + L"-" + std::to_wstring(GetCurrentProcessId()) + L".jsonl";
+    if (!MoveFileExW(m_logFilePath.c_str(), archived.c_str(), MOVEFILE_WRITE_THROUGH))
+        m_file.open(m_logFilePath, std::ios::app | std::ios::binary);
+    else
     {
-        m_file.close();
+        m_file.open(m_logFilePath, std::ios::app | std::ios::binary);
+        PruneArchiveLocked();
     }
-
-    // Read all lines
-    std::ifstream inFile(m_logFilePath, std::ios::binary);
-    if (!inFile.is_open())
-    {
-        // Reopen log file for appending
-        m_file.open(m_logFilePath, std::ios::app);
-        return;
-    }
-
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(inFile, line))
-    {
-        lines.push_back(line);
-    }
-    inFile.close();
-
-    // Keep one day of context for intermittent hangs and crashes.
-    auto now = std::chrono::system_clock::now();
-    std::vector<std::string> keptLines;
-    bool currentKeep = true; // Default to keeping lines if they don't have a timestamp
-
-    for (const auto& l : lines)
-    {
-        std::chrono::system_clock::time_point logTime;
-        if (ParseLogTime(l, logTime))
-        {
-            auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - logTime).count();
-            currentKeep = (diff >= 0 && diff < 86400);
-        }
-        if (currentKeep)
-        {
-            keptLines.push_back(l);
-        }
-    }
-
-    // Rewrite log file with kept lines
-    std::ofstream outFile(m_logFilePath, std::ios::trunc | std::ios::binary);
-    if (outFile.is_open())
-    {
-        for (const auto& l : keptLines)
-        {
-            outFile.write(l.c_str(), l.size());
-            outFile.write("\n", 1);
-        }
-        outFile.close();
-    }
-
-    // Reopen log file for appending
-    m_file.open(m_logFilePath, std::ios::app);
-    TrimLogFileBySizeLocked();
 }
 
-void Logger::TrimLogFileBySizeLocked()
+void Logger::PruneArchiveLocked()
 {
-    if (m_logFilePath.empty())
+    struct Entry { std::wstring path; ULONGLONG timestamp; ULONGLONG bytes; };
+    std::vector<Entry> entries;
+    WIN32_FIND_DATAW data{};
+    HANDLE find = FindFirstFileW((m_archiveDirectory + L"\\*.jsonl").c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return;
+    do
     {
-        return;
-    }
-
-    if (m_file.is_open())
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        ULARGE_INTEGER time{}; time.LowPart = data.ftLastWriteTime.dwLowDateTime; time.HighPart = data.ftLastWriteTime.dwHighDateTime;
+        ULARGE_INTEGER bytes{}; bytes.LowPart = data.nFileSizeLow; bytes.HighPart = data.nFileSizeHigh;
+        entries.push_back({ m_archiveDirectory + L"\\" + data.cFileName, time.QuadPart, bytes.QuadPart });
+    } while (FindNextFileW(find, &data));
+    FindClose(find);
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.timestamp < b.timestamp; });
+    FILETIME nowFileTime{}; GetSystemTimeAsFileTime(&nowFileTime); ULARGE_INTEGER now{}; now.LowPart = nowFileTime.dwLowDateTime; now.HighPart = nowFileTime.dwHighDateTime;
+    ULONGLONG total = 0;
+    for (const auto& entry : entries) total += entry.bytes;
+    for (const auto& entry : entries)
     {
-        m_file.close();
+        if ((now.QuadPart > entry.timestamp && now.QuadPart - entry.timestamp > kArchiveAge100ns) || total > kArchiveBytes)
+        {
+            if (DeleteFileW(entry.path.c_str())) total -= entry.bytes;
+        }
     }
-
-    std::ifstream inFile(m_logFilePath, std::ios::binary | std::ios::ate);
-    if (!inFile.is_open())
-    {
-        m_file.open(m_logFilePath, std::ios::app);
-        return;
-    }
-
-    std::streamoff fileSize = inFile.tellg();
-    if (fileSize <= MaxLogFileBytes)
-    {
-        inFile.close();
-        m_file.open(m_logFilePath, std::ios::app);
-        return;
-    }
-
-    std::streamoff startOffset = fileSize > TargetLogFileBytes ? fileSize - TargetLogFileBytes : 0;
-    inFile.seekg(startOffset, std::ios::beg);
-    if (startOffset > 0)
-    {
-        std::string partialLine;
-        std::getline(inFile, partialLine);
-    }
-
-    std::ostringstream retained;
-    retained << "[log-maintenance] trimmed log file from " << fileSize
-             << " bytes to keep the most recent approximately " << TargetLogFileBytes
-             << " bytes\n";
-    retained << inFile.rdbuf();
-    inFile.close();
-
-    std::ofstream outFile(m_logFilePath, std::ios::trunc | std::ios::binary);
-    if (outFile.is_open())
-    {
-        std::string data = retained.str();
-        outFile.write(data.data(), data.size());
-        outFile.close();
-    }
-
-    m_file.open(m_logFilePath, std::ios::app);
 }

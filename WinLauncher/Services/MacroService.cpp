@@ -24,8 +24,15 @@ std::atomic<bool> MacroRecorder::s_hooksInstalled = false;
 std::atomic<bool> MacroRecorder::s_ignoreMouseUntilReleased = false;
 std::atomic<int32_t> MacroRecorder::s_lastMouseMoveX = -9999;
 std::atomic<int32_t> MacroRecorder::s_lastMouseMoveY = -9999;
+std::atomic<uint64_t> MacroRecorder::s_lastMouseMoveTimeUs = 0;
+std::atomic<UINT_PTR> MacroRecorder::s_uiUpdateTimerId = 0;
+std::atomic<bool> MacroRecorder::s_uiUpdatePending = false;
+std::atomic<uint64_t> MacroRecorder::s_uiUpdateSession = 0;
+std::atomic<uint64_t> MacroRecorder::s_recordingSession = 0;
 
 std::atomic<bool> MacroPlayer::s_playing = false;
+std::atomic<bool> MacroPlayer::s_interruptRequested = false;
+std::atomic<bool> MacroPlayer::s_interruptArmed = false;
 HANDLE MacroPlayer::s_hPlayThread = nullptr;
 std::mutex MacroPlayer::s_playMutex;
 
@@ -38,9 +45,11 @@ namespace
 
     void LogMacroThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
     {
-        LOG_G_INFO(L"MacroRecorder::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
-            operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+        LOG_G_INFO(L"MacroRecorder::%ls: quitPosted=%d wait=%lu timedOut=%d exitCode=%lu",
+            operation, result.quitPosted, result.waitResult, result.timedOut, result.exitCode);
     }
+
+    constexpr ULONG_PTR MacroSendInputSignature = static_cast<ULONG_PTR>(0x574C4D4143524F31ULL); // WLMACRO1
 }
 
 // Time helper
@@ -413,7 +422,14 @@ bool MacroRecorder::Start(HWND hNotifyWnd)
 {
     if (s_recording.load()) return true;
     if (s_hThread)
+    {
         Stop(false);
+        if (s_hThread && !InputHookThreadStop::ReapIfExited(s_hThread))
+        {
+            LOG_G_WORNING(L"MacroRecorder::Start: previous recorder thread is still stopping");
+            return false;
+        }
+    }
 
     s_hNotifyWnd = hNotifyWnd;
     s_hooksInstalled.store(false);
@@ -437,6 +453,9 @@ bool MacroRecorder::Start(HWND hNotifyWnd)
     s_lastTimeUs.store(GetCurrentTimeUs());
     s_lastMouseMoveX.store(-9999);
     s_lastMouseMoveY.store(-9999);
+    s_lastMouseMoveTimeUs.store(0);
+    s_uiUpdatePending.store(false);
+    s_recordingSession.fetch_add(1);
     bool mouseDown =
         ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) | GetAsyncKeyState(VK_MBUTTON)) & 0x8000) != 0;
     s_ignoreMouseUntilReleased.store(mouseDown);
@@ -457,13 +476,10 @@ bool MacroRecorder::Start(HWND hNotifyWnd)
     if (wait != WAIT_OBJECT_0 || !s_hooksInstalled.load())
     {
         s_recording.store(false);
-        const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-            s_hThread, s_hookThreadId.load(), 2000, []() {
-                if (s_hKeyHook) { UnhookWindowsHookEx(s_hKeyHook); s_hKeyHook = nullptr; }
-                if (s_hMouseHook) { UnhookWindowsHookEx(s_hMouseHook); s_hMouseHook = nullptr; }
-            });
+        const auto stopResult = InputHookThreadStop::RequestStop(s_hThread, s_hookThreadId.load(), 2000);
         LogMacroThreadStopResult(L"StartFailureCleanup", stopResult);
-        s_hThread = nullptr;
+        if (stopResult.waitResult == WAIT_OBJECT_0)
+            InputHookThreadStop::ReapIfExited(s_hThread);
         s_hNotifyWnd.store(nullptr);
         s_ignoreMouseUntilReleased.store(false);
         LOG_G_ERRA(L"MacroRecorder::Start: failed to install low-level input hooks (wait=%lu)", wait);
@@ -481,14 +497,12 @@ void MacroRecorder::Stop(bool discardTrailingMouseClick)
     }
     s_recording.store(false);
     s_hooksInstalled.store(false);
+    s_uiUpdatePending.store(false);
 
-    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-        s_hThread, s_hookThreadId.load(), 2000, []() {
-            if (s_hKeyHook) { UnhookWindowsHookEx(s_hKeyHook); s_hKeyHook = nullptr; }
-            if (s_hMouseHook) { UnhookWindowsHookEx(s_hMouseHook); s_hMouseHook = nullptr; }
-        });
+    const auto stopResult = InputHookThreadStop::RequestStop(s_hThread, s_hookThreadId.load(), 2000);
     LogMacroThreadStopResult(L"Stop", stopResult);
-    s_hThread = nullptr;
+    if (stopResult.waitResult == WAIT_OBJECT_0)
+        InputHookThreadStop::ReapIfExited(s_hThread);
     s_hookThreadId.store(0);
     s_hNotifyWnd.store(nullptr);
     s_ignoreMouseUntilReleased.store(false);
@@ -505,6 +519,11 @@ bool MacroRecorder::IsRecording()
     return s_recording.load();
 }
 
+uint64_t MacroRecorder::CurrentSession()
+{
+    return s_recordingSession.load();
+}
+
 std::vector<MacroEvent> MacroRecorder::GetEvents()
 {
     std::lock_guard<std::mutex> lock(s_eventsMutex);
@@ -517,11 +536,43 @@ void MacroRecorder::AddEvent(const MacroEvent& ev)
         std::lock_guard<std::mutex> lock(s_eventsMutex);
         s_events.push_back(ev);
     }
-    HWND hWnd = s_hNotifyWnd.load();
-    if (hWnd)
+    // Rendering the script after every low-level event floods the UI during a
+    // drag.  The recorder owns a hook-thread timer so the preview updates at
+    // most 30 times per second while event capture remains lossless.
+    bool expected = false;
+    if (s_uiUpdatePending.compare_exchange_strong(expected, true))
     {
-        PostMessageW(hWnd, AppMessages::MacroRecordingUpdated, 0, 0);
+        s_uiUpdateSession.store(CurrentSession());
+        UINT_PTR timer = SetTimer(nullptr, 0, 33, UiUpdateTimerCallback);
+        if (timer)
+        {
+            s_uiUpdateTimerId.store(timer);
+        }
+        else
+        {
+            s_uiUpdatePending.store(false);
+            HWND hWnd = s_hNotifyWnd.load();
+            if (hWnd && IsWindow(hWnd))
+                PostMessageW(hWnd, AppMessages::MacroRecordingUpdated, (WPARAM)CurrentSession(), 0);
+        }
     }
+}
+
+void CALLBACK MacroRecorder::UiUpdateTimerCallback(HWND, UINT, UINT_PTR id, DWORD)
+{
+    KillTimer(nullptr, id);
+    if (s_uiUpdateTimerId.load() != id)
+        return;
+    s_uiUpdateTimerId.store(0);
+    const uint64_t scheduledSession = s_uiUpdateSession.load();
+    if (scheduledSession != CurrentSession())
+        return;
+    s_uiUpdatePending.store(false);
+    if (!s_recording.load()) return;
+
+    HWND hWnd = s_hNotifyWnd.load();
+    if (hWnd && IsWindow(hWnd))
+        PostMessageW(hWnd, AppMessages::MacroRecordingUpdated, (WPARAM)scheduledSession, 0);
 }
 
 void MacroRecorder::DiscardTrailingMouseClick()
@@ -611,7 +662,7 @@ LRESULT CALLBACK MacroRecorder::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 s_hooksInstalled.store(false);
                 if (s_hNotifyWnd)
                 {
-                    PostMessageW(s_hNotifyWnd, AppMessages::MacroRecordingStopped, 0, 0);
+                    PostMessageW(s_hNotifyWnd, AppMessages::MacroRecordingStopped, (WPARAM)CurrentSession(), 0);
                 }
                 PostThreadMessageW(GetCurrentThreadId(), WM_QUIT, 0, 0);
                 return 1;
@@ -671,10 +722,13 @@ LRESULT CALLBACK MacroRecorder::LowLevelMouseProc(int nCode, WPARAM wParam, LPAR
                 // Coalesce mouse moves - only record if moved enough or delay elapsed
                 int32_t lastX = s_lastMouseMoveX.load();
                 int32_t lastY = s_lastMouseMoveY.load();
-                if (abs(ev.x - lastX) > 8 || abs(ev.y - lastY) > 8)
+                uint64_t now = GetCurrentTimeUs();
+                uint64_t lastMoveTime = s_lastMouseMoveTimeUs.load();
+                if (abs(ev.x - lastX) > 4 || abs(ev.y - lastY) > 4 || now - lastMoveTime >= 8000)
                 {
                     s_lastMouseMoveX.store(ev.x);
                     s_lastMouseMoveY.store(ev.y);
+                    s_lastMouseMoveTimeUs.store(now);
                     record = true;
                 }
             }
@@ -727,6 +781,12 @@ bool MacroPlayer::Play(const std::vector<MacroEvent>& events, double speed, cons
         }
     }
 
+    s_interruptRequested.store(false);
+    // A macro commonly starts from a mouse click in the popup/editor.  Do not
+    // treat the releasing half of that same click as an interruption.
+    bool mouseAlreadyDown =
+        ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) | GetAsyncKeyState(VK_MBUTTON)) & 0x8000) != 0;
+    s_interruptArmed.store(!mouseAlreadyDown);
     s_playing.store(true);
     
     PlayParams* params = new PlayParams();
@@ -749,6 +809,7 @@ bool MacroPlayer::Play(const std::vector<MacroEvent>& events, double speed, cons
 void MacroPlayer::Cancel()
 {
     s_playing.store(false);
+    s_interruptRequested.store(true);
     HANDLE thread = nullptr;
     {
         std::lock_guard<std::mutex> lock(s_playMutex);
@@ -780,6 +841,22 @@ bool MacroPlayer::IsPlaying()
     return s_playing.load();
 }
 
+void MacroPlayer::RequestInterruptFromKeyboard(const KBDLLHOOKSTRUCT& input)
+{
+    if (!s_playing.load() || !s_interruptArmed.load()) return;
+    if ((input.flags & LLKHF_INJECTED) != 0) return;
+    s_interruptRequested.store(true);
+    s_playing.store(false);
+}
+
+void MacroPlayer::RequestInterruptFromMouse(const MSLLHOOKSTRUCT& input)
+{
+    if (!s_playing.load() || !s_interruptArmed.load()) return;
+    if ((input.flags & LLMHF_INJECTED) != 0) return;
+    s_interruptRequested.store(true);
+    s_playing.store(false);
+}
+
 void MacroPlayer::MicroSleep(uint64_t microseconds)
 {
     if (microseconds == 0) return;
@@ -796,7 +873,7 @@ void MacroPlayer::MicroSleep(uint64_t microseconds)
 
     do
     {
-        if (!s_playing.load()) return;
+        if (!s_playing.load() || s_interruptRequested.load()) return;
         QueryPerformanceCounter(&pc);
     } while (pc.QuadPart < targetTick);
 }
@@ -832,14 +909,28 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
     int screenX = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int screenY = GetSystemMetrics(SM_YVIRTUALSCREEN);
 
+    // Arm input interruption only after the click that launched the macro has
+    // been released.  This keeps immediate playback responsive without
+    // cancelling itself on the opening click's WM_*BUTTONUP.
+    while (s_playing.load() && !s_interruptArmed.load())
+    {
+        bool mouseDown =
+            ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) | GetAsyncKeyState(VK_MBUTTON)) & 0x8000) != 0;
+        if (!mouseDown)
+            s_interruptArmed.store(true);
+        else
+            Sleep(2);
+    }
+
+    std::vector<INPUT> releaseInputs;
     for (const auto& ev : params->events)
     {
-        if (!s_playing.load()) break;
+        if (!s_playing.load() || s_interruptRequested.load()) break;
 
         uint64_t scaledDelay = (uint64_t)(ev.delayUs / speedMultiplier);
         MicroSleep(scaledDelay);
 
-        if (!s_playing.load()) break;
+        if (!s_playing.load() || s_interruptRequested.load()) break;
 
         INPUT input{};
         bool hasInput = true;
@@ -857,6 +948,7 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
                 input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
             if (ev.scanCode != 0)
                 input.ki.dwFlags |= KEYEVENTF_SCANCODE;
+            input.ki.dwExtraInfo = MacroSendInputSignature;
         }
         else if (ev.type == 1 || ev.type == 2 || ev.type == 3 || ev.type == 4) // mouse events
         {
@@ -886,6 +978,7 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
                 input.mi.dwFlags |= MOUSEEVENTF_WHEEL;
                 input.mi.mouseData = ev.data;
             }
+            input.mi.dwExtraInfo = MacroSendInputSignature;
         }
         else
         {
@@ -904,9 +997,46 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
             LOG_G_ERRA(L"MacroPlayer::PlayThreadProc: SendInput failed (eventType=%u, error=%lu)",
                        ev.type, GetLastError());
         }
+        else if ((ev.type == 6 || ev.type == 2) && hasInput)
+        {
+            INPUT release = input;
+            if (ev.type == 6)
+                release.ki.dwFlags |= KEYEVENTF_KEYUP;
+            else if (ev.data == 1)
+                release.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+            else if (ev.data == 2)
+                release.mi.dwFlags = MOUSEEVENTF_RIGHTUP;
+            else if (ev.data == 4)
+                release.mi.dwFlags = MOUSEEVENTF_MIDDLEUP;
+            releaseInputs.push_back(release);
+        }
+        else if ((ev.type == 7 || ev.type == 3) && hasInput && !releaseInputs.empty())
+        {
+            auto matchesRelease = [&input](const INPUT& pending) {
+                if (pending.type != input.type) return false;
+                if (pending.type == INPUT_KEYBOARD)
+                    return pending.ki.wVk == input.ki.wVk && pending.ki.wScan == input.ki.wScan;
+                const DWORD pendingButton = pending.mi.dwFlags &
+                    (MOUSEEVENTF_LEFTUP | MOUSEEVENTF_RIGHTUP | MOUSEEVENTF_MIDDLEUP);
+                const DWORD releasedButton = input.mi.dwFlags &
+                    (MOUSEEVENTF_LEFTUP | MOUSEEVENTF_RIGHTUP | MOUSEEVENTF_MIDDLEUP);
+                return pendingButton == releasedButton;
+            };
+            auto it = std::find_if(releaseInputs.rbegin(), releaseInputs.rend(), matchesRelease);
+            if (it != releaseInputs.rend())
+                releaseInputs.erase(std::next(it).base());
+        }
+    }
+
+    if (s_interruptRequested.load())
+    {
+        for (auto it = releaseInputs.rbegin(); it != releaseInputs.rend(); ++it)
+            SendInput(1, &*it, sizeof(INPUT));
+        LOG_G_INFO(L"MacroPlayer::PlayThreadProc: playback interrupted by physical input; released %zu held inputs", releaseInputs.size());
     }
 
     s_playing.store(false);
+    s_interruptArmed.store(false);
     delete params;
     return 0;
 }

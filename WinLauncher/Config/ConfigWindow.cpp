@@ -13,6 +13,7 @@
 #include "../Services/SyncFolderService.h"
 #include "../Services/QuickLauncherConfigImport.h"
 #include "../Services/UpdateService.h"
+#include "../Services/ConfigPath.h"
 #include "UIStyle.h"
 #include <windowsx.h>
 #include <shlobj.h>
@@ -797,7 +798,7 @@ void ConfigWindow::OpenConfigFile()
 
 void ConfigWindow::OpenLogFile()
 {
-    std::wstring path = GetConfigDir() + L"\\winlauncher.log";
+    std::wstring path = ConfigPath::GetUserLogDirectory() + L"\\current.jsonl";
     if (!path.empty())
         ShellExecuteW(GetHWND(), L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }

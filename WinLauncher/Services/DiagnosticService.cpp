@@ -6,6 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <vector>
+#include <deque>
 
 DiagnosticService::DiagnosticService(Logger* logger) : m_logger(logger) {}
 std::wstring DiagnosticService::GetDirectory() const { auto p=ConfigPath::GetUserDataDirectory()+L"\\diagnostics"; ConfigPath::EnsureDirectoryExists(p); return p; }
@@ -15,14 +16,25 @@ bool DiagnosticService::CreatePackage(const std::wstring& destPath, std::wstring
     wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st); swprintf_s(stamp,L"%04u%02u%02u-%02u%02u%02u",st.wYear,st.wMonth,st.wDay,st.wHour,st.wMinute,st.wSecond);
     const std::wstring root=GetDirectory(), staging=root+L"\\package-"+stamp, json=staging+L"\\diagnostic.json";
     ConfigPath::EnsureDirectoryExists(staging);
-    std::wofstream manifest(json); if (!manifest) { outError=L"无法创建诊断文件"; return false; }
+    auto cleanup = [&]() { std::error_code ignored; std::filesystem::remove_all(staging, ignored); };
+    std::wofstream manifest(json); if (!manifest) { cleanup(); outError=L"无法创建诊断文件"; return false; }
     SYSTEM_INFO systemInfo{}; GetNativeSystemInfo(&systemInfo);
     manifest << L"{\"schemaVersion\":1,\"app\":{\"version\":\"" << WINLAUNCHER_VERSION_WSTR << L"\"},\"environment\":{\"architecture\":" << systemInfo.wProcessorArchitecture << L"},\"recentEvents\":[],\"crashes\":[],\"plugins\":[],\"sanitization\":\"paths and user content removed\"}"; manifest.close();
-    const auto log=ConfigPath::GetUserConfigDirectory()+L"\\winlauncher.log";
-    if (std::filesystem::exists(log)) { std::wifstream in(log); std::wofstream out(staging+L"\\recent.log"); std::wstring line; size_t count=0; while(std::getline(in,line) && count++<2000) out << Sanitize(line) << L"\n"; }
+    const auto log=ConfigPath::GetUserLogDirectory()+L"\\current.jsonl";
+    if (std::filesystem::exists(log))
+    {
+        std::wifstream in(log); std::deque<std::wstring> recent; std::wstring line;
+        while (std::getline(in, line)) { recent.push_back(Sanitize(line)); if (recent.size() > 2000) recent.pop_front(); }
+        std::wofstream out(staging+L"\\recent.jsonl"); for (const auto& entry : recent) out << entry << L"\n";
+    }
+    if (m_logger)
+    {
+        std::ofstream debug(staging+L"\\debug-ring.jsonl", std::ios::binary | std::ios::trunc);
+        for (const auto& entry : m_logger->GetRecentDebugJsonLines()) debug << entry;
+    }
     std::wstring command=L"powershell.exe -NoProfile -NonInteractive -Command \"Compress-Archive -Path '"+staging+L"\\*' -DestinationPath '"+destPath+L"' -Force\"";
     STARTUPINFOW si{sizeof(si)}; PROCESS_INFORMATION pi{}; std::vector<wchar_t> cmd(command.begin(),command.end()); cmd.push_back(0);
-    if (!CreateProcessW(nullptr,cmd.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)) { outError=L"无法启动本地压缩工具"; return false; }
-    WaitForSingleObject(pi.hProcess,30000); DWORD code=1; GetExitCodeProcess(pi.hProcess,&code); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); std::filesystem::remove_all(staging);
+    if (!CreateProcessW(nullptr,cmd.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)) { cleanup(); outError=L"无法启动本地压缩工具"; return false; }
+    WaitForSingleObject(pi.hProcess,30000); DWORD code=1; GetExitCodeProcess(pi.hProcess,&code); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); cleanup();
     if(code!=0 || !std::filesystem::exists(destPath)) { outError=L"诊断包压缩失败"; return false; } LOG_INFO(m_logger,L"Diagnostic package created: %s",destPath.c_str()); return true;
 }

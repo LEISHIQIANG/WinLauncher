@@ -4,9 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <vector>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 static std::wstring Timestamp() { SYSTEMTIME s{}; GetLocalTime(&s); wchar_t b[32]{}; swprintf_s(b,L"%04u%02u%02u-%02u%02u%02u",s.wYear,s.wMonth,s.wDay,s.wHour,s.wMinute,s.wSecond); return b; }
+static void PruneAutomaticRestoreBackups(const std::wstring& directory)
+{
+    std::error_code ec; std::vector<fs::directory_entry> entries;
+    for (const auto& entry : fs::directory_iterator(directory, ec)) if (entry.is_regular_file(ec) && entry.path().extension() == L".zip") entries.push_back(entry);
+    std::sort(entries.begin(), entries.end(), [&](const auto& a, const auto& b) { return a.last_write_time(ec) > b.last_write_time(ec); });
+    for (size_t i = 3; i < entries.size(); ++i) fs::remove(entries[i].path(), ec);
+}
 bool MigrationBackupService::RunPowerShell(const std::wstring& script) { std::wstring c=L"powershell.exe -NoProfile -NonInteractive -Command \""+script+L"\""; std::vector<wchar_t> b(c.begin(),c.end()); b.push_back(0); STARTUPINFOW si{sizeof(si)}; PROCESS_INFORMATION pi{}; if(!CreateProcessW(nullptr,b.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)) return false; WaitForSingleObject(pi.hProcess,60000); DWORD code=1; GetExitCodeProcess(pi.hProcess,&code); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); return code==0; }
 MigrationResult MigrationBackupService::ExportToPath(const std::wstring& destPath) const
 {
@@ -38,8 +46,8 @@ MigrationResult MigrationBackupService::Preflight(const std::wstring& zipPath) c
 MigrationResult MigrationBackupService::Restore(const std::wstring& zipPath) const
 {
     auto check=Preflight(zipPath); if(!check.ok) return check;
-    const auto root=ConfigPath::GetUserDataDirectory(), tmp=root+L"\\migration-restore-"+Timestamp(); fs::create_directories(tmp); if(!RunPowerShell(L"Expand-Archive -LiteralPath '"+zipPath+L"' -DestinationPath '"+tmp+L"' -Force")) return {false,L"无法解压迁移包",{}};
-    const auto autoBackupPath=ConfigPath::GetUserDataDirectory()+L"\\backups\\before-restore-"+Timestamp()+L".zip"; fs::create_directories(ConfigPath::GetUserDataDirectory()+L"\\backups"); ExportToPath(autoBackupPath); std::error_code ec;
+    const auto root=ConfigPath::GetUserDataDirectory(), tmp=root+L"\\migration-restore-"+Timestamp(); fs::create_directories(tmp); if(!RunPowerShell(L"Expand-Archive -LiteralPath '"+zipPath+L"' -DestinationPath '"+tmp+L"' -Force")) { std::error_code cleanup; fs::remove_all(tmp,cleanup); return {false,L"无法解压迁移包",{}}; }
+    const auto backupDir=ConfigPath::GetUserDataDirectory()+L"\\backups"; const auto autoBackupPath=backupDir+L"\\before-restore-"+Timestamp()+L".zip"; fs::create_directories(backupDir); ExportToPath(autoBackupPath); PruneAutomaticRestoreBackups(backupDir); std::error_code ec;
     if(fs::exists(tmp+L"\\config")) fs::copy(tmp+L"\\config",ConfigPath::GetUserConfigDirectory(),fs::copy_options::recursive|fs::copy_options::overwrite_existing,ec);
     if(fs::exists(tmp+L"\\plugins\\state")) fs::copy(tmp+L"\\plugins\\state",ConfigPath::GetUserPluginStateDirectory(),fs::copy_options::recursive|fs::copy_options::overwrite_existing,ec);
     const auto restoredData = fs::path(tmp + L"\\plugins\\data");

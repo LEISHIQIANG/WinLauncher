@@ -22,7 +22,6 @@ public:
 
 private:
     std::wstring StateFilePath() const;
-    std::wstring ErrorLogPath() const;
     static std::string ToUtf8(const std::wstring& value);
     static std::wstring EscapeJsonString(const std::wstring& value);
 

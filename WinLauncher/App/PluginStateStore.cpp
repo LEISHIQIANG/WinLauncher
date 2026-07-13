@@ -42,16 +42,11 @@ bool PluginStateStore::Load(std::map<std::wstring, PluginState>& states)
 bool PluginStateStore::Save(const std::map<std::wstring, PluginState>& states)
 {
     ConfigPath::EnsureDirectoryExists(m_stateDirectory);
-    std::ofstream fs(StateFilePath(), std::ios::binary | std::ios::trunc);
-    if (!fs)
-        return false;
-
-    fs << "{\n  \"plugins\": [\n";
+    std::string content = "{\n  \"plugins\": [\n";
     bool first = true;
     for (const auto& [id, state] : states)
     {
-        if (!first)
-            fs << ",\n";
+        if (!first) content += ",\n";
         first = false;
         std::wstring line =
             L"    {\"id\":\"" + EscapeJsonString(id) +
@@ -59,42 +54,36 @@ bool PluginStateStore::Save(const std::map<std::wstring, PluginState>& states)
             L",\"quarantined\":" + (state.quarantined ? L"true" : L"false") +
             L",\"failureCount\":" + std::to_wstring(state.failureCount) +
             L",\"lastError\":\"" + EscapeJsonString(state.lastError) + L"\"}";
-        fs << ToUtf8(line);
+        content += ToUtf8(line);
     }
-    fs << "\n  ]\n}\n";
-    return true;
+    content += "\n  ]\n}\n";
+
+    const std::wstring statePath = StateFilePath();
+    std::ifstream existing(statePath, std::ios::binary);
+    std::string existingContent((std::istreambuf_iterator<char>(existing)), {});
+    if (existingContent == content) return true;
+    const std::wstring tempPath = statePath + L".tmp";
+    DeleteFileW(tempPath.c_str());
+    std::ofstream fs(tempPath, std::ios::binary | std::ios::trunc);
+    if (!fs)
+        return false;
+    fs.write(content.data(), static_cast<std::streamsize>(content.size()));
+    fs.close();
+    if (MoveFileExW(tempPath.c_str(), statePath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        return true;
+    DeleteFileW(tempPath.c_str());
+    return false;
 }
 
 void PluginStateStore::AppendError(const std::wstring& pluginId, const std::wstring& stage, const std::wstring& message)
 {
-    ConfigPath::EnsureDirectoryExists(m_stateDirectory);
-
-    SYSTEMTIME st{};
-    GetLocalTime(&st);
-    wchar_t timeBuf[40]{};
-    swprintf_s(timeBuf, L"%04u-%02u-%02uT%02u:%02u:%02u",
-        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-
-    std::wstring line =
-        L"{\"time\":\"" + std::wstring(timeBuf) +
-        L"\",\"pluginId\":\"" + EscapeJsonString(pluginId) +
-        L"\",\"stage\":\"" + EscapeJsonString(stage) +
-        L"\",\"message\":\"" + EscapeJsonString(message) + L"\"}\n";
-
-    std::ofstream fs(ErrorLogPath(), std::ios::binary | std::ios::app);
-    if (fs)
-        fs << ToUtf8(line);
+    // PluginManager emits the same failure to the central JSONL logger.  Keep
+    // the last error in plugins_state.json and remove the old unbounded side log.
+    (void)pluginId; (void)stage; (void)message;
+    DeleteFileW((m_stateDirectory + L"\\plugin_errors.jsonl").c_str());
 }
 
-std::wstring PluginStateStore::StateFilePath() const
-{
-    return m_stateDirectory + L"\\plugins_state.json";
-}
-
-std::wstring PluginStateStore::ErrorLogPath() const
-{
-    return m_stateDirectory + L"\\plugin_errors.jsonl";
-}
+std::wstring PluginStateStore::StateFilePath() const { return m_stateDirectory + L"\\plugins_state.json"; }
 
 std::string PluginStateStore::ToUtf8(const std::wstring& value)
 {

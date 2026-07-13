@@ -27,6 +27,7 @@ class IniConfigRepository : public IConfigService
 {
 public:
     static constexpr int AutoBackupDebounceSeconds = 180;
+    static constexpr int ConfigSaveDebounceMilliseconds = 1500;
 
     explicit IniConfigRepository(Logger* logger = nullptr, HWND notifyHwnd = nullptr, UINT notifyMessage = 0)
         : m_logger(logger)
@@ -754,15 +755,21 @@ public:
             }
             pageIndex++;
         }
-        ConfigPath::EnsureDirectoryExists(m_configDir);
-        if (ProtectedWriteFile(m_configFilePath, content))
+        QueueConfigWrite(std::move(content), pages.size());
+    }
+
+    virtual bool FlushPendingConfig() override
+    {
+        std::wstring content;
+        size_t pageCount = 0;
         {
-            LOG_INFO(m_logger, L"Saved %zu pages to config", pages.size());
+            std::lock_guard<std::mutex> lock(m_configSaveMutex);
+            if (!m_configSavePending) return true;
+            content = std::move(m_pendingConfigContent);
+            pageCount = m_pendingConfigPageCount;
+            m_configSavePending = false;
         }
-        else
-        {
-            LOG_ERROR(m_logger, L"Failed to save config to %s", m_configFilePath.c_str());
-        }
+        return WriteConfigContent(content, pageCount);
     }
 
     virtual std::wstring GetConfigDir() const override { return m_configDir; }
@@ -806,6 +813,7 @@ public:
 
     virtual bool CreateConfigBackup(const std::wstring& reason) override
     {
+        if (!FlushPendingConfig()) return false;
         bool ok = BackupCurrentConfig(reason);
         if (ok)
             CancelPendingAutoBackup();
@@ -814,6 +822,7 @@ public:
 
     virtual bool RestoreConfigBackup(const std::wstring& backupPath) override
     {
+        if (!FlushPendingConfig()) return false;
         if (!IsPathUnderDirectory(m_historyDir, backupPath))
         {
             LOG_ERROR(m_logger, L"Refused config restore outside history dir: %s", backupPath.c_str());
@@ -849,6 +858,7 @@ public:
 
     virtual bool ClearConfig() override
     {
+        if (!FlushPendingConfig()) return false;
         CancelPendingAutoBackup();
         bool hasCurrentConfig = GetFileAttributesW(m_configFilePath.c_str()) != INVALID_FILE_ATTRIBUTES;
         if (hasCurrentConfig && !BackupCurrentConfig(L"auto"))
@@ -994,6 +1004,7 @@ public:
 
     virtual ~IniConfigRepository() override
     {
+        StopConfigSaveWorker();
         StopAutoBackupWorker();
         m_folderWatcher.Stop();
     }
@@ -1196,6 +1207,7 @@ private:
 
         m_triggerBlacklist = DefaultTriggerBlacklist();
         SaveConfig(pages);
+        FlushPendingConfig();
         LOG_INFO(m_logger, L"Created default config at %s", m_configFilePath.c_str());
         return pages;
     }
@@ -1259,7 +1271,9 @@ private:
     bool ProtectedWriteFile(const std::wstring& path, const std::wstring& wstr)
     {
         std::wstring existing = ReadFile(path);
-        bool contentChanged = !existing.empty() && existing != wstr;
+        if (existing == wstr)
+            return true;
+        bool contentChanged = !existing.empty();
 
         std::wstring tempPath = path + L".tmp";
         DeleteFileW(tempPath.c_str());
@@ -1276,6 +1290,68 @@ private:
 
         DeleteFileW(tempPath.c_str());
         return false;
+    }
+
+    void QueueConfigWrite(std::wstring content, size_t pageCount)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_configSaveMutex);
+            m_pendingConfigContent = std::move(content);
+            m_pendingConfigPageCount = pageCount;
+            m_configSavePending = true;
+            m_configSaveDue = std::chrono::steady_clock::now() + std::chrono::milliseconds(ConfigSaveDebounceMilliseconds);
+            if (!m_configSaveWorkerStarted)
+            {
+                m_configSaveWorkerStarted = true;
+                m_configSaveThread = std::thread([this]() { ConfigSaveWorkerLoop(); });
+            }
+        }
+        m_configSaveCv.notify_one();
+    }
+
+    bool WriteConfigContent(const std::wstring& content, size_t pageCount)
+    {
+        ConfigPath::EnsureDirectoryExists(m_configDir);
+        if (ProtectedWriteFile(m_configFilePath, content))
+        {
+            LOG_INFO(m_logger, L"Saved %zu pages to config", pageCount);
+            return true;
+        }
+        LOG_ERROR(m_logger, L"Failed to save config");
+        return false;
+    }
+
+    void ConfigSaveWorkerLoop()
+    {
+        std::unique_lock<std::mutex> lock(m_configSaveMutex);
+        while (!m_configSaveStopping)
+        {
+            if (!m_configSavePending)
+            {
+                m_configSaveCv.wait(lock, [this] { return m_configSaveStopping || m_configSavePending; });
+                continue;
+            }
+            const auto due = m_configSaveDue;
+            if (m_configSaveCv.wait_until(lock, due, [this, due] { return m_configSaveStopping || !m_configSavePending || m_configSaveDue != due; }))
+                continue;
+            std::wstring content = std::move(m_pendingConfigContent);
+            const size_t pageCount = m_pendingConfigPageCount;
+            m_configSavePending = false;
+            lock.unlock();
+            WriteConfigContent(content, pageCount);
+            lock.lock();
+        }
+    }
+
+    void StopConfigSaveWorker()
+    {
+        FlushPendingConfig();
+        {
+            std::lock_guard<std::mutex> lock(m_configSaveMutex);
+            m_configSaveStopping = true;
+        }
+        m_configSaveCv.notify_one();
+        if (m_configSaveThread.joinable()) m_configSaveThread.join();
     }
 
     void ScheduleAutoBackup()
@@ -1505,5 +1581,14 @@ private:
     bool m_autoBackupStopping = false;
     bool m_autoBackupPending = false;
     std::chrono::steady_clock::time_point m_autoBackupDue{};
+    std::mutex m_configSaveMutex;
+    std::condition_variable m_configSaveCv;
+    std::thread m_configSaveThread;
+    bool m_configSaveWorkerStarted = false;
+    bool m_configSaveStopping = false;
+    bool m_configSavePending = false;
+    std::chrono::steady_clock::time_point m_configSaveDue{};
+    std::wstring m_pendingConfigContent;
+    size_t m_pendingConfigPageCount = 0;
     FolderWatcher m_folderWatcher;
 };

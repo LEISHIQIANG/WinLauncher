@@ -19,7 +19,7 @@
 
 #### 核心启动器
 - **弹出面板** — 可分页的快捷方式图标网格，通过可配置的鼠标手势触发
-- **双击 Alt 触发** — 快速双击 Alt 键，通过全局键盘钩子显示/隐藏启动器
+- **双击 Alt 控制** — 快速双击 Alt 键暂停或恢复弹窗触发，键盘输入始终正常交给前台程序
 - **搜索模式** — 输入即时筛选快捷方式
 - **底部停靠栏** — 常用快捷方式固定在弹窗底部，始终可见
 - **固定屏幕** — 弹窗失去焦点时仍保持可见
@@ -83,9 +83,9 @@
 - **权限管理** — 以管理员身份 (UAC) 启动目标，或按需降权
 - **高危险命令检测** — 自动检测 `rm -rf`、`format` 等危险命令并弹出确认
 - **GPU 崩溃防护** — Direct2D 硬件加速崩溃时自动回退到软件渲染
-- **鼠标钩子防抖** — 鼠标钩子事件防抖逻辑，防止误触
+- **鼠标触发合并** — 高频鼠标触发仅保留一个待处理弹窗请求，避免 UI 消息堆积
 - **自动更新** — 检查 GitHub Releases 获取新版本
-- **线程安全日志** — 基于文件的日志记录，可配置日志级别
+- **结构化本地日志** — JSON Lines 格式记录时间、级别、任务、模块与事件码；高频调试记录保留在内存，文件会自动轮转与清理
 - **配置导入** — 支持从 JSON 或 QuickLauncher (Python) 格式导入
 - **Toast 通知** — 临时屏幕消息提示
 
@@ -173,7 +173,7 @@ msbuild WinLauncher.sln /p:Configuration=Release /p:Platform=x64
 ### 使用说明
 
 1. **启动** `WinLauncher.exe` —— 自动最小化到系统托盘
-2. **触发弹窗**，使用配置的鼠标手势（默认：左上角）或双击 Alt 键
+2. **触发弹窗**，使用配置的鼠标手势（默认：左上角）；双击 Alt 可暂停或恢复鼠标触发
 3. **点击快捷方式** 即可启动
 4. **右键托盘图标** 打开上下文菜单 → **"设置"** 进入配置界面
 5. **添加快捷方式**，拖放文件/文件夹到设置窗口，或点击"添加"
@@ -193,7 +193,7 @@ msbuild WinLauncher.sln /p:Configuration=Release /p:Platform=x64
 | 项目 | 操作 |
 |---|---|
 | 设置 | 打开设置窗口 |
-| 暂停 | 暂时禁用弹窗触发 |
+| 暂停 | 暂时禁用弹窗触发，并将配置的鼠标按键完整交还给当前软件；双击 Alt 可恢复 |
 | 检查更新 | 检查 GitHub 新版本 |
 | 退出 | 退出应用程序 |
 
@@ -206,6 +206,8 @@ msbuild WinLauncher.sln /p:Configuration=Release /p:Platform=x64
 ```
 %APPDATA%\WinLauncher\config\launcher_config.ini
 ```
+
+运行日志位于 `%APPDATA%\WinLauncher\logs\current.jsonl`。每行都是独立 JSON 事件，可直接用编辑器、PowerShell 或 `rg '"level":"error"' current.jsonl` 查找；归档日志会自动按大小轮转，并在 14 天或 20 MiB 总量后清理最旧文件。
 
 #### 可配置项（通过设置界面）
 
@@ -425,7 +427,7 @@ WinLauncher 是从零开始的 C++ 重写项目，受 QuickLauncher Python 项�
 
 #### Core Launcher
 - **Popup panel** — a paginated grid of customizable shortcut icons, triggered by configurable mouse gestures
-- **Double-Alt trigger** — press Alt twice quickly to show/hide the launcher via global keyboard hook
+- **Double-Alt control** — press Alt twice quickly to pause or resume launcher triggers; keyboard input always remains available to the foreground app
 - **Search mode** — type to filter shortcuts in real time
 - **Dock bar** — a persistent row of frequently-used shortcuts pinned at the bottom of the popup
 - **Pin to screen** — keep the popup visible even when it loses focus
@@ -489,9 +491,9 @@ Command/URL shortcuts support **12 runtime variables** resolved at launch:
 - **Privilege management** — launch targets as admin (UAC) or de-elevate when needed
 - **High-risk command detection** — auto-detects dangerous commands (`rm -rf`, `format`, etc.) with confirmation
 - **GPU crash guard** — automatic fallback to software rendering when D2D crashes
-- **Mouse hook debounce** — debounce logic preventing spurious trigger events
+- **Mouse trigger coalescing** — high-frequency trigger presses retain one pending popup request without flooding the UI queue
 - **Auto-update** — check GitHub Releases for new versions
-- **Thread-safe logging** — file-based logger with configurable levels
+- **Structured local logs** — JSON Lines records with time, level, task, component, and event fields; high-volume debug data stays in memory and files rotate automatically
 - **Config import** — import from JSON or QuickLauncher (Python) format
 - **Toast notifications** — transient on-screen messages
 
@@ -599,7 +601,7 @@ The executable is self-contained — statically linked CRT, no runtime redistrib
 | Item | Action |
 |---|---|
 | Config | Open settings window |
-| Pause | Temporarily disable popup trigger |
+| Pause | Temporarily disable popup triggers and fully pass the configured mouse button through to the foreground app; double-Alt restores triggers |
 | Check for Updates | Check GitHub for new version |
 | Exit | Quit the application |
 

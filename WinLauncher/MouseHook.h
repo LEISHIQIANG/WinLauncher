@@ -11,6 +11,8 @@ public:
     static void Uninstall();
     static bool IsInstalled();
     static void SetTriggerType(int type);
+    static void SetTriggerEnabled(bool enabled);
+    static void AcknowledgePopupRequest();
     static void SetTriggerBlacklist(const std::vector<std::wstring>& processNames);
 
 private:
@@ -21,6 +23,8 @@ private:
     static std::atomic<DWORD>  s_hookThreadId;
     static HANDLE              s_hReadyEvent;
     static std::atomic<bool>   s_running;
+    static std::atomic<bool>   s_triggerEnabled;
+    static std::atomic<bool>   s_popupRequestPending;
     static std::atomic<DWORD>  s_suppressButtonUpMask;
     static HMODULE             s_hModule;
 

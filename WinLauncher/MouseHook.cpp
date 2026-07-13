@@ -6,7 +6,7 @@
 #include "Services/MacroService.h"
 #include <algorithm>
 #include <cwctype>
-#include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -17,6 +17,8 @@ HANDLE              MouseHook::s_hThread     = nullptr;
 std::atomic<DWORD>  MouseHook::s_hookThreadId = 0;
 HANDLE              MouseHook::s_hReadyEvent = nullptr;
 std::atomic<bool>   MouseHook::s_running(false);
+std::atomic<bool>   MouseHook::s_triggerEnabled(true);
+std::atomic<bool>   MouseHook::s_popupRequestPending(false);
 std::atomic<DWORD>  MouseHook::s_suppressButtonUpMask(0);
 HMODULE             MouseHook::s_hModule     = nullptr;
 
@@ -25,8 +27,8 @@ namespace
     constexpr DWORD SuppressMiddleUp  = 0x01;
     constexpr DWORD SuppressXButton1Up = 0x02;
     constexpr DWORD SuppressXButton2Up = 0x04;
-    std::mutex g_triggerBlacklistMutex;
-    std::vector<std::wstring> g_triggerBlacklist;
+    std::shared_ptr<const std::vector<std::wstring>> g_triggerBlacklist =
+        std::make_shared<const std::vector<std::wstring>>();
 
     bool IsCtrlDown()
     {
@@ -98,6 +100,13 @@ namespace
         if (pid == 0)
             return L"";
 
+        // This function is only called from the dedicated mouse-hook thread.
+        // Reuse the image name while the foreground process stays the same.
+        static DWORD cachedPid = 0;
+        static std::wstring cachedProcessName;
+        if (pid == cachedPid)
+            return cachedProcessName;
+
         HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
         if (!process)
             return L"";
@@ -108,18 +117,16 @@ namespace
         if (QueryFullProcessImageNameW(process, 0, path.data(), &len) && len > 0)
             processName = FileNameFromPath(std::wstring(path.data(), len));
         CloseHandle(process);
-        return ToLowerCopy(processName);
+        cachedPid = pid;
+        cachedProcessName = ToLowerCopy(processName);
+        return cachedProcessName;
     }
 
     bool IsTriggerBlacklistedForForegroundApp()
     {
-        std::vector<std::wstring> blacklist;
-        {
-            std::lock_guard<std::mutex> lock(g_triggerBlacklistMutex);
-            blacklist = g_triggerBlacklist;
-        }
+        const auto blacklist = std::atomic_load_explicit(&g_triggerBlacklist, std::memory_order_acquire);
 
-        if (blacklist.empty())
+        if (!blacklist || blacklist->empty())
             return false;
 
         std::wstring processName = GetForegroundProcessName();
@@ -127,7 +134,7 @@ namespace
             return false;
 
         std::wstring processStem = StripExeExtension(processName);
-        for (const auto& entry : blacklist)
+        for (const auto& entry : *blacklist)
         {
             std::wstring item = ToLowerCopy(FileNameFromPath(entry));
             TrimInPlace(item);
@@ -148,14 +155,31 @@ namespace
 
     void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
     {
-        LOG_G_INFO(L"MouseHook::%ls: quitPosted=%d wait=%lu forceTerminated=%d exitCode=%lu",
-            operation, result.quitPosted, result.waitResult, result.forceTerminated, result.exitCode);
+        LOG_G_INFO(L"MouseHook::%ls: quitPosted=%d wait=%lu timedOut=%d exitCode=%lu",
+            operation, result.quitPosted, result.waitResult, result.timedOut, result.exitCode);
     }
 }
 
 void MouseHook::SetTriggerType(int type)
 {
     s_triggerType.store(type);
+}
+
+void MouseHook::SetTriggerEnabled(bool enabled)
+{
+    s_triggerEnabled.store(enabled, std::memory_order_release);
+    if (!enabled)
+    {
+        // A pause may occur between a consumed down event and its up event.
+        // Clear both states so the foreground app receives all later input.
+        s_suppressButtonUpMask.store(0, std::memory_order_release);
+        s_popupRequestPending.store(false, std::memory_order_release);
+    }
+}
+
+void MouseHook::AcknowledgePopupRequest()
+{
+    s_popupRequestPending.store(false, std::memory_order_release);
 }
 
 void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
@@ -182,14 +206,22 @@ void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processName
             normalized.push_back(std::move(item));
     }
 
-    std::lock_guard<std::mutex> lock(g_triggerBlacklistMutex);
-    g_triggerBlacklist = std::move(normalized);
+    std::atomic_store_explicit(
+        &g_triggerBlacklist,
+        std::make_shared<const std::vector<std::wstring>>(std::move(normalized)),
+        std::memory_order_release);
 }
 
 bool MouseHook::Install(HWND hTargetWnd)
 {
     LOG_G_INFO(L"MouseHook::Install called");
     if (s_running.load()) return IsInstalled();
+    if (s_hThread && !InputHookThreadStop::ReapIfExited(s_hThread))
+    {
+        LOG_G_WORNING(L"MouseHook::Install: previous hook thread is still stopping");
+        return false;
+    }
+    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
 
     s_hTargetWnd = hTargetWnd;
     s_suppressButtonUpMask.store(0);
@@ -236,14 +268,11 @@ bool MouseHook::Install(HWND hTargetWnd)
     }
 
     s_running.store(false);
-    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-        s_hThread, s_hookThreadId.load(), 1000, []() {
-            HHOOK hook = MouseHook::s_hHook.exchange(nullptr);
-            if (hook) UnhookWindowsHookEx(hook);
-        });
+    const auto stopResult = InputHookThreadStop::RequestStop(s_hThread, s_hookThreadId.load(), 1000);
     LogHookThreadStopResult(L"InstallFailureCleanup", stopResult);
-    s_hThread = nullptr;
-    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    if (stopResult.waitResult == WAIT_OBJECT_0)
+        InputHookThreadStop::ReapIfExited(s_hThread);
+    if (!stopResult.timedOut && s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hTargetWnd = nullptr;
     s_hookThreadId.store(0);
     return false;
@@ -252,21 +281,20 @@ bool MouseHook::Install(HWND hTargetWnd)
 void MouseHook::Uninstall()
 {
     LOG_G_INFO(L"MouseHook::Uninstall called");
-    if (!s_running.load()) return;
+    SetTriggerEnabled(false);
+    if (!s_running.load() && !s_hThread) return;
 
     s_running.store(false);
 
-    const auto stopResult = InputHookThreadStop::RequestStopAndClose(
-        s_hThread, s_hookThreadId.load(), 2000, []() {
-            HHOOK hook = MouseHook::s_hHook.exchange(nullptr);
-            if (hook) UnhookWindowsHookEx(hook);
-        });
+    const auto stopResult = InputHookThreadStop::RequestStop(s_hThread, s_hookThreadId.load(), 2000);
     LogHookThreadStopResult(L"Uninstall", stopResult);
-    s_hThread = nullptr;
+    if (stopResult.waitResult == WAIT_OBJECT_0)
+        InputHookThreadStop::ReapIfExited(s_hThread);
 
-    if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
+    if (!stopResult.timedOut && s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
 
-    s_hHook      = nullptr;
+    if (!stopResult.timedOut)
+        s_hHook.store(nullptr);
     s_hTargetWnd = nullptr;
     s_hookThreadId.store(0);
     s_suppressButtonUpMask.store(0);
@@ -323,6 +351,16 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
     if (nCode == HC_ACTION && s_hTargetWnd && !MacroRecorder::IsRecording())
     {
         MSLLHOOKSTRUCT* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+        if (MacroPlayer::IsPlaying())
+        {
+            if (pMsh)
+                MacroPlayer::RequestInterruptFromMouse(*pMsh);
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+
+        if (!s_triggerEnabled.load(std::memory_order_acquire))
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
         DWORD suppressMask = s_suppressButtonUpMask.load();
         if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
         {
@@ -342,11 +380,6 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 s_suppressButtonUpMask.fetch_and(~SuppressXButton2Up);
                 return 1;
             }
-        }
-
-        if (MacroPlayer::IsPlaying())
-        {
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
         int trigger = s_triggerType.load();
@@ -425,18 +458,21 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
-            // Debounce: ignore triggers within 300ms of the last one
-            static DWORD s_lastTriggerTick = 0;
-            DWORD now = GetTickCount();
-            if (now - s_lastTriggerTick < 300)
+            HWND target = s_hTargetWnd.load();
+            if (!target || !IsWindow(target))
             {
-                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger debounced (type=%d), %lums since last", trigger, now - s_lastTriggerTick);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
-            s_lastTriggerTick = now;
 
-            LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger detected (type=%d), posting ShowPopup message", trigger);
-            PostMessage(s_hTargetWnd, AppMessages::ShowPopup, 0, 0);
+            bool expected = false;
+            if (!s_popupRequestPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
+            if (!PostMessageW(target, AppMessages::ShowPopup, 0, 0))
+            {
+                s_popupRequestPending.store(false, std::memory_order_release);
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
             if (suppressUpMask != 0)
             {
                 s_suppressButtonUpMask.fetch_or(suppressUpMask);

@@ -32,7 +32,7 @@ struct AppContext
 
     AppContext()
         : crashReporter(std::make_shared<CrashReporter>(ConfigPath::GetUserDataDirectory() + L"\\crash"))
-        , logger(std::make_shared<Logger>(ConfigPath::PrepareUserConfigDirectory() + L"\\winlauncher.log"))
+        , logger(std::make_shared<Logger>(ConfigPath::PrepareUserLogDirectory() + L"\\current.jsonl"))
         , eventBus(std::make_shared<EventBus>(logger))
         , backgroundTasks(std::make_shared<BackgroundTaskService>(logger))
         , uiDispatcher(std::make_shared<UiDispatcher>(logger))
