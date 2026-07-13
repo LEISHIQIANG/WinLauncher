@@ -149,6 +149,19 @@ Add-TestResult `
     -Detail "Activation handlers must retain the shared shadow for visible dialogs whether focused or not"
 
 Add-TestResult `
+    -Name "Glow and glass material frames use one DPI-aligned clean edge" `
+    -Passed (
+        $glassWindowSource -match 'struct\s+MaterialFrameGeometry' -and
+        $glassWindowSource -match 'BuildMaterialFrameGeometry\(w, h, drawCornerRadius, borderOffset, borderWidth\)' -and
+        $glassWindowSource -match 'RoundedRect\(materialFrame\.clipBounds, materialFrame\.clipRadius' -and
+        $glassWindowSource -match 'RoundedRect\(\s*materialFrame\.borderBounds,\s*materialFrame\.borderRadius' -and
+        $glassWindowSource -match 'const bool isDarkMaterial' -and
+        $glassWindowSource -notmatch 'outerDarkBrush' -and
+        $glassWindowSource -notmatch 'Outer thin dark border for desktop contrast'
+    ) `
+    -Detail "Shared glow and glass rendering must align clip and frame geometry and avoid a hard dark outer outline"
+
+Add-TestResult `
     -Name "Detached threads are isolated to bounded shutdown fallback" `
     -Passed (
         @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "WinLauncher") -Recurse -Include *.cpp,*.h |

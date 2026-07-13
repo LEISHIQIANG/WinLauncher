@@ -196,10 +196,12 @@ void CrashReporter::PruneOldReports()
             if (now.QuadPart > modified.QuadPart && now.QuadPart - modified.QuadPart > ThirtyDays100ns)
                 DeleteFileW(path.c_str());
             else
+            {
                 ULARGE_INTEGER bytes{};
                 bytes.LowPart = data.nFileSizeLow;
                 bytes.HighPart = data.nFileSizeHigh;
                 entries.push_back({ std::move(path), data.ftLastWriteTime, bytes.QuadPart });
+            }
         }
     } while (FindNextFileW(find, &data));
     FindClose(find);

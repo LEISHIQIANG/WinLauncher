@@ -169,6 +169,40 @@ static float ClampCornerRadius(float radius, float width, float height)
     return radius;
 }
 
+struct MaterialFrameGeometry
+{
+    D2D1_RECT_F clipBounds = {};
+    D2D1_RECT_F borderBounds = {};
+    float clipRadius = 0.0f;
+    float borderRadius = 0.0f;
+    float borderWidth = 0.0f;
+};
+
+// Keep the material clip and its visible edge derived from the same physical
+// pixel metrics.  The previous 0.5/1.5 DIP offsets produced mismatched edges
+// at scaled DPI and made the dark bevel especially noticeable on the right.
+static MaterialFrameGeometry BuildMaterialFrameGeometry(
+    float width,
+    float height,
+    float cornerRadius,
+    float borderOffset,
+    float borderWidth)
+{
+    MaterialFrameGeometry geometry;
+    geometry.clipBounds = D2D1::RectF(0.0f, 0.0f, width, height);
+    geometry.clipRadius = ClampCornerRadius(cornerRadius, width, height);
+
+    const float maxInset = (std::min)(width, height) * 0.5f;
+    const float inset = (std::min)((std::max)(0.0f, borderOffset), maxInset);
+    geometry.borderBounds = D2D1::RectF(inset, inset, width - inset, height - inset);
+    geometry.borderRadius = ClampCornerRadius(
+        geometry.clipRadius - inset,
+        geometry.borderBounds.right - geometry.borderBounds.left,
+        geometry.borderBounds.bottom - geometry.borderBounds.top);
+    geometry.borderWidth = (std::max)(0.0f, borderWidth);
+    return geometry;
+}
+
 ShadowSettings GlassWindow::GetShadowSettings() const
 {
     ShadowSettings s;
@@ -821,6 +855,8 @@ void GlassWindow::CompositeBackgroundToCache()
     float drawCornerRadius = GetDrawCornerRadius(scale, w, h);
     float borderOffset = (0.5f * systemScale) / scale;
     float borderWidth = (1.0f * systemScale) / scale;
+    const MaterialFrameGeometry materialFrame =
+        BuildMaterialFrameGeometry(w, h, drawCornerRadius, borderOffset, borderWidth);
 
     // Reuse bitmap render target if size matches
     bool sizeChanged = false;
@@ -878,7 +914,7 @@ void GlassWindow::CompositeBackgroundToCache()
     bmpRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
     bool roundedLayerPushed = false;
-    if (drawCornerRadius > 0.0f)
+    if (materialFrame.clipRadius > 0.0f)
     {
         if (!m_roundedClipGeometry)
         {
@@ -887,7 +923,7 @@ void GlassWindow::CompositeBackgroundToCache()
             if (roundedFactory)
             {
                 roundedFactory->CreateRoundedRectangleGeometry(
-                    D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+                    D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
                     &m_roundedClipGeometry);
             }
         }
@@ -898,7 +934,7 @@ void GlassWindow::CompositeBackgroundToCache()
         {
             bmpRt->PushLayer(
                 D2D1::LayerParameters(
-                    D2D1::RectF(0.0f, 0.0f, w, h),
+                    materialFrame.clipBounds,
                     m_roundedClipGeometry.Get(),
                     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE),
                 m_roundedClipLayer.Get());
@@ -996,8 +1032,8 @@ void GlassWindow::CompositeBackgroundToCache()
             if (sheenBrush)
             {
                 D2D1_ROUNDED_RECT sheenRR = D2D1::RoundedRect(
-                    D2D1::RectF(1.0f, 1.0f, w - 1.0f, h - 1.0f),
-                    drawCornerRadius, drawCornerRadius
+                    materialFrame.clipBounds,
+                    materialFrame.clipRadius, materialFrame.clipRadius
                 );
                 bmpRt->FillRoundedRectangle(sheenRR, sheenBrush);
                 sheenBrush->Release();
@@ -1034,7 +1070,7 @@ void GlassWindow::CompositeBackgroundToCache()
             if (glowBrush)
             {
                 bmpRt->FillRoundedRectangle(
-                    D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+                    D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
                     glowBrush);
                 glowBrush->Release();
             }
@@ -1055,56 +1091,50 @@ void GlassWindow::CompositeBackgroundToCache()
     if (bgBrush)
     {
         bmpRt->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, w, h), drawCornerRadius, drawCornerRadius),
+            D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
             bgBrush);
         bgBrush->Release();
     }
 
-    // D. Crisp Bevel Edge Borders (Part B & C of Layer 3)
-    if (cfg.highlight > 0.0f)
+    // D. One DPI-aligned refraction edge.  Dark materials deliberately use a
+    // soft light edge instead of the old hard dark desktop-contrast outline.
+    if (cfg.highlight > 0.0f && materialFrame.borderWidth > 0.0f)
     {
-        // B. Outer thin dark border for desktop contrast
-        ID2D1SolidColorBrush* outerDarkBrush = nullptr;
-        float darkOpacity = 0.14f * (1.0f - cfg.brightness * 0.4f);
-        bmpRt->CreateSolidColorBrush(D2D1::ColorF(15 / 255.0f, 23 / 255.0f, 42 / 255.0f, darkOpacity), &outerDarkBrush);
-        if (outerDarkBrush)
-        {
-            D2D1_ROUNDED_RECT outerRR = D2D1::RoundedRect(
-                D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
-                drawCornerRadius, drawCornerRadius
-            );
-            bmpRt->DrawRoundedRectangle(outerRR, outerDarkBrush, 1.0f);
-            outerDarkBrush->Release();
-        }
+        const bool isDarkMaterial = UIStyle::GetThemeMode() == UIStyle::ThemeMode::Dark;
+        ID2D1LinearGradientBrush* frameBrush = nullptr;
+        ID2D1GradientStopCollection* frameStops = nullptr;
+        D2D1_GRADIENT_STOP stopDataFrame[2];
+        stopDataFrame[0].position = 0.0f;
+        stopDataFrame[0].color = D2D1::ColorF(
+            1.0f, 1.0f, 1.0f,
+            cfg.highlight * (isDarkMaterial ? 0.16f : 0.75f));
+        stopDataFrame[1].position = 1.0f;
+        stopDataFrame[1].color = isDarkMaterial
+            ? D2D1::ColorF(1.0f, 1.0f, 1.0f, cfg.highlight * 0.035f)
+            : UIStyle::ThemeColor::WindowBorder().d2d;
 
-        // C. Inner diagonal gradient bright border for realistic light refraction
-        ID2D1LinearGradientBrush* innerBrightBrush = nullptr;
-        ID2D1GradientStopCollection* stopsInner = nullptr;
-        D2D1_GRADIENT_STOP stopDataInner[2];
-        stopDataInner[0].position = 0.0f;
-        stopDataInner[0].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, cfg.highlight * 0.75f);
-        stopDataInner[1].position = 1.0f;
-        stopDataInner[1].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.02f);
-
-        bmpRt->CreateGradientStopCollection(stopDataInner, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsInner);
-        if (stopsInner)
+        bmpRt->CreateGradientStopCollection(stopDataFrame, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &frameStops);
+        if (frameStops)
         {
             bmpRt->CreateLinearGradientBrush(
-                D2D1::LinearGradientBrushProperties(D2D1::Point2F(1.5f, 1.5f), D2D1::Point2F(w - 1.5f, h - 1.5f)),
-                stopsInner,
-                &innerBrightBrush
+                D2D1::LinearGradientBrushProperties(
+                    D2D1::Point2F(materialFrame.borderBounds.left, materialFrame.borderBounds.top),
+                    D2D1::Point2F(materialFrame.borderBounds.right, materialFrame.borderBounds.bottom)),
+                frameStops,
+                &frameBrush
             );
-            if (innerBrightBrush)
+            if (frameBrush)
             {
-                D2D1_ROUNDED_RECT innerRR = D2D1::RoundedRect(
-                    D2D1::RectF(1.5f, 1.5f, w - 1.5f, h - 1.5f),
-                    (std::max)(0.0f, drawCornerRadius - (1.0f * systemScale) / scale),
-                    (std::max)(0.0f, drawCornerRadius - (1.0f * systemScale) / scale)
-                );
-                bmpRt->DrawRoundedRectangle(innerRR, innerBrightBrush, 1.0f);
-                innerBrightBrush->Release();
+                bmpRt->DrawRoundedRectangle(
+                    D2D1::RoundedRect(
+                        materialFrame.borderBounds,
+                        materialFrame.borderRadius,
+                        materialFrame.borderRadius),
+                    frameBrush,
+                    materialFrame.borderWidth);
+                frameBrush->Release();
             }
-            stopsInner->Release();
+            frameStops->Release();
         }
     }
 
