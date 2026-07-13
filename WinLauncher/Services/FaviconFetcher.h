@@ -4,13 +4,18 @@
  *
  * Multi-strategy favicon / URL icon fetcher for WinLauncher.
  *
- * Strategy order (mirroring the reference project):
- *   1. Fetch HTML of the target page, parse <link rel="icon"> tags (scored).
+ * Strategy order:
+ *   1. Fetch HTML of the target page, parse and score <link rel="icon"> tags.
  *   2. Parse web-manifest links found in the HTML (<link rel="manifest">).
- *   3. Probe common well-known icon paths in parallel
- *      (/favicon.svg, /favicon.png, /apple-touch-icon.png, /favicon.ico …).
- *   4. Cache the result as a .ico file under
- *      %APPDATA%\WinLauncher\config\favicons\<sha1-of-url>.ico
+ *   3. Use branded Open Graph / Twitter image metadata only when no icon exists.
+ *   4. Probe common well-known icon paths in parallel
+ *      (/favicon.png, /apple-touch-icon.png, /favicon.ico, /icons/icon-192.png …).
+ *   5. Query multiple public favicon indexes by exact hostname and base domain
+ *      only (never the page path or query string), rejecting opaque white/black
+ *      canvas results.
+ *   6. Cache the original supported image format under
+ *      %APPDATA%\WinLauncher\config\favicons\<sha1-of-url>.<format>.
+ *      PNG and ICO alpha channels are preserved; no background is added.
  *
  * All network I/O uses WinInet and is safe to call from a worker thread.
  */
@@ -33,7 +38,7 @@ namespace FaviconFetcher
      *
      * @param url          The full URL whose favicon should be fetched.
      * @param forceRefresh If true, ignore any cached file and re-fetch.
-     * @return             Absolute path to the cached .ico file, or "" on failure.
+     * @return             Absolute path to the cached image file, or "" on failure.
      *
      * Thread-safe – may be called from any thread.
      */

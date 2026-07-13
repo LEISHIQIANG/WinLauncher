@@ -104,6 +104,7 @@ Add-TestResult `
     -Detail "The built-in reload slash command must refresh plugins without opening a command output panel"
 
 $urlEditSource = Read-RepoFile "WinLauncher\Config\UrlEditForm.cpp"
+$faviconFetcherSource = Read-RepoFile "WinLauncher\Services\FaviconFetcher.cpp"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
@@ -118,6 +119,28 @@ $applicationSource = Read-RepoFile "WinLauncher\App\Application.cpp"
 $popupHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $commandPanelSource = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.cpp"
 $commandPanelHeader = Read-RepoFile "WinLauncher\Config\CommandPanelWindow.h"
+
+Add-TestResult `
+    -Name "Favicon retrieval uses layered, privacy-scoped fallbacks" `
+    -Passed (
+        $faviconFetcherSource -match 'INTERNET_FLAG_NO_AUTO_REDIRECT' -and
+        $faviconFetcherSource -match 'UrlCombineW' -and
+        $faviconFetcherSource -match 'ParseHtmlIconLinks' -and
+        $faviconFetcherSource -match 'ParseManifestIconUrls' -and
+        $faviconFetcherSource -match 'ParseMetaImageUrls' -and
+        $faviconFetcherSource -match 'k_CommonIconPaths' -and
+        $faviconFetcherSource -match 'FetchPublicFallbackFavicon' -and
+        $faviconFetcherSource -match 'ExtractHostname' -and
+        $faviconFetcherSource -match 'domain=' -and
+        $faviconFetcherSource -match 'CacheCandidateUrls' -and
+        $faviconFetcherSource -match 'DetectIconExtension' -and
+        $faviconFetcherSource -match 'StoreIconInCache' -and
+        $faviconFetcherSource -match 'original alpha channel' -and
+        $faviconFetcherSource -match 'GetFaviconLookupHosts' -and
+        $faviconFetcherSource -match 'icons\.duckduckgo\.com/ip3/' -and
+        $faviconFetcherSource -match 'HasOpaqueNeutralCanvas'
+    ) `
+    -Detail "Favicon fetching must try layered fallbacks while preserving supported source formats and alpha"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
 $configViewModelSource = Read-RepoFile "WinLauncher\ViewModel\ConfigViewModel.h"
@@ -131,6 +154,8 @@ $promptWindowSource = Read-RepoFile "WinLauncher\Config\PromptWindow.cpp"
 $trayMenuSource = Read-RepoFile "WinLauncher\TrayMenuWindow.cpp"
 $contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
 $dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
+$shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
+$shortcutPageHeader = Read-RepoFile "WinLauncher\Config\ShortcutPage.h"
 
 Add-TestResult `
     -Name "Visible secondary windows retain shadows after deactivation" `
@@ -149,6 +174,22 @@ Add-TestResult `
         $dropDownMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage'
     ) `
     -Detail "Activation handlers must retain the shared shadow for visible dialogs whether focused or not"
+
+Add-TestResult `
+    -Name "Shortcut grid multi-selection has a safe batch favicon action" `
+    -Passed (
+        $shortcutPageSource -match 'preserveMultiSelection' -and
+        $shortcutPageSource -match 'selectedIndices\.size\(\) > 1' -and
+        $shortcutPageSource -match 'L"删除"' -and
+        $shortcutPageSource -match 'L"获取图标"' -and
+        $shortcutPageSource -match 'FetchSelectedUrlFavicons' -and
+        $shortcutPageSource -match 'Model::ShortcutType::Url' -and
+        $shortcutPageSource -match 'Submit\(\s*L"config\.url_favicon\.batch"' -and
+        $shortcutPageSource -match 'FaviconFetcher::FetchFavicon' -and
+        $shortcutPageSource -match 'CancelBatchFaviconFetches' -and
+        $shortcutPageHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_batchFaviconTasks'
+    ) `
+    -Detail "Multi-select menus must omit edit actions and batch-fetch only URL icons through cancellable background tasks"
 
 Add-TestResult `
     -Name "Glow and glass material frames use one DPI-aligned clean edge" `

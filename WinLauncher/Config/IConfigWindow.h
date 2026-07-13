@@ -20,7 +20,6 @@ public:
     virtual std::wstring GetConfigFilePath() = 0;
     virtual std::wstring GetConfigHistoryDir() = 0;
     virtual std::wstring GetConfigHistorySummary() = 0;
-    virtual void OpenConfigFile() = 0;
     virtual void OpenLogFile() = 0;
     virtual void OpenConfigDir() = 0;
     virtual void OpenConfigHistoryDir() = 0;
@@ -32,6 +31,7 @@ public:
     virtual void ExportMigrationBackup() = 0;
     virtual void ImportMigrationBackup() = 0;
     virtual void ClearUsageHistory() = 0;
+    virtual void ClearCache() = 0;
     virtual void StartAnimation() = 0;
     virtual IDWriteTextFormat* GetLeftFont() = 0;
     virtual IDWriteTextFormat* GetTitleFont() = 0;

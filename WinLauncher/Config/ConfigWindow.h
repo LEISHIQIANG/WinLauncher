@@ -39,7 +39,6 @@ public:
     virtual std::wstring GetConfigFilePath() override;
     virtual std::wstring GetConfigHistoryDir() override;
     virtual std::wstring GetConfigHistorySummary() override;
-    virtual void OpenConfigFile() override;
     virtual void OpenLogFile() override;
     virtual void OpenConfigDir() override;
     virtual void OpenConfigHistoryDir() override;
@@ -51,6 +50,7 @@ public:
     virtual void ExportMigrationBackup() override;
     virtual void ImportMigrationBackup() override;
     virtual void ClearUsageHistory() override;
+    virtual void ClearCache() override;
     virtual void StartAnimation() override;
     virtual IDWriteTextFormat* GetLeftFont() override { return m_tfLeft.Get(); }
     virtual IDWriteTextFormat* GetTitleFont() override { return m_tfTitle.Get(); }

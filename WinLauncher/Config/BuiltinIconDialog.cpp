@@ -19,35 +19,40 @@ static BuiltinIconDialog* g_bidInstance = nullptr;
 
 static const std::vector<BuiltinIconPreset> G_BUILTIN_PRESETS = {
     // ── 1. 系统 (Category 0) ──
-    { L"控制面板", L"control.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"任务管理器", L"taskmgr.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"资源管理器", L"explorer.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"设备管理器", L"devmgmt.msc", L"", Model::ShortcutType::System, 0, L"" },
-    { L"注册表编辑器", L"regedit.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"计算器", L"calc.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"记事本", L"notepad.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"命令行", L"cmd.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"PowerShell", L"powershell.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"屏幕键盘", L"osk.exe", L"", Model::ShortcutType::System, 0, L"" },
-    { L"配置窗口", L":config_window", L"", Model::ShortcutType::System, 0, L"" },
+    { L"控制面板", L"control.exe", L"", Model::ShortcutType::System, 0, L"control_panel" },
+    { L"任务管理器", L"taskmgr.exe", L"", Model::ShortcutType::System, 0, L"task_manager" },
+    { L"资源管理器", L"explorer.exe", L"", Model::ShortcutType::System, 0, L"file_explorer" },
+    { L"设备管理器", L"devmgmt.msc", L"", Model::ShortcutType::System, 0, L"device_manager" },
+    { L"磁盘管理", L"diskmgmt.msc", L"", Model::ShortcutType::System, 0, L"disk_management" },
+    { L"服务", L"services.msc", L"", Model::ShortcutType::System, 0, L"services" },
+    { L"事件查看器", L"eventvwr.msc", L"", Model::ShortcutType::System, 0, L"event_viewer" },
+    { L"资源监视器", L"resmon.exe", L"", Model::ShortcutType::System, 0, L"resource_monitor" },
+    { L"系统信息", L"msinfo32.exe", L"", Model::ShortcutType::System, 0, L"system_information" },
+    { L"注册表编辑器", L"regedit.exe", L"", Model::ShortcutType::System, 0, L"registry_editor" },
+    { L"计算器", L"calc.exe", L"", Model::ShortcutType::System, 0, L"calculator" },
+    { L"记事本", L"notepad.exe", L"", Model::ShortcutType::System, 0, L"notepad" },
+    { L"命令行", L"cmd.exe", L"", Model::ShortcutType::System, 0, L"command_prompt" },
+    { L"PowerShell", L"powershell.exe", L"", Model::ShortcutType::System, 0, L"powershell" },
+    { L"屏幕键盘", L"osk.exe", L"", Model::ShortcutType::System, 0, L"on_screen_keyboard" },
+    { L"配置窗口", L":config_window", L"", Model::ShortcutType::System, 0, L"settings" },
     { L"中洛时区", L":timezone_cn_la_toggle", L"", Model::ShortcutType::System, 0, L"timezone_cn_la" },
-    { L"窗口置顶", L":topmost_toggle", L"", Model::ShortcutType::System, 0, L"" },
+    { L"窗口置顶", L":topmost_toggle", L"", Model::ShortcutType::System, 0, L"topmost" },
     
     // ── 2. 网站 (Category 1) ──
-    { L"百度", L"https://www.baidu.com", L"", Model::ShortcutType::Url, 1, L"" },
-    { L"谷歌", L"https://www.google.com", L"", Model::ShortcutType::Url, 1, L"" },
-    { L"GitHub", L"https://github.com", L"", Model::ShortcutType::Url, 1, L"" },
-    { L"哔哩哔哩", L"https://www.bilibili.com", L"", Model::ShortcutType::Url, 1, L"" },
-    { L"淘宝", L"https://www.taobao.com", L"", Model::ShortcutType::Url, 1, L"" },
+    { L"百度", L"https://www.baidu.com", L"", Model::ShortcutType::Url, 1, L"baidu" },
+    { L"谷歌", L"https://www.google.com", L"", Model::ShortcutType::Url, 1, L"google" },
+    { L"GitHub", L"https://github.com", L"", Model::ShortcutType::Url, 1, L"github" },
+    { L"哔哩哔哩", L"https://www.bilibili.com", L"", Model::ShortcutType::Url, 1, L"bilibili" },
+    { L"淘宝", L"https://www.taobao.com", L"", Model::ShortcutType::Url, 1, L"taobao" },
 
     // ── 3. 网络 (Category 2) ──
-    { L"Ping百度", L"ping www.baidu.com -t", L"cmd||||||1|||0|||300|||2000", Model::ShortcutType::Command, 2, L"" },
-    { L"IP配置", L"ipconfig /all", L"cmd||||||1|||1|||300|||2000", Model::ShortcutType::Command, 2, L"" },
+    { L"Ping百度", L"ping www.baidu.com -t", L"cmd||||||1|||0|||300|||2000", Model::ShortcutType::Command, 2, L"ping" },
+    { L"IP配置", L"ipconfig /all", L"cmd||||||1|||1|||300|||2000", Model::ShortcutType::Command, 2, L"ip_config" },
 
     // ── 4. 其他 (Category 3) ──
-    { L"锁屏", L"rundll32.exe user32.dll,LockWorkStation", L"", Model::ShortcutType::Command, 3, L"" },
-    { L"休眠", L"rundll32.exe powrprof.dll,SetSuspendState 0,1,0", L"", Model::ShortcutType::Command, 3, L"" },
-    { L"清空回收站", L"wscript.exe", L"macro", Model::ShortcutType::Macro, 3, L"macro" }
+    { L"锁屏", L"rundll32.exe user32.dll,LockWorkStation", L"", Model::ShortcutType::Command, 3, L"lock_screen" },
+    { L"休眠", L"rundll32.exe powrprof.dll,SetSuspendState 0,1,0", L"", Model::ShortcutType::Command, 3, L"hibernate" },
+    { L"清空回收站", L"wscript.exe", L"macro", Model::ShortcutType::Macro, 3, L"empty_recycle_bin" }
 };
 
 struct BuiltinBrushCacheEntry

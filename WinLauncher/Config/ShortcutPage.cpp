@@ -15,6 +15,9 @@
 #include "SystemIconDialog.h"
 #include "../DpiHelper.h"
 #include "../resource.h"
+#include "../ToastWindow.h"
+#include "../App/AppContext.h"
+#include "../Services/FaviconFetcher.h"
 #include "../Services/SyncFolderService.h"
 #include "../UI/Controls/IconRenderer.h"
 #include <windowsx.h>
@@ -25,10 +28,24 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <mutex>
 
 #pragma comment(lib, "comdlg32.lib")
 
 static const int ICON_SIZE = 24;
+
+static Model::IconSource ResolveEditedIconSource(const std::wstring& iconPath, const std::wstring& builtinIconId)
+{
+    if (!iconPath.empty()) return Model::IconSource::CustomPath;
+    return builtinIconId.empty() ? Model::IconSource::Auto : Model::IconSource::Builtin;
+}
+
+struct ShortcutPage::BatchFaviconState
+{
+    std::mutex mutex;
+    ShortcutPage* owner = nullptr; // Accessed only by UI-dispatched callbacks while holding mutex.
+    uint64_t generation = 0;
+};
 
 ShortcutPage::ShortcutPage(IConfigWindow* owner)
     : m_owner(owner)
@@ -51,10 +68,19 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
     , m_lastRt(nullptr)
     , m_trackMouse(false)
 {
+    m_batchFaviconState = std::make_shared<BatchFaviconState>();
+    m_batchFaviconState->owner = this;
 }
 
 ShortcutPage::~ShortcutPage()
 {
+    CancelBatchFaviconFetches();
+    if (m_batchFaviconState)
+    {
+        std::lock_guard<std::mutex> lock(m_batchFaviconState->mutex);
+        m_batchFaviconState->owner = nullptr;
+        ++m_batchFaviconState->generation;
+    }
     m_bmpBrushCache.clear();
     if (m_deleteCursor)
     {
@@ -65,6 +91,7 @@ ShortcutPage::~ShortcutPage()
 
 void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
 {
+    CancelBatchFaviconFetches();
     m_pageData = page;
     if (!preserveScroll)
     {
@@ -915,17 +942,52 @@ void ShortcutPage::OnRButtonDown(POINT pt, bool& repaint)
         HWND hWnd = m_owner->GetWindowHWND();
         POINT screenPt = DpiHelper::LogicalClientToScreen(hWnd, pt);
 
-        // Select the right-clicked item (clearing others for clarity)
+        // Preserve an existing multi-selection when right-clicking one of its
+        // members.  Right-clicking a different item starts a new selection.
         EnsureShortcutStates();
-        for (auto& s : m_shortcutStates)
+        std::vector<int> selectedIndices = GetSelectedShortcutIndices();
+        bool preserveMultiSelection = selectedIndices.size() > 1 && m_shortcutStates[hs].selected;
+        if (!preserveMultiSelection)
         {
-            s.selected = false;
+            for (auto& s : m_shortcutStates)
+            {
+                s.selected = false;
+            }
+            m_shortcutStates[hs].selected = true;
+            m_selectionAnchorIndex = hs;
+            selectedIndices = { hs };
         }
-        m_shortcutStates[hs].selected = true;
-        m_selectionAnchorIndex = hs;
         repaint = true;
 
         std::vector<ContextMenu::Item> menuItems;
+
+        if (selectedIndices.size() > 1)
+        {
+            bool hasUrl = false;
+            for (int index : selectedIndices)
+            {
+                if (index >= 0 && index < (int)m_pageData->shortcuts.size() &&
+                    m_pageData->shortcuts[index].type == Model::ShortcutType::Url &&
+                    !m_pageData->shortcuts[index].targetPath.empty())
+                {
+                    hasUrl = true;
+                    break;
+                }
+            }
+
+            // Multi-select intentionally has no edit or rename operation.
+            menuItems.push_back({ L"删除", [this, selectedIndices]() {
+                bool menuRepaint = false;
+                if (ConfirmAndDeleteShortcuts(selectedIndices, menuRepaint))
+                    InvalidateRect(m_owner->GetWindowHWND(), nullptr, FALSE);
+            } });
+            menuItems.push_back({ L"获取图标", [this, selectedIndices]() {
+                FetchSelectedUrlFavicons(selectedIndices);
+            }, !hasUrl });
+
+            ContextMenu::Show(hWnd, screenPt, menuItems, m_owner->GetAppContext());
+            return;
+        }
 
         // ── 编辑 ──────────────────────────────────────────────────────────
         menuItems.push_back({ L"编辑", [this, hs]() {
@@ -1370,6 +1432,7 @@ void ShortcutPage::ResetShortcutTargets(bool compactPendingDelete)
 void ShortcutPage::DeleteShortcuts(const std::vector<int>& sortedIndices)
 {
     if (!m_pageData) return;
+    CancelBatchFaviconFetches();
 
     for (auto it = sortedIndices.rbegin(); it != sortedIndices.rend(); ++it)
     {
@@ -1429,6 +1492,150 @@ bool ShortcutPage::ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bo
     m_owner->NotifyConfigChanged();
     repaint = true;
     return true;
+}
+
+void ShortcutPage::CancelBatchFaviconFetches()
+{
+    for (const auto& task : m_batchFaviconTasks)
+    {
+        task.Cancel();
+    }
+    m_batchFaviconTasks.clear();
+    m_batchFaviconPending = 0;
+    m_batchFaviconApplied = 0;
+    m_batchFaviconChanged = false;
+    m_batchFaviconHistoryRecorded = false;
+
+    if (m_batchFaviconState)
+    {
+        std::lock_guard<std::mutex> lock(m_batchFaviconState->mutex);
+        ++m_batchFaviconState->generation;
+    }
+}
+
+void ShortcutPage::FetchSelectedUrlFavicons(const std::vector<int>& indices)
+{
+    if (!m_pageData || m_pageData->isSyncFolder || !m_owner) return;
+
+    AppContext* context = m_owner->GetAppContext();
+    if (!context || !context->backgroundTasks || !context->uiDispatcher || !m_batchFaviconState) return;
+
+    struct UrlJob { int index; std::wstring shortcutId; std::wstring url; };
+    std::vector<UrlJob> jobs;
+    for (int index : NormalizeShortcutIndices(indices))
+    {
+        const RendShortcutInfo& shortcut = m_pageData->shortcuts[index];
+        if (shortcut.type == Model::ShortcutType::Url && !shortcut.targetPath.empty())
+        {
+            jobs.push_back({ index, shortcut.id, shortcut.targetPath });
+        }
+    }
+    if (jobs.empty())
+    {
+        ToastWindow::Show(L"选中的项目中没有可获取图标的网址", 1800);
+        return;
+    }
+
+    CancelBatchFaviconFetches();
+    const auto state = m_batchFaviconState;
+    uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        generation = ++state->generation;
+    }
+    m_batchFaviconGeneration = generation;
+
+    auto dispatcher = context->uiDispatcher;
+    for (const UrlJob& job : jobs)
+    {
+        BackgroundTaskService::TaskHandle task = context->backgroundTasks->Submit(
+            L"config.url_favicon.batch", BackgroundTaskService::Priority::Normal,
+            [state, dispatcher, generation, index = job.index, shortcutId = job.shortcutId, url = job.url]
+            (const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+                std::wstring iconPath;
+                try
+                {
+                    iconPath = FaviconFetcher::FetchFavicon(url, /*forceRefresh=*/true);
+                }
+                catch (...) {}
+                if (cancellation->IsCancellationRequested()) return;
+                dispatcher->Post(L"config.url_favicon.batch.complete", [state, generation, index, shortcutId, url, iconPath]() {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    if (state->owner)
+                        state->owner->ApplyBatchFaviconResult(generation, index, shortcutId, url, iconPath);
+                });
+            });
+        if (task)
+        {
+            m_batchFaviconTasks.push_back(task);
+            ++m_batchFaviconPending;
+        }
+    }
+
+    if (m_batchFaviconPending == 0)
+    {
+        ToastWindow::Show(L"后台任务繁忙，未开始获取图标", 1800);
+        return;
+    }
+
+    ToastWindow::Show(L"正在并行获取 " + std::to_wstring(m_batchFaviconPending) + L" 个网站图标...", 1600);
+}
+
+void ShortcutPage::ApplyBatchFaviconResult(uint64_t generation, int index, const std::wstring& shortcutId,
+                                           const std::wstring& url, const std::wstring& iconPath)
+{
+    if (generation != m_batchFaviconGeneration || m_batchFaviconPending <= 0) return;
+
+    if (!iconPath.empty() && m_pageData && index >= 0 && index < (int)m_pageData->shortcuts.size())
+    {
+        RendShortcutInfo& shortcut = m_pageData->shortcuts[index];
+        if (shortcut.type == Model::ShortcutType::Url && shortcut.id == shortcutId && shortcut.targetPath == url)
+        {
+            bool changed = shortcut.iconPath != iconPath || shortcut.iconSource != Model::IconSource::CustomPath;
+            if (changed && !m_batchFaviconHistoryRecorded)
+            {
+                m_owner->RecordShortcutHistoryCheckpoint();
+                m_batchFaviconHistoryRecorded = true;
+            }
+            shortcut.iconPath = iconPath;
+            shortcut.iconSource = Model::IconSource::CustomPath;
+
+            if (shortcut.hIcon) { DestroyIcon(shortcut.hIcon); shortcut.hIcon = nullptr; }
+            shortcut.hIcon = ShortcutManager::GetShortcutIcon(shortcut);
+            if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
+            {
+                m_pageData->iconBitmaps[index]->Release();
+                m_pageData->iconBitmaps[index] = nullptr;
+            }
+            if (index < (int)m_pageData->iconBitmaps.size())
+                m_pageData->iconBitmaps[index] = CreateShortcutBitmap(shortcut);
+
+            ++m_batchFaviconApplied;
+            m_batchFaviconChanged = m_batchFaviconChanged || changed;
+        }
+    }
+
+    --m_batchFaviconPending;
+    if (m_batchFaviconPending == 0)
+        FinishBatchFaviconFetch();
+}
+
+void ShortcutPage::FinishBatchFaviconFetch()
+{
+    m_batchFaviconTasks.clear();
+    if (m_batchFaviconChanged)
+        m_owner->NotifyConfigChanged();
+
+    if (m_batchFaviconApplied > 0)
+    {
+        ToastWindow::Show(L"已获取并应用 " + std::to_wstring(m_batchFaviconApplied) + L" 个网站图标", 2200);
+    }
+    else
+    {
+        ToastWindow::Show(L"未获取到选中网站的图标", 2200);
+    }
+    HWND hWnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
+    if (hWnd && IsWindow(hWnd)) InvalidateRect(hWnd, nullptr, FALSE);
 }
 
 bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices, bool& repaint)
@@ -1969,7 +2176,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.targetPath != result.hotkey) { sc.targetPath = result.hotkey; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.runAsAdmin != result.afterClose) { sc.runAsAdmin = result.afterClose; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
@@ -2009,7 +2216,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.arguments != newArgs) { sc.arguments = newArgs; changed = true; }
             
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
@@ -2059,7 +2266,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.targetPath != result.command) { sc.targetPath = result.command; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.runAsAdmin != result.runAsAdmin) { sc.runAsAdmin = result.runAsAdmin; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
@@ -2090,11 +2297,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
         {
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-            if (result.iconPath.empty() && !sc.builtinIconId.empty())
-            {
-                newIconSource = Model::IconSource::Builtin;
-            }
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
@@ -2115,7 +2318,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.arguments != result.arguments) { sc.arguments = result.arguments; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
@@ -2136,7 +2339,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.arguments != result.arguments) { sc.arguments = result.arguments; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.iconInvertLight != result.iconInvertLight) { sc.iconInvertLight = result.iconInvertLight; changed = true; }
             if (sc.iconInvertDark != result.iconInvertDark) { sc.iconInvertDark = result.iconInvertDark; changed = true; }
@@ -2159,7 +2362,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
             if (sc.name != result.name) { sc.name = result.name; changed = true; }
             if (sc.arguments != result.arguments) { sc.arguments = result.arguments; changed = true; }
             if (sc.iconPath != result.iconPath) { sc.iconPath = result.iconPath; changed = true; }
-            Model::IconSource newIconSource = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
+            Model::IconSource newIconSource = ResolveEditedIconSource(result.iconPath, sc.builtinIconId);
             if (sc.iconSource != newIconSource) { sc.iconSource = newIconSource; changed = true; }
             if (sc.runAsAdmin != result.runAsAdmin) { sc.runAsAdmin = result.runAsAdmin; changed = true; }
             if (sc.targetPath != result.targetPath) { sc.targetPath = result.targetPath; changed = true; }

@@ -37,7 +37,6 @@ private:
     int HitTestTheme(POINT pt);
     int HitTestThemeColor(POINT pt);
     int HitTestWindowMode(POINT pt);
-    bool HitTestOpenConfigFile(POINT pt);
     bool HitTestOpenLogFile(POINT pt);
     bool HitTestConfigDirText(POINT pt);
     bool HitTestOpenConfigHistoryDir(POINT pt);
@@ -50,6 +49,7 @@ private:
     bool HitTestExportMigration(POINT pt);
     bool HitTestImportMigration(POINT pt);
     bool HitTestClearUsageHistory(POINT pt);
+    bool HitTestClearCache(POINT pt);
     bool HitTestOpenSourceUrl(POINT pt);
     bool HitTestAppearance(POINT pt, int& settingIdx, int& buttonType);
     bool HitTestThemeDetails(POINT pt, int& settingIdx, int& buttonType);
@@ -95,7 +95,6 @@ private:
     // Hover states
     bool m_hoveredAutoStart = false;
     bool m_hoveredHideTrayIcon = false;
-    bool m_hoveredOpenConfigFile = false;
     bool m_hoveredOpenLogFile = false;
     bool m_hoveredConfigDirText = false;
     bool m_hoveredOpenConfigHistoryDir = false;
@@ -108,6 +107,7 @@ private:
     bool m_hoveredExportMigration = false;
     bool m_hoveredImportMigration = false;
     bool m_hoveredClearUsageHistory = false;
+    bool m_hoveredClearCache = false;
     bool m_hoveredOpenSourceUrl = false;
     int m_hoveredTrigger = -1; // 0 = middle, 1 = mb4, 2 = mb5
     int m_hoveredPopupAlignMode = -1;

@@ -14,6 +14,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+#include <gdiplus.h>
 
 #include <algorithm>
 #include <atomic>
@@ -30,6 +31,7 @@
 
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "gdiplus.lib")
 
 // ============================================================
 // Internal helpers
@@ -45,6 +47,7 @@ namespace
     static const size_t k_MaxHtmlBytes   = 512 * 1024;
     static const size_t k_MaxIconBytes   = 2 * 1024 * 1024;
     static const WCHAR* k_UserAgent      = L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) WinLauncher/1.0";
+    static const wchar_t* k_CacheExtensions[] = { L".png", L".ico", L".gif", L".jpg", L".bmp", nullptr };
 
     // Common icon paths probed in order (mirrors _COMMON_ICON_PATHS)
     static const wchar_t* k_CommonIconPaths[] = {
@@ -52,6 +55,11 @@ namespace
         L"/apple-touch-icon.png",
         L"/apple-touch-icon-precomposed.png",
         L"/favicon.ico",
+        L"/favicon-32x32.png",
+        L"/favicon-16x16.png",
+        L"/icon.png",
+        L"/icons/icon-192.png",
+        L"/icons/icon-512.png",
         L"/images/favicons/favicon.png",
         L"/images/favicons/favicon.ico",
         nullptr
@@ -66,6 +74,7 @@ namespace
     static void         TrimW(std::wstring& s);
     static std::string  ToLowerA(std::string s);
     static void         TrimA(std::string& s);
+    static bool         IsValidIconFile(const std::wstring& path);
 
     // -----------------------------------------------------------
     // URL helpers
@@ -101,13 +110,104 @@ namespace
     static std::wstring ResolveUrl(const std::wstring& base, const std::wstring& href)
     {
         if (href.empty()) return L"";
-        std::wstring lo = ToLower(href);
-        if (lo.rfind(L"http://", 0) == 0 || lo.rfind(L"https://", 0) == 0)
-            return href;
-        // Relative path – join to origin
-        if (href[0] == L'/') return ExtractOrigin(base) + href;
-        // Relative to current directory – simplification: join to origin
-        return ExtractOrigin(base) + L"/" + href;
+        std::vector<wchar_t> combined(8192, L'\0');
+        DWORD combinedLength = static_cast<DWORD>(combined.size());
+        if (FAILED(UrlCombineW(base.c_str(), href.c_str(), combined.data(), &combinedLength, 0)))
+            return L"";
+
+        std::wstring resolved(combined.data());
+        std::wstring lo = ToLower(resolved);
+        if (lo.rfind(L"http://", 0) != 0 && lo.rfind(L"https://", 0) != 0)
+            return L"";
+        return resolved;
+    }
+
+    // Return only the hostname.  The public favicon fallback deliberately
+    // never receives the page path, query string, credentials, or port.
+    static std::wstring ExtractHostname(const std::wstring& url)
+    {
+        size_t schemeEnd = url.find(L"://");
+        if (schemeEnd == std::wstring::npos) return L"";
+        size_t authorityStart = schemeEnd + 3;
+        size_t authorityEnd = url.find_first_of(L"/?#", authorityStart);
+        std::wstring authority = url.substr(authorityStart,
+            authorityEnd == std::wstring::npos ? std::wstring::npos : authorityEnd - authorityStart);
+
+        size_t userInfoEnd = authority.rfind(L'@');
+        if (userInfoEnd != std::wstring::npos) authority.erase(0, userInfoEnd + 1);
+        if (authority.empty()) return L"";
+
+        // IPv6 literals are kept intact; for normal hosts remove an optional port.
+        if (authority.front() == L'[')
+        {
+            size_t closeBracket = authority.find(L']');
+            return closeBracket == std::wstring::npos ? L"" : authority.substr(0, closeBracket + 1);
+        }
+        size_t portStart = authority.rfind(L':');
+        if (portStart != std::wstring::npos) authority.resize(portStart);
+        return authority;
+    }
+
+    static std::wstring UrlEncodeQueryComponent(const std::wstring& value)
+    {
+        std::string utf8 = WstrToUtf8(value);
+        std::wstring encoded;
+        encoded.reserve(utf8.size() * 3);
+        static const wchar_t kHex[] = L"0123456789ABCDEF";
+        for (unsigned char c : utf8)
+        {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || c == '~')
+            {
+                encoded.push_back(static_cast<wchar_t>(c));
+            }
+            else
+            {
+                encoded.push_back(L'%');
+                encoded.push_back(kHex[c >> 4]);
+                encoded.push_back(kHex[c & 0x0F]);
+            }
+        }
+        return encoded;
+    }
+
+    // Public favicon indexes are often keyed by the registrable site rather
+    // than a protected subdomain.  Try the requested host first, then its
+    // base domain without sending any URL path or query data.
+    static std::vector<std::wstring> GetFaviconLookupHosts(const std::wstring& url)
+    {
+        std::vector<std::wstring> hosts;
+        std::wstring hostname = ToLower(ExtractHostname(url));
+        if (hostname.empty() || hostname.front() == L'[') return hosts;
+        hosts.push_back(hostname);
+
+        size_t lastDot = hostname.rfind(L'.');
+        if (lastDot == std::wstring::npos || lastDot == 0) return hosts;
+        size_t secondLastDot = hostname.rfind(L'.', lastDot - 1);
+        if (secondLastDot == std::wstring::npos) return hosts;
+
+        size_t baseStart = secondLastDot + 1;
+        std::wstring topLevel = hostname.substr(lastDot + 1);
+        std::wstring secondLevel = hostname.substr(secondLastDot + 1, lastDot - secondLastDot - 1);
+        const wchar_t* countrySecondLevels[] = { L"ac", L"co", L"com", L"edu", L"gov", L"net", L"org", nullptr };
+        bool useThreeLabels = topLevel.size() == 2;
+        if (useThreeLabels)
+        {
+            useThreeLabels = false;
+            for (int i = 0; countrySecondLevels[i] != nullptr; ++i)
+            {
+                if (secondLevel == countrySecondLevels[i]) { useThreeLabels = true; break; }
+            }
+        }
+        if (useThreeLabels && secondLastDot > 0)
+        {
+            size_t thirdLastDot = hostname.rfind(L'.', secondLastDot - 1);
+            baseStart = thirdLastDot == std::wstring::npos ? 0 : thirdLastDot + 1;
+        }
+
+        std::wstring baseDomain = hostname.substr(baseStart);
+        if (baseDomain != hostname) hosts.push_back(baseDomain);
+        return hosts;
     }
 
     // Simple SHA-1-like 40-char hex cache key via CryptHashData / Windows CNG.
@@ -181,6 +281,7 @@ namespace
             headers.c_str(), (DWORD)headers.size(),
             INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_CACHE_WRITE |
             INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD |
+            INTERNET_FLAG_NO_AUTO_REDIRECT |
             INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID,
             0);
 
@@ -238,6 +339,23 @@ namespace
     // -----------------------------------------------------------
     // Download raw bytes to a temp file, return path
     // -----------------------------------------------------------
+    static const wchar_t* DetectIconExtension(const std::string& bytes)
+    {
+        if (bytes.size() >= 8 && (BYTE)bytes[0] == 0x89 && (BYTE)bytes[1] == 0x50 &&
+            (BYTE)bytes[2] == 0x4E && (BYTE)bytes[3] == 0x47)
+            return L".png";
+        if (bytes.size() >= 4 && (BYTE)bytes[0] == 0x00 && (BYTE)bytes[1] == 0x00 &&
+            (BYTE)bytes[2] == 0x01 && (BYTE)bytes[3] == 0x00)
+            return L".ico";
+        if (bytes.size() >= 3 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F')
+            return L".gif";
+        if (bytes.size() >= 2 && (BYTE)bytes[0] == 0xFF && (BYTE)bytes[1] == 0xD8)
+            return L".jpg";
+        if (bytes.size() >= 2 && bytes[0] == 'B' && bytes[1] == 'M')
+            return L".bmp";
+        return nullptr;
+    }
+
     static std::wstring DownloadToTempFile(const std::wstring& url)
     {
         auto resp = HttpGet(url,
@@ -249,12 +367,18 @@ namespace
         std::string ctLo = ToLowerA(resp.contentType);
         if (ctLo.find("html") != std::string::npos) return L"";
 
+        const wchar_t* extension = DetectIconExtension(resp.body);
+        // Keep only formats the native icon path can decode while retaining
+        // their original alpha channel.  Do not rasterize onto a background.
+        if (!extension) return L"";
+
         wchar_t tmpDir[MAX_PATH] = {};
         GetTempPathW(MAX_PATH, tmpDir);
         wchar_t tmpFile[MAX_PATH] = {};
         GetTempFileNameW(tmpDir, L"wlf", 0, tmpFile);
-        // rename to .ico so ShellExtract can handle it
-        std::wstring icoPath = std::wstring(tmpFile) + L".ico";
+        // Preserve the source format in the filename so GDI+ keeps PNG/ICO
+        // transparency instead of treating every payload as an ICO resource.
+        std::wstring icoPath = std::wstring(tmpFile) + extension;
         DeleteFileW(tmpFile);
 
         // Write bytes
@@ -304,26 +428,8 @@ namespace
         if (buf[0] == 'G' && buf[1] == 'I' && buf[2] == 'F') return true;
         // JPEG: FF D8
         if ((BYTE)buf[0] == 0xFF && (BYTE)buf[1] == 0xD8) return true;
-        // WebP: RIFF????WEBP
-        if (buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F')
-        {
-            if (nRead >= 12 && buf[8] == 'W' && buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P')
-                return true;
-        }
         // BMP: BM
         if (buf[0] == 'B' && buf[1] == 'M') return true;
-
-        // SVG check: must contain <svg and not be an HTML document
-        std::string content(buf, nRead);
-        if (content.find("<svg") != std::string::npos || content.find("<SVG") != std::string::npos)
-        {
-            // Reject HTML documents wrapping SVG or standard error pages
-            if (content.find("<html") == std::string::npos && content.find("<HTML") == std::string::npos &&
-                content.find("<body") == std::string::npos && content.find("<BODY") == std::string::npos)
-            {
-                return true;
-            }
-        }
 
         return false;
     }
@@ -334,6 +440,127 @@ namespace
         return CopyFileW(src.c_str(), dest.c_str(), FALSE) != 0;
     }
 
+    static std::wstring GetCachedIconPath(const std::wstring& cacheBasePath)
+    {
+        for (int i = 0; k_CacheExtensions[i] != nullptr; ++i)
+        {
+            std::wstring path = cacheBasePath + k_CacheExtensions[i];
+            if (PathFileExistsW(path.c_str()) && IsValidIconFile(path))
+                return path;
+        }
+        return L"";
+    }
+
+    class FaviconGdiPlus
+    {
+    public:
+        static void EnsureInitialized()
+        {
+            static FaviconGdiPlus instance;
+        }
+
+    private:
+        FaviconGdiPlus()
+        {
+            Gdiplus::GdiplusStartupInput input;
+            Gdiplus::GdiplusStartup(&m_token, &input, nullptr);
+        }
+        ~FaviconGdiPlus()
+        {
+            if (m_token) Gdiplus::GdiplusShutdown(m_token);
+        }
+        ULONG_PTR m_token = 0;
+    };
+
+    // Public favicon services sometimes place a small logo on a fully opaque
+    // white or black tile.  This is not a source image with transparency, so
+    // do not silently turn it into the user's launcher icon.
+    static bool HasOpaqueNeutralCanvas(const std::wstring& path)
+    {
+        FaviconGdiPlus::EnsureInitialized();
+        Gdiplus::Bitmap image(path.c_str());
+        if (image.GetLastStatus() != Gdiplus::Ok || image.GetWidth() == 0 || image.GetHeight() == 0)
+            return false;
+
+        const UINT stepX = (std::max)(1u, image.GetWidth() / 64u);
+        const UINT stepY = (std::max)(1u, image.GetHeight() / 64u);
+        size_t sampled = 0;
+        size_t transparent = 0;
+        size_t neutral = 0;
+        for (UINT y = 0; y < image.GetHeight(); y += stepY)
+        {
+            for (UINT x = 0; x < image.GetWidth(); x += stepX)
+            {
+                Gdiplus::Color color;
+                if (image.GetPixel(x, y, &color) != Gdiplus::Ok) continue;
+                ++sampled;
+                if (color.GetAlpha() < 250)
+                {
+                    ++transparent;
+                    continue;
+                }
+
+                const BYTE r = color.GetRed();
+                const BYTE g = color.GetGreen();
+                const BYTE b = color.GetBlue();
+                bool isWhite = r >= 248 && g >= 248 && b >= 248;
+                bool isBlack = r <= 7 && g <= 7 && b <= 7;
+                if (isWhite || isBlack) ++neutral;
+            }
+        }
+        return sampled > 0 && transparent == 0 && neutral * 2 > sampled;
+    }
+
+    static std::wstring StoreIconInCache(const std::wstring& sourcePath, const std::wstring& cacheBasePath)
+    {
+        if (!IsValidIconFile(sourcePath)) return L"";
+        const wchar_t* extension = PathFindExtensionW(sourcePath.c_str());
+        if (!extension || !*extension) return L"";
+
+        std::wstring targetPath = cacheBasePath + extension;
+        if (!AtomicCopy(sourcePath, targetPath) || !IsValidIconFile(targetPath)) return L"";
+
+        for (int i = 0; k_CacheExtensions[i] != nullptr; ++i)
+        {
+            std::wstring stalePath = cacheBasePath + k_CacheExtensions[i];
+            if (_wcsicmp(stalePath.c_str(), targetPath.c_str()) != 0)
+                DeleteFileW(stalePath.c_str());
+        }
+        return targetPath;
+    }
+
+    // Some sites require JavaScript or a browser session before exposing their
+    // favicon.  Fall back only after direct site retrieval has failed.  Google
+    // receives the hostname only, never the complete URL entered by the user.
+    static std::wstring FetchPublicFallbackFavicon(const std::wstring& url, const std::wstring& cacheBasePath)
+    {
+        std::vector<std::wstring> hosts = GetFaviconLookupHosts(url);
+        for (const auto& hostname : hosts)
+        {
+            std::wstring escapedHostname = UrlEncodeQueryComponent(hostname);
+            const std::wstring fallbackUrls[] = {
+                L"https://icons.duckduckgo.com/ip3/" + escapedHostname + L".ico",
+                L"https://www.google.com/s2/favicons?sz=128&domain=" + escapedHostname
+            };
+            for (const auto& fallbackUrl : fallbackUrls)
+            {
+                std::wstring tmpPath = DownloadToTempFile(fallbackUrl);
+                if (tmpPath.empty()) continue;
+
+                if (HasOpaqueNeutralCanvas(tmpPath))
+                {
+                    DeleteFileW(tmpPath.c_str());
+                    continue;
+                }
+
+                std::wstring cachedPath = StoreIconInCache(tmpPath, cacheBasePath);
+                DeleteFileW(tmpPath.c_str());
+                if (!cachedPath.empty()) return cachedPath;
+            }
+        }
+        return {};
+    }
+
     // -----------------------------------------------------------
     // HTML icon-link parser
     // -----------------------------------------------------------
@@ -342,6 +569,78 @@ namespace
         int          score = 0;
         std::wstring url;
     };
+
+    static std::string ExtractHtmlAttribute(const std::string& tag, const std::string& attribute)
+    {
+        std::string lowerTag = ToLowerA(tag);
+        std::string lowerAttribute = ToLowerA(attribute);
+        size_t searchFrom = 0;
+        while (true)
+        {
+            size_t attributeStart = lowerTag.find(lowerAttribute, searchFrom);
+            if (attributeStart == std::string::npos) return "";
+            bool startsAttribute = attributeStart == 0 ||
+                isspace(static_cast<unsigned char>(lowerTag[attributeStart - 1])) ||
+                lowerTag[attributeStart - 1] == '<';
+            size_t valueStart = attributeStart + lowerAttribute.size();
+            while (valueStart < lowerTag.size() && isspace(static_cast<unsigned char>(lowerTag[valueStart]))) ++valueStart;
+            if (!startsAttribute || valueStart >= lowerTag.size() || lowerTag[valueStart] != '=')
+            {
+                searchFrom = attributeStart + lowerAttribute.size();
+                continue;
+            }
+
+            ++valueStart;
+            while (valueStart < tag.size() && isspace(static_cast<unsigned char>(tag[valueStart]))) ++valueStart;
+            if (valueStart >= tag.size()) return "";
+            char quote = tag[valueStart] == '"' || tag[valueStart] == '\'' ? tag[valueStart++] : 0;
+            size_t valueEnd = quote ? tag.find(quote, valueStart) : tag.find_first_of(" \t\r\n>", valueStart);
+            if (valueEnd == std::string::npos) valueEnd = tag.size();
+            return tag.substr(valueStart, valueEnd - valueStart);
+        }
+    }
+
+    static std::wstring CacheCandidateUrls(const std::vector<std::wstring>& urls,
+                                           const std::wstring& cacheBasePath,
+                                           int maxCandidates = 3)
+    {
+        int limit = std::min(static_cast<int>(urls.size()), maxCandidates);
+        if (limit <= 0) return L"";
+
+        using TmpResult = std::pair<int, std::wstring>;
+        std::vector<std::future<TmpResult>> futures;
+        futures.reserve(limit);
+        for (int i = 0; i < limit; ++i)
+        {
+            std::wstring candidateUrl = urls[i];
+            futures.push_back(std::async(std::launch::async,
+                [i, candidateUrl]() -> TmpResult { return { i, DownloadToTempFile(candidateUrl) }; }));
+        }
+
+        std::vector<TmpResult> results(futures.size(), { -1, L"" });
+        for (auto& future : futures)
+        {
+            try { auto result = future.get(); results[result.first] = std::move(result); }
+            catch (...) {}
+        }
+
+        for (const auto& result : results)
+        {
+            if (!result.second.empty())
+            {
+                std::wstring cachedPath = StoreIconInCache(result.second, cacheBasePath);
+                if (!cachedPath.empty())
+                {
+                    for (const auto& cleanup : results)
+                        if (!cleanup.second.empty()) DeleteFileW(cleanup.second.c_str());
+                    return cachedPath;
+                }
+            }
+        }
+        for (const auto& result : results)
+            if (!result.second.empty()) DeleteFileW(result.second.c_str());
+        return L"";
+    }
 
     static std::vector<IconCandidate> ParseHtmlIconLinks(const std::string& html,
                                                           const std::wstring& baseUrl)
@@ -358,30 +657,14 @@ namespace
             size_t tagEnd = lo.find('>', tagStart);
             if (tagEnd == std::string::npos) break;
 
-            std::string tag = lo.substr(tagStart, tagEnd - tagStart + 1);
             std::string tagOrig = html.substr(tagStart, tagEnd - tagStart + 1);
             pos = tagEnd + 1;
 
             // Must contain rel="...icon..."
-            auto extractAttr = [&](const std::string& src, const std::string& attr) -> std::string
-            {
-                std::string key = attr + "=";
-                size_t p = src.find(key);
-                if (p == std::string::npos) return "";
-                p += key.size();
-                char q = 0;
-                if (p < src.size() && (src[p] == '"' || src[p] == '\''))
-                    q = src[p++];
-                size_t end = q ? src.find(q, p) : src.find_first_of(" \t\r\n>", p);
-                if (end == std::string::npos) end = src.size();
-                return src.substr(p, end - p);
-            };
-
-            std::string rel  = extractAttr(tag, "rel");
+            std::string rel = ToLowerA(ExtractHtmlAttribute(tagOrig, "rel"));
             if (rel.find("icon") == std::string::npos) continue;
 
-            std::string href = extractAttr(tagOrig, "href");  // case-preserved
-            if (href.empty()) href = extractAttr(tag, "href");
+            std::string href = ExtractHtmlAttribute(tagOrig, "href");
             if (href.empty()) continue;
 
             std::wstring hrefW = Utf8ToWstr(href);
@@ -389,8 +672,8 @@ namespace
             if (resolvedUrl.empty()) continue;
 
             std::string loHref  = ToLowerA(href);
-            std::string sizes   = extractAttr(tag, "sizes");
-            std::string type    = extractAttr(tag, "type");
+            std::string sizes   = ExtractHtmlAttribute(tagOrig, "sizes");
+            std::string type    = ToLowerA(ExtractHtmlAttribute(tagOrig, "type"));
 
             // Skip SVG files since the application cannot render them natively
             if (type.find("svg") != std::string::npos || loHref.find(".svg") != std::string::npos) continue;
@@ -431,6 +714,49 @@ namespace
             bool dup = false;
             for (auto& s : seen) if (s == lo2) { dup = true; break; }
             if (!dup) { deduped.push_back(c); seen.push_back(lo2); }
+        }
+        return deduped;
+    }
+
+    // A small number of sites omit favicon links but publish a branded preview
+    // image.  It is a lower-priority visual fallback, used only after favicon
+    // and manifest candidates fail.
+    static std::vector<std::wstring> ParseMetaImageUrls(const std::string& html,
+                                                        const std::wstring& baseUrl)
+    {
+        std::vector<std::wstring> urls;
+        std::string lo = ToLowerA(html);
+        size_t pos = 0;
+        while (true)
+        {
+            size_t tagStart = lo.find("<meta", pos);
+            if (tagStart == std::string::npos) break;
+            size_t tagEnd = lo.find('>', tagStart);
+            if (tagEnd == std::string::npos) break;
+            std::string tag = html.substr(tagStart, tagEnd - tagStart + 1);
+            pos = tagEnd + 1;
+
+            std::string kind = ToLowerA(ExtractHtmlAttribute(tag, "property"));
+            if (kind.empty()) kind = ToLowerA(ExtractHtmlAttribute(tag, "name"));
+            if (kind != "og:image" && kind != "og:image:url" && kind != "twitter:image" &&
+                kind != "twitter:image:src" && kind != "msapplication-tileimage")
+                continue;
+
+            std::string content = ExtractHtmlAttribute(tag, "content");
+            std::string contentLower = ToLowerA(content);
+            if (content.empty() || contentLower.find(".svg") != std::string::npos) continue;
+            std::wstring resolved = ResolveUrl(baseUrl, Utf8ToWstr(content));
+            if (!resolved.empty()) urls.push_back(std::move(resolved));
+        }
+
+        std::vector<std::wstring> deduped;
+        for (const auto& url : urls)
+        {
+            bool exists = false;
+            std::wstring lowered = ToLower(url);
+            for (const auto& known : deduped)
+                if (ToLower(known) == lowered) { exists = true; break; }
+            if (!exists) deduped.push_back(url);
         }
         return deduped;
     }
@@ -493,29 +819,13 @@ namespace
             size_t tagEnd = lo.find('>', tagStart);
             if (tagEnd == std::string::npos) break;
 
-            std::string tag = lo.substr(tagStart, tagEnd - tagStart + 1);
             std::string tagOrig = html.substr(tagStart, tagEnd - tagStart + 1);
             pos = tagEnd + 1;
 
-            auto extractAttr = [&](const std::string& src, const std::string& attr) -> std::string
-            {
-                std::string key = attr + "=";
-                size_t p = src.find(key);
-                if (p == std::string::npos) return "";
-                p += key.size();
-                char q = 0;
-                if (p < src.size() && (src[p] == '"' || src[p] == '\''))
-                    q = src[p++];
-                size_t end = q ? src.find(q, p) : src.find_first_of(" \t\r\n>", p);
-                if (end == std::string::npos) end = src.size();
-                return src.substr(p, end - p);
-            };
-
-            std::string rel = extractAttr(tag, "rel");
+            std::string rel = ToLowerA(ExtractHtmlAttribute(tagOrig, "rel"));
             if (rel.find("manifest") == std::string::npos) continue;
 
-            std::string href = extractAttr(tagOrig, "href");
-            if (href.empty()) href = extractAttr(tag, "href");
+            std::string href = ExtractHtmlAttribute(tagOrig, "href");
             if (href.empty()) continue;
 
             return ResolveUrl(baseUrl, Utf8ToWstr(href));
@@ -606,10 +916,11 @@ namespace FaviconFetcher
         // 2. Check cache
         std::wstring cacheDir = GetCacheDirInternal();
         std::wstring cacheKey  = CacheKey(url);
-        std::wstring cachePath = cacheDir + L"\\" + cacheKey + L".ico";
+        std::wstring cacheBasePath = cacheDir + L"\\" + cacheKey;
+        std::wstring cachedPath = GetCachedIconPath(cacheBasePath);
 
-        if (!forceRefresh && PathFileExistsW(cachePath.c_str()) && IsValidIconFile(cachePath))
-            return cachePath;
+        if (!forceRefresh && !cachedPath.empty())
+            return cachedPath;
 
         // 3. Fetch HTML
         std::string  html;
@@ -636,38 +947,11 @@ namespace FaviconFetcher
             auto candidates = ParseHtmlIconLinks(html, finalUrl);
             if (!candidates.empty())
             {
-                using TmpResult = std::pair<int, std::wstring>;
-                std::vector<std::future<TmpResult>> futures;
-                int limit = std::min((int)candidates.size(), 3);
-                for (int i = 0; i < limit; ++i)
-                {
-                    std::wstring cUrl = candidates[i].url;
-                    futures.push_back(std::async(std::launch::async,
-                        [i, cUrl]() -> TmpResult
-                        {
-                            return { i, DownloadToTempFile(cUrl) };
-                        }));
-                }
-                std::vector<TmpResult> results(futures.size(), { -1, L"" });
-                for (auto& f : futures)
-                {
-                    try { auto r = f.get(); results[r.first] = r; } catch (...) {}
-                }
-                bool found = false;
-                for (auto& r : results)
-                {
-                    if (!r.second.empty() && IsValidIconFile(r.second))
-                    {
-                        AtomicCopy(r.second, cachePath);
-                        found = true;
-                        break;
-                    }
-                }
-                for (auto& r : results)
-                {
-                    if (!r.second.empty()) DeleteFileW(r.second.c_str());
-                }
-                if (found && IsValidIconFile(cachePath)) return cachePath;
+                std::vector<std::wstring> iconUrls;
+                iconUrls.reserve(candidates.size());
+                for (const auto& candidate : candidates) iconUrls.push_back(candidate.url);
+                std::wstring fetchedPath = CacheCandidateUrls(iconUrls, cacheBasePath);
+                if (!fetchedPath.empty()) return fetchedPath;
             }
 
             // 5. Strategy B: web manifest icons
@@ -680,46 +964,19 @@ namespace FaviconFetcher
                 if (mResp.ok && !mResp.body.empty())
                 {
                     auto iconUrls = ParseManifestIconUrls(mResp.body, manifestUrl);
-                    if (!iconUrls.empty())
-                    {
-                        using TmpResult = std::pair<int, std::wstring>;
-                        std::vector<std::future<TmpResult>> futures;
-                        int limit = std::min((int)iconUrls.size(), 3);
-                        for (int i = 0; i < limit; ++i)
-                        {
-                            std::wstring iu = iconUrls[i];
-                            futures.push_back(std::async(std::launch::async,
-                                [i, iu]() -> TmpResult
-                                {
-                                    return { i, DownloadToTempFile(iu) };
-                                }));
-                        }
-                        std::vector<TmpResult> results(futures.size(), { -1, L"" });
-                        for (auto& f : futures)
-                        {
-                            try { auto r = f.get(); results[r.first] = r; } catch (...) {}
-                        }
-                        bool found = false;
-                        for (auto& r : results)
-                        {
-                            if (!r.second.empty() && IsValidIconFile(r.second))
-                            {
-                                AtomicCopy(r.second, cachePath);
-                                found = true;
-                                break;
-                            }
-                        }
-                        for (auto& r : results)
-                        {
-                            if (!r.second.empty()) DeleteFileW(r.second.c_str());
-                        }
-                        if (found && IsValidIconFile(cachePath)) return cachePath;
-                    }
+                    std::wstring fetchedPath = CacheCandidateUrls(iconUrls, cacheBasePath);
+                    if (!fetchedPath.empty()) return fetchedPath;
                 }
             }
+
+            // 6. Some pages only expose a branded Open Graph or Twitter image.
+            // Use it after normal icons, so a wide social card never displaces a
+            // genuine favicon.
+            std::wstring fetchedPath = CacheCandidateUrls(ParseMetaImageUrls(html, finalUrl), cacheBasePath, 2);
+            if (!fetchedPath.empty()) return fetchedPath;
         }
 
-        // 6. Strategy C: common well-known icon paths (probe in parallel with futures)
+        // 7. Strategy C: common well-known icon paths (probe in parallel with futures)
         std::wstring origin = ExtractOrigin(url);
         if (!origin.empty())
         {
@@ -754,12 +1011,12 @@ namespace FaviconFetcher
             {
                 if (!r.second.empty() && IsValidIconFile(r.second))
                 {
-                    AtomicCopy(r.second, cachePath);
+                    std::wstring fetchedPath = StoreIconInCache(r.second, cacheBasePath);
                     // Clean up all temp files
                     for (auto& r2 : results)
                         if (!r2.second.empty()) DeleteFileW(r2.second.c_str());
 
-                    if (IsValidIconFile(cachePath)) return cachePath;
+                    if (!fetchedPath.empty()) return fetchedPath;
                     break;
                 }
             }
@@ -768,9 +1025,16 @@ namespace FaviconFetcher
                 if (!r.second.empty()) DeleteFileW(r.second.c_str());
         }
 
+        // 8. A browser-protected site can still have a publicly available
+        // favicon.  This is intentionally last so ordinary sites never need
+        // a third-party lookup.  Both exact-host and base-domain indexes are
+        // tried, and opaque neutral canvas results are rejected.
+        if (std::wstring fetchedPath = FetchPublicFallbackFavicon(url, cacheBasePath); !fetchedPath.empty())
+            return fetchedPath;
+
         // If we reach here: try returning old cached file (even if stale)
-        if (PathFileExistsW(cachePath.c_str()) && IsValidIconFile(cachePath))
-            return cachePath;
+        if (!cachedPath.empty())
+            return cachedPath;
 
         return L"";
     }

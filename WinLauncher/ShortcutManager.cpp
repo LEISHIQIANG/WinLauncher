@@ -165,8 +165,39 @@ std::wstring ShortcutManager::ResolveSystemTargetPath(const std::wstring& target
 
 static HICON GetBuiltinIconById(const std::wstring& iconId)
 {
+    const auto loadResourceIcon = [](int resourceId) -> HICON {
+        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(resourceId), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+    };
+
+    if (iconId == L"control_panel") return loadResourceIcon(IDI_BUILTIN_CONTROL_PANEL);
+    if (iconId == L"task_manager") return loadResourceIcon(IDI_BUILTIN_TASK_MANAGER);
+    if (iconId == L"file_explorer") return loadResourceIcon(IDI_BUILTIN_FILE_EXPLORER);
+    if (iconId == L"device_manager") return loadResourceIcon(IDI_BUILTIN_DEVICE_MANAGER);
+    if (iconId == L"disk_management") return loadResourceIcon(IDI_BUILTIN_DISK_MANAGEMENT);
+    if (iconId == L"services") return loadResourceIcon(IDI_BUILTIN_SERVICES);
+    if (iconId == L"event_viewer") return loadResourceIcon(IDI_BUILTIN_EVENT_VIEWER);
+    if (iconId == L"resource_monitor") return loadResourceIcon(IDI_BUILTIN_RESOURCE_MONITOR);
+    if (iconId == L"system_information") return loadResourceIcon(IDI_BUILTIN_SYSTEM_INFORMATION);
+    if (iconId == L"registry_editor") return loadResourceIcon(IDI_BUILTIN_REGISTRY_EDITOR);
+    if (iconId == L"calculator") return loadResourceIcon(IDI_BUILTIN_CALCULATOR);
+    if (iconId == L"notepad") return loadResourceIcon(IDI_BUILTIN_NOTEPAD);
+    if (iconId == L"command_prompt") return loadResourceIcon(IDI_BUILTIN_COMMAND_PROMPT);
+    if (iconId == L"powershell") return loadResourceIcon(IDI_BUILTIN_POWERSHELL);
+    if (iconId == L"on_screen_keyboard") return loadResourceIcon(IDI_BUILTIN_ON_SCREEN_KEYBOARD);
+    if (iconId == L"settings") return loadResourceIcon(IDI_SETTING_ICON);
+    if (iconId == L"topmost") return loadResourceIcon(IDI_UP_ARROW_ICON);
+    if (iconId == L"baidu") return loadResourceIcon(IDI_BUILTIN_BAIDU);
+    if (iconId == L"google") return loadResourceIcon(IDI_BUILTIN_GOOGLE);
+    if (iconId == L"github") return loadResourceIcon(IDI_BUILTIN_GITHUB);
+    if (iconId == L"bilibili") return loadResourceIcon(IDI_BUILTIN_BILIBILI);
+    if (iconId == L"taobao") return loadResourceIcon(IDI_BUILTIN_TAOBAO);
+    if (iconId == L"ping") return loadResourceIcon(IDI_BUILTIN_PING);
+    if (iconId == L"ip_config") return loadResourceIcon(IDI_BUILTIN_IP_CONFIG);
+    if (iconId == L"lock_screen") return loadResourceIcon(IDI_BUILTIN_LOCK_SCREEN);
+    if (iconId == L"hibernate") return loadResourceIcon(IDI_BUILTIN_HIBERNATE);
+    if (iconId == L"empty_recycle_bin") return loadResourceIcon(IDI_BUILTIN_EMPTY_RECYCLE_BIN);
     if (iconId == L"folder")
-        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+        return loadResourceIcon(IDI_FOLDER_ICON);
     if (iconId == L"link")
         return GetAssociatedIcon(L"WinLauncher.lnk", FILE_ATTRIBUTE_NORMAL);
     if (iconId == L"exe")
@@ -182,9 +213,9 @@ static HICON GetBuiltinIconById(const std::wstring& iconId)
     if (iconId == L"batch")
         return GetAssociatedIcon(L"WinLauncher.bat", FILE_ATTRIBUTE_NORMAL);
     if (iconId == L"timezone_cn_la")
-        return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_TIME_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+        return loadResourceIcon(IDI_TIME_ICON);
 
-    return (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+    return loadResourceIcon(IDI_APP_ICON);
 }
 
 static HICON GetDefaultIconForType(Model::ShortcutType type, Model::ShortcutTargetKind targetKind)
@@ -234,6 +265,59 @@ static Model::IconSource NormalizeIconSource(Model::IconSource source, const std
     if (source == Model::IconSource::Builtin && builtinIconId.empty())
         return Model::IconSource::Auto;
     return source;
+}
+
+static std::wstring FindLegacyBuiltinIconId(const RendShortcutInfo& shortcut)
+{
+    const auto matchesFileName = [&shortcut](const wchar_t* fileName) {
+        const std::wstring resolvedPath = ShortcutManager::ResolveSystemTargetPath(shortcut.targetPath);
+        const wchar_t* actualName = PathFindFileNameW(resolvedPath.c_str());
+        return actualName && _wcsicmp(actualName, fileName) == 0;
+    };
+
+    if (shortcut.type == Model::ShortcutType::System)
+    {
+        if (shortcut.targetPath == L":config_window") return L"settings";
+        if (shortcut.targetPath == L":timezone_cn_la_toggle") return L"timezone_cn_la";
+        if (shortcut.targetPath == L":topmost_toggle") return L"topmost";
+        if (matchesFileName(L"control.exe")) return L"control_panel";
+        if (matchesFileName(L"taskmgr.exe")) return L"task_manager";
+        if (matchesFileName(L"explorer.exe")) return L"file_explorer";
+        if (matchesFileName(L"devmgmt.msc")) return L"device_manager";
+        if (matchesFileName(L"diskmgmt.msc")) return L"disk_management";
+        if (matchesFileName(L"services.msc")) return L"services";
+        if (matchesFileName(L"eventvwr.msc")) return L"event_viewer";
+        if (matchesFileName(L"resmon.exe")) return L"resource_monitor";
+        if (matchesFileName(L"msinfo32.exe")) return L"system_information";
+        if (matchesFileName(L"regedit.exe")) return L"registry_editor";
+        if (matchesFileName(L"calc.exe")) return L"calculator";
+        if (matchesFileName(L"notepad.exe")) return L"notepad";
+        if (matchesFileName(L"cmd.exe")) return L"command_prompt";
+        if (matchesFileName(L"powershell.exe")) return L"powershell";
+        if (matchesFileName(L"osk.exe")) return L"on_screen_keyboard";
+    }
+    else if (shortcut.type == Model::ShortcutType::Url)
+    {
+        if (shortcut.targetPath.find(L"baidu.com") != std::wstring::npos) return L"baidu";
+        if (shortcut.targetPath.find(L"google.com") != std::wstring::npos) return L"google";
+        if (shortcut.targetPath.find(L"github.com") != std::wstring::npos) return L"github";
+        if (shortcut.targetPath.find(L"bilibili.com") != std::wstring::npos) return L"bilibili";
+        if (shortcut.targetPath.find(L"taobao.com") != std::wstring::npos) return L"taobao";
+    }
+    else if (shortcut.type == Model::ShortcutType::Command)
+    {
+        if (shortcut.targetPath.rfind(L"ping ", 0) == 0) return L"ping";
+        if (shortcut.targetPath.rfind(L"ipconfig ", 0) == 0) return L"ip_config";
+        if (shortcut.targetPath.find(L"LockWorkStation") != std::wstring::npos) return L"lock_screen";
+        if (shortcut.targetPath.find(L"SetSuspendState") != std::wstring::npos) return L"hibernate";
+    }
+    else if (shortcut.type == Model::ShortcutType::Macro &&
+             shortcut.arguments == L"macro" && matchesFileName(L"wscript.exe"))
+    {
+        return L"empty_recycle_bin";
+    }
+
+    return L"";
 }
 
 static std::vector<std::wstring> Split(const std::wstring& s, wchar_t delim)
@@ -732,6 +816,15 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
     {
         HICON hIcon = GetBuiltinIconById(shortcut.builtinIconId);
         if (hIcon) return hIcon;
+    }
+    else if (source == Model::IconSource::Auto)
+    {
+        const std::wstring legacyBuiltinIconId = FindLegacyBuiltinIconId(shortcut);
+        if (!legacyBuiltinIconId.empty())
+        {
+            HICON hIcon = GetBuiltinIconById(legacyBuiltinIconId);
+            if (hIcon) return hIcon;
+        }
     }
 
     if (shortcut.type == Model::ShortcutType::System && source == Model::IconSource::Auto)

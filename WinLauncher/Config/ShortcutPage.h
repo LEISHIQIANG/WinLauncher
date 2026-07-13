@@ -1,8 +1,11 @@
 #pragma once
 #include "ConfigPage.h"
 #include "../ShortcutManager.h"
+#include "../App/BackgroundTaskService.h"
 #include <vector>
 #include <unordered_map>
+#include <memory>
+#include <mutex>
 #include <d2d1.h>
 #include <wrl.h>
 
@@ -43,6 +46,8 @@ public:
     bool IsDragging() const { return m_dragActive; }
 
 private:
+    struct BatchFaviconState;
+
     void EnsureIcons(ID2D1HwndRenderTarget* rt);
     void EnsureShortcutStates();
     bool HasDragExceededThreshold(POINT pt) const;
@@ -64,6 +69,11 @@ private:
     void AddShortcutFromSingleFile(const std::wstring& path);
     void NotifyShortcutListChanged(bool snap = false);
     ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
+    void FetchSelectedUrlFavicons(const std::vector<int>& indices);
+    void ApplyBatchFaviconResult(uint64_t generation, int index, const std::wstring& shortcutId,
+                                 const std::wstring& url, const std::wstring& iconPath);
+    void FinishBatchFaviconFetch();
+    void CancelBatchFaviconFetches();
 
     int HitTestShortcut(POINT pt);
     bool HitTestAddShortcut(POINT pt);
@@ -102,6 +112,14 @@ private:
     float m_grabOffsetY;
     std::vector<ShortcutVisualState> m_shortcutStates;
     std::vector<int> m_pendingDeleteIndices;
+
+    std::shared_ptr<BatchFaviconState> m_batchFaviconState;
+    std::vector<BackgroundTaskService::TaskHandle> m_batchFaviconTasks;
+    uint64_t m_batchFaviconGeneration = 0;
+    int m_batchFaviconPending = 0;
+    int m_batchFaviconApplied = 0;
+    bool m_batchFaviconChanged = false;
+    bool m_batchFaviconHistoryRecorded = false;
 
     int m_selectionAnchorIndex;
     POINT m_dragStartPt;

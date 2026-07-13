@@ -407,7 +407,6 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_categoryIndex = categoryIndex;
     m_hoveredAutoStart = false;
     m_hoveredHideTrayIcon = false;
-    m_hoveredOpenConfigFile = false;
     m_hoveredOpenLogFile = false;
     m_hoveredConfigDirText = false;
     m_hoveredOpenConfigHistoryDir = false;
@@ -415,6 +414,7 @@ void SettingsPage::SetCategory(int categoryIndex)
     m_hoveredRestoreConfigBackup = false;
     m_hoveredClearConfig = false;
     m_hoveredClearConfigHistory = false;
+    m_hoveredClearCache = false;
     m_hoveredImportJson = false;
     m_hoveredOpenSourceUrl = false;
     m_hoveredTrigger = -1;
@@ -1497,16 +1497,16 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const D2D1_RECT_F historyCardRect = D2D1::RectF(CONTENT_LEFT, 164.0f, CONTENT_RIGHT, 214.0f);
             const D2D1_RECT_F historyLabelRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 172.0f, CONTENT_RIGHT - 20.0f, 190.0f);
             const D2D1_RECT_F historyValueRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 192.0f, CONTENT_RIGHT - 20.0f, 210.0f);
-            const D2D1_RECT_F openConfigFileRect = TwoColumnRect(0, 226.0f);
-            const D2D1_RECT_F openLogFileRect = TwoColumnRect(1, 226.0f);
-            const D2D1_RECT_F backupRect = TwoColumnRect(0, 268.0f);
-            const D2D1_RECT_F restoreRect = TwoColumnRect(1, 268.0f);
-            const D2D1_RECT_F historyDirRect = TwoColumnRect(0, 310.0f);
-            const D2D1_RECT_F diagnosticRect = TwoColumnRect(1, 310.0f);
-            const D2D1_RECT_F exportMigrationRect = TwoColumnRect(0, 352.0f);
-            const D2D1_RECT_F importMigrationRect = TwoColumnRect(1, 352.0f);
-            const D2D1_RECT_F importJsonRect = TwoColumnRect(0, 394.0f);
-            const D2D1_RECT_F clearUsageRect = TwoColumnRect(1, 394.0f);
+            const D2D1_RECT_F openLogFileRect = TwoColumnRect(0, 226.0f);
+            const D2D1_RECT_F backupRect = TwoColumnRect(1, 226.0f);
+            const D2D1_RECT_F restoreRect = TwoColumnRect(0, 268.0f);
+            const D2D1_RECT_F historyDirRect = TwoColumnRect(1, 268.0f);
+            const D2D1_RECT_F diagnosticRect = TwoColumnRect(0, 310.0f);
+            const D2D1_RECT_F exportMigrationRect = TwoColumnRect(1, 310.0f);
+            const D2D1_RECT_F importMigrationRect = TwoColumnRect(0, 352.0f);
+            const D2D1_RECT_F importJsonRect = TwoColumnRect(1, 352.0f);
+            const D2D1_RECT_F clearUsageRect = TwoColumnRect(0, 394.0f);
+            const D2D1_RECT_F clearCacheRect = TwoColumnRect(1, 394.0f);
             const D2D1_RECT_F clearConfigRect = TwoColumnRect(0, 436.0f);
             const D2D1_RECT_F clearHistoryRect = TwoColumnRect(1, 436.0f);
 
@@ -1533,10 +1533,10 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 tfDefault->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
                 tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
 
-                std::wstring dirLabel = L"配置目录";
+                std::wstring dirLabel = L"配置文件夹";
                 rt->DrawTextW(dirLabel.c_str(), (UINT32)dirLabel.size(), tfDefault, dirLabelRect, tbMuted);
 
-                std::wstring configDir = m_owner->GetConfigDir();
+                std::wstring configDir = ConfigPath::GetUserDataDirectory();
                 ID2D1SolidColorBrush* textBrush = tbNormal;
                 if (m_hoveredConfigDirText)
                 {
@@ -1596,7 +1596,6 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 }
             };
 
-            drawActionButton(openConfigFileRect, L"打开配置文件", m_hoveredOpenConfigFile, false);
             drawActionButton(openLogFileRect, L"打开日志文件", m_hoveredOpenLogFile, false);
             drawActionButton(backupRect, L"立即备份", m_hoveredCreateConfigBackup, false);
             drawActionButton(restoreRect, L"回滚最近历史", m_hoveredRestoreConfigBackup, false);
@@ -1606,6 +1605,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             drawActionButton(importMigrationRect, L"导入迁移备份", m_hoveredImportMigration, false);
             drawActionButton(importJsonRect, L"导入 QuickLauncher", m_hoveredImportJson, false);
             drawActionButton(clearUsageRect, L"清除使用记录", m_hoveredClearUsageHistory, true);
+            drawActionButton(clearCacheRect, L"清理缓存", m_hoveredClearCache, true);
             drawActionButton(clearConfigRect, L"清除配置", m_hoveredClearConfig, true);
             drawActionButton(clearHistoryRect, L"清除历史", m_hoveredClearConfigHistory, true);
 
@@ -2072,7 +2072,6 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
     }
     else if (m_categoryIndex == 3)
     {
-        bool hConfigFile = HitTestOpenConfigFile(pt);
         bool hLogFile = HitTestOpenLogFile(pt);
         bool hConfigDirText = HitTestConfigDirText(pt);
         bool hHistoryDir = HitTestOpenConfigHistoryDir(pt);
@@ -2085,17 +2084,16 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
         bool hExport = HitTestExportMigration(pt);
         bool hImport = HitTestImportMigration(pt);
         bool hClearUsage = HitTestClearUsageHistory(pt);
-        if (hConfigFile != m_hoveredOpenConfigFile ||
-            hLogFile != m_hoveredOpenLogFile ||
+        bool hClearCache = HitTestClearCache(pt);
+        if (hLogFile != m_hoveredOpenLogFile ||
             hConfigDirText != m_hoveredConfigDirText ||
             hHistoryDir != m_hoveredOpenConfigHistoryDir ||
             hBackup != m_hoveredCreateConfigBackup ||
             hRestore != m_hoveredRestoreConfigBackup ||
             hClearConfig != m_hoveredClearConfig ||
             hClearHistory != m_hoveredClearConfigHistory ||
-            hImportJson != m_hoveredImportJson || hDiagnostic != m_hoveredDiagnosticPackage || hExport != m_hoveredExportMigration || hImport != m_hoveredImportMigration || hClearUsage != m_hoveredClearUsageHistory)
+            hImportJson != m_hoveredImportJson || hDiagnostic != m_hoveredDiagnosticPackage || hExport != m_hoveredExportMigration || hImport != m_hoveredImportMigration || hClearUsage != m_hoveredClearUsageHistory || hClearCache != m_hoveredClearCache)
         {
-            m_hoveredOpenConfigFile = hConfigFile;
             m_hoveredOpenLogFile = hLogFile;
             m_hoveredConfigDirText = hConfigDirText;
             m_hoveredOpenConfigHistoryDir = hHistoryDir;
@@ -2108,6 +2106,7 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
             m_hoveredExportMigration = hExport;
             m_hoveredImportMigration = hImport;
             m_hoveredClearUsageHistory = hClearUsage;
+            m_hoveredClearCache = hClearCache;
             repaint = true;
         }
     }
@@ -2148,11 +2147,10 @@ void SettingsPage::OnMouseMove(POINT pt, bool& repaint)
 
 void SettingsPage::OnMouseLeave(bool& repaint)
 {
-    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenConfigFile || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredImportJson || m_hoveredOpenSourceUrl || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredTriggerBlacklist || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredFileSelectionValidity || m_hoveredFileSelectionValidityButton != 0 || m_hoveredAnimationDurationSlider || m_hoveredAnimationDurationApply || m_draggingAnimationDurationSlider || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
+    if (m_hoveredAutoStart || m_hoveredHideTrayIcon || m_hoveredOpenLogFile || m_hoveredConfigDirText || m_hoveredOpenConfigHistoryDir || m_hoveredCreateConfigBackup || m_hoveredRestoreConfigBackup || m_hoveredClearConfig || m_hoveredClearConfigHistory || m_hoveredClearCache || m_hoveredImportJson || m_hoveredOpenSourceUrl || m_hoveredTrigger != -1 || m_hoveredPopupAlignMode != -1 || m_hoveredPopupAutoClose != -1 || m_hoveredPopupMultiOpenWhenPinned != -1 || m_hoveredSortMode != -1 || m_hoveredTriggerBlacklist || m_hoveredHoverLeaveDelay || m_hoveredHoverLeaveDelayButton != 0 || m_hoveredTheme != -1 || m_hoveredThemeColor != -1 || m_hoveredWindowMode != -1 || m_hoveredAppearanceSetting != -1 || m_hoveredAppearanceButton != 0 || m_hoveredThemeDetailSetting != -1 || m_hoveredThemeDetailButton != 0 || m_hoveredAnimationToggle || m_hoveredHardwareAcceleration || m_hoveredFileSelectionValidity || m_hoveredFileSelectionValidityButton != 0 || m_hoveredAnimationDurationSlider || m_hoveredAnimationDurationApply || m_draggingAnimationDurationSlider || m_hoveredGlobalScaleSlider || m_hoveredGlobalScaleApply || m_draggingGlobalScaleSlider || m_hoveredPluginInstall || m_hoveredPluginOpenDir || m_hoveredPluginRefresh || m_hoveredPluginConfigure != -1 || m_hoveredPluginToggle != -1 || m_hoveredPluginUninstall != -1)
     {
         m_hoveredAutoStart = false;
         m_hoveredHideTrayIcon = false;
-        m_hoveredOpenConfigFile = false;
         m_hoveredOpenLogFile = false;
         m_hoveredConfigDirText = false;
         m_hoveredOpenConfigHistoryDir = false;
@@ -2160,6 +2158,7 @@ void SettingsPage::OnMouseLeave(bool& repaint)
         m_hoveredRestoreConfigBackup = false;
         m_hoveredClearConfig = false;
         m_hoveredClearConfigHistory = false;
+        m_hoveredClearCache = false;
         m_hoveredImportJson = false;
         m_hoveredOpenSourceUrl = false;
         m_hoveredTrigger = -1;
@@ -2546,12 +2545,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
     }
     else if (m_categoryIndex == 3)
     {
-        if (HitTestOpenConfigFile(pt))
-        {
-            m_owner->OpenConfigFile();
-            repaint = true;
-        }
-        else if (HitTestOpenLogFile(pt))
+        if (HitTestOpenLogFile(pt))
         {
             m_owner->OpenLogFile();
             repaint = true;
@@ -2586,6 +2580,7 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
         else if (HitTestExportMigration(pt)) { m_owner->ExportMigrationBackup(); repaint = true; }
         else if (HitTestImportMigration(pt)) { m_owner->ImportMigrationBackup(); repaint = true; }
         else if (HitTestClearUsageHistory(pt)) { m_owner->ClearUsageHistory(); repaint = true; }
+        else if (HitTestClearCache(pt)) { m_owner->ClearCache(); repaint = true; }
         else if (HitTestClearConfig(pt))
         {
             m_owner->ClearConfigData();
@@ -3052,16 +3047,10 @@ int SettingsPage::HitTestWindowMode(POINT pt)
     return -1;
 }
 
-bool SettingsPage::HitTestOpenConfigFile(POINT pt)
-{
-    if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(0, 226.0f), pt);
-}
-
 bool SettingsPage::HitTestOpenLogFile(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(1, 226.0f), pt);
+    return PointInRect(TwoColumnRect(0, 226.0f), pt);
 }
 
 bool SettingsPage::HitTestConfigDirText(POINT pt)
@@ -3073,19 +3062,19 @@ bool SettingsPage::HitTestConfigDirText(POINT pt)
 bool SettingsPage::HitTestOpenConfigHistoryDir(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(0, 310.0f), pt);
+    return PointInRect(TwoColumnRect(1, 268.0f), pt);
 }
 
 bool SettingsPage::HitTestCreateConfigBackup(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(0, 268.0f), pt);
+    return PointInRect(TwoColumnRect(1, 226.0f), pt);
 }
 
 bool SettingsPage::HitTestRestoreConfigBackup(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(1, 268.0f), pt);
+    return PointInRect(TwoColumnRect(0, 268.0f), pt);
 }
 
 bool SettingsPage::HitTestClearConfig(POINT pt)
@@ -3103,13 +3092,14 @@ bool SettingsPage::HitTestClearConfigHistory(POINT pt)
 bool SettingsPage::HitTestImportJson(POINT pt)
 {
     if (m_categoryIndex != 3) return false;
-    return PointInRect(TwoColumnRect(0, 394.0f), pt);
+    return PointInRect(TwoColumnRect(1, 352.0f), pt);
 }
 
-bool SettingsPage::HitTestDiagnosticPackage(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 310.0f), pt); }
-bool SettingsPage::HitTestExportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 352.0f), pt); }
-bool SettingsPage::HitTestImportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 352.0f), pt); }
-bool SettingsPage::HitTestClearUsageHistory(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 394.0f), pt); }
+bool SettingsPage::HitTestDiagnosticPackage(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 310.0f), pt); }
+bool SettingsPage::HitTestExportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 310.0f), pt); }
+bool SettingsPage::HitTestImportMigration(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 352.0f), pt); }
+bool SettingsPage::HitTestClearUsageHistory(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(0, 394.0f), pt); }
+bool SettingsPage::HitTestClearCache(POINT pt) { return m_categoryIndex == 3 && PointInRect(TwoColumnRect(1, 394.0f), pt); }
 
 bool SettingsPage::HitTestOpenSourceUrl(POINT pt)
 {

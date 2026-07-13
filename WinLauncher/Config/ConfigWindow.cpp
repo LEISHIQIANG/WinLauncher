@@ -22,11 +22,16 @@
 #include <commdlg.h>
 #include <algorithm>
 #include <cmath>
+#include <cwctype>
+#include <filesystem>
+#include <set>
 
 static const int ICON_SIZE = 24;
 static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
 static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 8;
 static constexpr size_t SHORTCUT_HISTORY_LIMIT = 5;
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -116,6 +121,133 @@ namespace
         swprintf_s(buf, L"%04u-%02u-%02u %02u:%02u:%02u",
             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
         return buf;
+    }
+
+    std::wstring NormalizePathForComparison(const fs::path& path)
+    {
+        std::error_code ec;
+        fs::path normalized = fs::weakly_canonical(path, ec);
+        if (ec)
+        {
+            ec.clear();
+            normalized = fs::absolute(path, ec);
+            if (ec)
+                normalized = path;
+        }
+
+        std::wstring value = normalized.lexically_normal().wstring();
+        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+            return static_cast<wchar_t>(std::towlower(ch));
+        });
+        return value;
+    }
+
+    bool IsPathWithinDirectory(const std::wstring& path, const std::wstring& directory)
+    {
+        if (path == directory)
+            return true;
+        if (path.size() <= directory.size() || path.compare(0, directory.size(), directory) != 0)
+            return false;
+        return directory.back() == L'\\' || path[directory.size()] == L'\\';
+    }
+
+    struct CacheCleanupResult
+    {
+        size_t deletedFiles = 0;
+        uintmax_t releasedBytes = 0;
+        size_t failedItems = 0;
+    };
+
+    bool IsPreservedFile(const std::wstring& normalizedPath, const std::set<std::wstring>& preservedFiles)
+    {
+        return preservedFiles.find(normalizedPath) != preservedFiles.end();
+    }
+
+    bool IsPreservedRuntimeDirectory(const std::wstring& normalizedPath, const std::vector<std::wstring>& preservedDirectories)
+    {
+        return std::any_of(preservedDirectories.begin(), preservedDirectories.end(), [&](const std::wstring& directory) {
+            return IsPathWithinDirectory(normalizedPath, directory);
+        });
+    }
+
+    CacheCleanupResult CleanupUserDataDirectory(const fs::path& root, const std::set<std::wstring>& preservedFiles)
+    {
+        CacheCleanupResult result;
+        const std::vector<std::wstring> preservedDirectories = {
+            NormalizePathForComparison(root / L"plugins" / L"installed"),
+            NormalizePathForComparison(root / L"plugins" / L"state")
+        };
+        std::vector<fs::path> emptyDirectories;
+        std::error_code ec;
+        fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
+        for (; !ec && it != end; it.increment(ec))
+        {
+            const fs::directory_entry& entry = *it;
+            const std::wstring normalizedPath = NormalizePathForComparison(entry.path());
+            if (IsPreservedRuntimeDirectory(normalizedPath, preservedDirectories))
+            {
+                if (entry.is_directory(ec))
+                    it.disable_recursion_pending();
+                ec.clear();
+                continue;
+            }
+
+            if (entry.is_directory(ec))
+            {
+                emptyDirectories.push_back(entry.path());
+                continue;
+            }
+
+            if (!entry.is_regular_file(ec) && !entry.is_symlink(ec))
+            {
+                ec.clear();
+                continue;
+            }
+            if (IsPreservedFile(normalizedPath, preservedFiles))
+                continue;
+
+            std::error_code sizeError;
+            const uintmax_t size = entry.is_regular_file(sizeError) ? entry.file_size(sizeError) : 0;
+            DWORD attributes = GetFileAttributesW(entry.path().c_str());
+            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_READONLY))
+                SetFileAttributesW(entry.path().c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
+
+            ec.clear();
+            if (fs::remove(entry.path(), ec))
+            {
+                result.deletedFiles++;
+                result.releasedBytes += size;
+            }
+            else
+            {
+                result.failedItems++;
+            }
+            ec.clear();
+        }
+        if (ec)
+        {
+            result.failedItems++;
+            ec.clear();
+        }
+
+        for (auto dir = emptyDirectories.rbegin(); dir != emptyDirectories.rend(); ++dir)
+        {
+            const std::wstring normalizedPath = NormalizePathForComparison(*dir);
+            if (IsPreservedRuntimeDirectory(normalizedPath, preservedDirectories))
+                continue;
+            ec.clear();
+            fs::remove(*dir, ec);
+        }
+        return result;
+    }
+
+    std::wstring FormatReleasedSize(uintmax_t bytes)
+    {
+        if (bytes < 1024)
+            return std::to_wstring(bytes) + L" B";
+        if (bytes < 1024 * 1024)
+            return std::to_wstring((bytes + 512) / 1024) + L" KB";
+        return std::to_wstring((bytes + 512 * 1024) / (1024 * 1024)) + L" MB";
     }
 }
 
@@ -788,13 +920,6 @@ std::wstring ConfigWindow::GetConfigHistorySummary()
         FormatHistoryTime(latest.lastWriteTime) + L"，" + std::to_wstring(kb) + L" KB";
 }
 
-void ConfigWindow::OpenConfigFile()
-{
-    std::wstring path = GetConfigFilePath();
-    if (!path.empty())
-        ShellExecuteW(GetHWND(), L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-}
-
 void ConfigWindow::OpenLogFile()
 {
     std::wstring path = ConfigPath::GetUserLogDirectory() + L"\\current.jsonl";
@@ -804,7 +929,7 @@ void ConfigWindow::OpenLogFile()
 
 void ConfigWindow::OpenConfigDir()
 {
-    std::wstring dir = GetConfigDir();
+    std::wstring dir = ConfigPath::GetUserDataDirectory();
     if (!dir.empty())
         ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
@@ -882,6 +1007,57 @@ void ConfigWindow::ClearUsageHistory()
 {
     bool ok=m_appCtx && m_appCtx->usageHistory && m_appCtx->usageHistory->Clear();
     ConfirmWindow::Show(GetHWND(), ok ? L"使用记录已清除" : L"清除失败", ok ? L"本地搜索排序记录已清除。" : L"无法清除本地使用记录。", m_appCtx, false);
+}
+
+void ConfigWindow::ClearCache()
+{
+    if (!m_appCtx || !m_appCtx->configService)
+        return;
+
+    if (!ConfirmWindow::Show(GetHWND(), L"清理缓存",
+        L"将删除未使用的图标、日志、崩溃和诊断文件、配置历史及其他临时数据。\n"
+        L"会保留当前配置、当前配置正在使用的图标，以及已安装插件的必要文件。是否继续？",
+        m_appCtx))
+    {
+        return;
+    }
+
+    // Flush the current edits first, then derive the protected icon list from exactly that file.
+    SaveConfig(false, true);
+    const fs::path dataRoot = ConfigPath::GetUserDataDirectory();
+    std::set<std::wstring> preservedFiles = {
+        NormalizePathForComparison(m_appCtx->configService->GetConfigFilePath())
+    };
+    for (const auto& page : m_appCtx->configService->LoadConfig())
+    {
+        for (const auto& shortcut : page.shortcuts)
+        {
+            if (shortcut.iconPath.empty())
+                continue;
+
+            std::error_code iconError;
+            const fs::path iconPath(shortcut.iconPath);
+            if (fs::is_regular_file(iconPath, iconError) &&
+                IsPathWithinDirectory(NormalizePathForComparison(iconPath), NormalizePathForComparison(dataRoot)))
+            {
+                preservedFiles.insert(NormalizePathForComparison(iconPath));
+            }
+        }
+    }
+
+    CacheCleanupResult result;
+    WaitWindow::Show(GetHWND(), L"正在清理", L"正在清理未使用的缓存文件，请稍候...",
+        [&]() {
+            result = CleanupUserDataDirectory(dataRoot, preservedFiles);
+        }, m_appCtx);
+
+    const bool complete = result.failedItems == 0;
+    std::wstring message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个未使用文件，释放 " +
+        FormatReleasedSize(result.releasedBytes) + L"。\n已保留当前配置、其正在使用的图标及已安装插件的必要文件。";
+    if (!complete)
+        message += L"\n有 " + std::to_wstring(result.failedItems) + L" 个正在使用或无权限访问的项目未能删除，可关闭程序后重试。";
+    ConfirmWindow::Show(GetHWND(), complete ? L"缓存清理完成" : L"缓存已部分清理", message.c_str(), m_appCtx, false);
+    InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
 void ConfigWindow::OpenConfigHistoryDir()
