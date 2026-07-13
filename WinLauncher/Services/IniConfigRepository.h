@@ -1,5 +1,5 @@
 #pragma once
-#include "IConfigService.h"
+#include "../Contracts/IConfigService.h"
 #include "../App/Logger.h"
 #include "../AutoStartHelper.h"
 #include <Windows.h>

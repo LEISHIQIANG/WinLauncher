@@ -4,7 +4,7 @@
 #include <string>
 #include <Windows.h>
 #include "../Model/ShortcutInfo.h"
-#include "../Services/IConfigService.h"
+#include "../Contracts/IConfigService.h"
 #include "../App/AppContext.h"
 
 using Model::PopupPage;

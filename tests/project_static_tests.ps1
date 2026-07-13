@@ -84,12 +84,15 @@ Add-TestResult `
     -Detail "Release metadata should follow WinLauncher/version.h"
 
 $popupSource = Read-RepoFile "WinLauncher\PopupWindow.cpp"
+$commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
     -Passed (
         $popupSource -match 'CommandPanelWindow::ShowLive' -and
-        $popupSource -match 'ExecuteProcessStreaming' -and
-        $popupSource -match 'ConfirmHighRiskCommand'
+        (
+            ($popupSource -match 'ExecuteProcessStreaming' -and $popupSource -match 'ConfirmHighRiskCommand') -or
+            ($commandExecSource -match 'ExecuteProcessStreaming' -and $popupSource -match 'ctx->userInteraction->ConfirmHighRiskCommand')
+        )
     ) `
     -Detail "Long-running command execution must remain asynchronous and risk-gated"
 
@@ -207,8 +210,10 @@ Add-TestResult `
         $environmentDetectorSource -match 'L"-0p"' -and
         $environmentDetectorSource -match 'SOFTWARE\\\\Python\\\\PythonCore' -and
         $environmentDetectorSource -match 'TryGetPythonInterpreter' -and
-        $popupSource -match 'EnvironmentDetector::TryGetPythonInterpreter\(type, python\)' -and
-        $popupSource -match 'GetPythonUnavailableMessage\(type\)'
+        (
+            ($popupSource -match 'EnvironmentDetector::TryGetPythonInterpreter\(type, python\)' -and $popupSource -match 'GetPythonUnavailableMessage\(type\)') -or
+            ($commandExecSource -match 'EnvironmentDetector::TryGetPythonInterpreter\(\w+(?:\.\w+)?, python\)' -and $commandExecSource -match 'GetPythonUnavailableMessage\(\w+(?:\.\w+)?\)')
+        )
     ) `
     -Detail "Python command choices must be versioned startup-snapshot entries and execution must not fall back to another version"
 
@@ -313,7 +318,10 @@ Add-TestResult `
     -Passed (
         $popupSource -match 'configuredTimeout >= 1 && configuredTimeout <= 3600' -and
         $popupSource -match 'invalid timeout=.*using default 300 seconds' -and
-        $popupSource -match '秒超时时间，进程已终止'
+        (
+            $popupSource -match '秒超时时间，进程已终止' -or
+            $commandExecSource -match '秒超时时间，进程已终止'
+        )
     ) `
     -Detail "Invalid command timeout settings must use the 300-second default and clearly label terminated commands"
 

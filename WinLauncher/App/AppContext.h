@@ -7,8 +7,11 @@
 #include "BackgroundTaskService.h"
 #include "UiDispatcher.h"
 #include "CrashReporter.h"
-#include "../Services/IConfigService.h"
-#include "../Services/IIconService.h"
+#include "../Contracts/IConfigService.h"
+#include "../Contracts/IIconService.h"
+#include "../Contracts/ICommandExecutionService.h"
+#include "../Contracts/IUserInteractionService.h"
+#include "../Contracts/IWindowCoordinator.h"
 #include "../Services/ConfigPath.h"
 #include "../Services/UsageHistoryStore.h"
 #include "../Services/DiagnosticService.h"
@@ -24,8 +27,11 @@ struct AppContext
     std::shared_ptr<UsageHistoryStore> usageHistory;
     std::shared_ptr<DiagnosticService> diagnostics;
 
-    std::unique_ptr<IConfigService> configService;
-    std::unique_ptr<IIconService> iconService;
+    std::shared_ptr<IConfigService> configService;
+    std::shared_ptr<IIconService> iconService;
+    std::shared_ptr<ICommandExecutionService> commandExecution;
+    std::shared_ptr<IUserInteractionService> userInteraction;
+    std::shared_ptr<IWindowCoordinator> windowCoordinator;
 
     HWND hMainWnd = nullptr;
     HINSTANCE hInstance = nullptr;

@@ -1219,7 +1219,7 @@ void ConfigWindow::ImportJsonConfig()
         return;
     }
 
-    if (result.pages.empty() && !result.hasAutoStart)
+    if (result.pages.empty() && !result.hasAutoStartSetting)
     {
         ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u7ED3\u679C",
             L"JSON \u6587\u4EF6\u4E2D\u672A\u627E\u5230\u53EF\u8F6C\u6362\u7684\u5FEB\u6377\u65B9\u5F0F\u3001\u5FEB\u6377\u952E\u6216 URL\u3002", m_appCtx);
@@ -1257,14 +1257,36 @@ void ConfigWindow::ImportJsonConfig()
         [&]() {
             if (m_appCtx && m_appCtx->configService)
             {
-                if (result.hasAutoStart)
-                    m_appCtx->configService->SetAutoStart(true);
+                if (result.hasAutoStartSetting)
+                    m_appCtx->configService->SetAutoStart(result.autoStart);
                 if (result.popupColumns > 0)
                     m_appCtx->configService->SetPopupColumns(result.popupColumns);
                 if (result.popupRows > 0)
                     m_appCtx->configService->SetPopupRows(result.popupRows);
-                if (result.dockHeight > 0)
+                if (result.dockHeight >= 0)
                     m_appCtx->configService->SetDockHeight(result.dockHeight);
+                if (result.popupIconSize > 0)
+                    m_appCtx->configService->SetPopupIconSize(result.popupIconSize);
+                if (result.globalScalePercent > 0)
+                    m_appCtx->configService->SetGlobalScalePercent(result.globalScalePercent);
+                if (result.theme >= 0)
+                    m_appCtx->configService->SetTheme(result.theme);
+                if (result.sortMode >= 0)
+                    m_appCtx->configService->SetSortMode(result.sortMode);
+                if (result.popupAlignMode >= 0)
+                    m_appCtx->configService->SetPopupAlignMode(result.popupAlignMode);
+                if (result.hasHideTrayIcon)
+                    m_appCtx->configService->SetHideTrayIcon(result.hideTrayIcon);
+                if (result.hasHardwareAcceleration)
+                    m_appCtx->configService->SetHardwareAccelerationEnabled(result.hardwareAcceleration);
+                if (result.hasSearchMode)
+                    m_appCtx->configService->SetSearchMode(result.searchMode);
+                if (result.hasPopupAutoClose)
+                    m_appCtx->configService->SetPopupAutoClose(result.popupAutoClose);
+                if (result.hasPopupMultiOpenWhenPinned)
+                    m_appCtx->configService->SetPopupMultiOpenWhenPinned(result.popupMultiOpenWhenPinned);
+                if (result.hoverLeaveDelay >= 0)
+                    m_appCtx->configService->SetHoverLeaveDelay(result.hoverLeaveDelay);
             }
 
             if (hasExisting && replaceExisting)
@@ -1304,17 +1326,16 @@ void ConfigWindow::ImportJsonConfig()
             m_viewModel->SaveConfig();
         }, m_appCtx);
 
-    // 7. Reload UI on main thread
-    LoadConfig();
-    if (m_appCtx && m_appCtx->configService)
-        m_appCtx->configService->SetAppearanceSettings(UIStyle::CaptureAppearanceSettings());
-    InvalidateRect(GetHWND(), nullptr, FALSE);
+    // 7. Reload and apply imported runtime settings on the UI thread.
+    ReloadAfterConfigFileOperation();
 
     // 8. Show result with project-style UI
     ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u6210\u529F",
         (std::wstring(L"\u5BFC\u5165\u5B8C\u6210\uFF01\u5171 ") +
             std::to_wstring(totalPages) + L" \u4E2A\u5206\u7EC4\uFF0C" +
-            std::to_wstring(totalShortcuts) + L" \u4E2A\u5FEB\u6377\u65B9\u5F0F\u3002").c_str(),
+            std::to_wstring(totalShortcuts) + L" \u4E2A\u5FEB\u6377\u65B9\u5F0F\uFF0C\u5DF2\u4FDD\u5B58 " +
+            std::to_wstring(result.copiedIcons) + L" \u4E2A\u81EA\u5B9A\u4E49\u56FE\u6807" +
+            (result.skippedItems > 0 ? L"\uFF1B" + std::to_wstring(result.skippedItems) + L" \u4E2A\u5DF2\u7981\u7528\u6216\u6682\u4E0D\u517C\u5BB9\u7684\u9879\u76EE\u672A\u5BFC\u5165\u3002" : L"\u3002")).c_str(),
         m_appCtx);
 }
 

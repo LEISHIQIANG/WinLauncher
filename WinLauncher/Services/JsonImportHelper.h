@@ -3,6 +3,9 @@
 #include <vector>
 #include <fstream>
 #include <Windows.h>
+#include <wincrypt.h>
+#include <algorithm>
+#pragma comment(lib, "Crypt32.lib")
 #include "../Model/ShortcutInfo.h"
 #include "ConfigPath.h"
 
@@ -272,9 +275,34 @@ namespace JsonImport
                 if (ch == L'/' || ch == L'\\' || ch == L':' || ch == L'*' || ch == L'?' || ch == L'"' || ch == L'<' || ch == L'>' || ch == L'|')
                     ch = L'_';
             }
-            return L"imported_icons\\" + safeName + ext;
+            // Several QuickLauncher entries can have the same display name.
+            // Keep their copied icons separate rather than silently overwriting one.
+            unsigned long hash = 2166136261u;
+            for (wchar_t ch : iconPath)
+                hash = (hash ^ static_cast<unsigned long>(towlower(ch))) * 16777619u;
+            return L"imported_icons\\" + safeName + L"_" + std::to_wstring(hash) + ext;
         }
         return L"";
+    }
+
+    static bool IsAbsolutePath(const std::wstring& path)
+    {
+        return path.size() >= 3 && ((path[0] >= L'A' && path[0] <= L'Z') || (path[0] >= L'a' && path[0] <= L'z')) &&
+               path[1] == L':' && (path[2] == L'\\' || path[2] == L'/');
+    }
+
+    static std::wstring GetParentDirectory(const std::wstring& path)
+    {
+        const size_t pos = path.find_last_of(L"\\/");
+        return pos == std::wstring::npos ? L"" : path.substr(0, pos);
+    }
+
+    static std::wstring ResolveRelativePath(const std::wstring& path, const std::wstring& sourceConfigFile)
+    {
+        if (path.empty() || IsAbsolutePath(path) || path.rfind(L"\\\\", 0) == 0)
+            return path;
+        const std::wstring parent = GetParentDirectory(sourceConfigFile);
+        return parent.empty() ? path : parent + L"\\" + path;
     }
 
     static std::wstring CopyIconToConfigDir(const std::wstring& sourcePath, const std::wstring& configDir, const std::wstring& itemName)
@@ -295,6 +323,55 @@ namespace JsonImport
         }
 
         return sourcePath;
+    }
+
+    static std::wstring CopyEmbeddedIconToConfigDir(const std::wstring& iconData, const std::wstring& configDir,
+                                                    const std::wstring& itemName)
+    {
+        if (iconData.empty() || iconData.size() > 10 * 1024 * 1024 || configDir.empty())
+            return L"";
+
+        std::wstring payload = iconData;
+        std::wstring extension = L".png";
+        if (iconData.rfind(L"data:", 0) == 0)
+        {
+            const size_t comma = iconData.find(L',');
+            if (comma == std::wstring::npos) return L"";
+            const std::wstring header = iconData.substr(5, comma - 5);
+            if (header.find(L"image/jpeg") != std::wstring::npos) extension = L".jpg";
+            else if (header.find(L"image/gif") != std::wstring::npos) extension = L".gif";
+            else if (header.find(L"image/bmp") != std::wstring::npos) extension = L".bmp";
+            else if (header.find(L"image/svg") != std::wstring::npos) extension = L".svg";
+            else if (header.find(L"image/x-icon") != std::wstring::npos || header.find(L"image/vnd.microsoft.icon") != std::wstring::npos) extension = L".ico";
+            else if (header.find(L"image/webp") != std::wstring::npos) extension = L".webp";
+            payload = iconData.substr(comma + 1);
+        }
+
+        DWORD byteCount = 0;
+        if (!CryptStringToBinaryW(payload.c_str(), static_cast<DWORD>(payload.size()), CRYPT_STRING_BASE64_ANY,
+                                  nullptr, &byteCount, nullptr, nullptr) || byteCount == 0 || byteCount > 5 * 1024 * 1024)
+            return L"";
+        std::vector<BYTE> bytes(byteCount);
+        if (!CryptStringToBinaryW(payload.c_str(), static_cast<DWORD>(payload.size()), CRYPT_STRING_BASE64_ANY,
+                                  bytes.data(), &byteCount, nullptr, nullptr))
+            return L"";
+
+        ConfigPath::EnsureDirectoryExists(configDir + L"\\imported_icons");
+        std::wstring virtualSource = itemName + extension;
+        std::wstring relative = GetIconFileName(virtualSource, itemName);
+        if (relative.empty()) return L"";
+        const std::wstring destination = configDir + L"\\" + relative;
+        HANDLE file = CreateFileW(destination.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return L"";
+        DWORD written = 0;
+        const bool ok = WriteFile(file, bytes.data(), byteCount, &written, nullptr) && written == byteCount;
+        CloseHandle(file);
+        if (!ok)
+        {
+            DeleteFileW(destination.c_str());
+            return L"";
+        }
+        return destination;
     }
 
 } // namespace JsonImport

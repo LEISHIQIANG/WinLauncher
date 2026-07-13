@@ -12,6 +12,8 @@
 #include <vector>
 #include <map>
 
+class IUserInteractionService;
+
 namespace Services
 {
     class CommandVariableService
@@ -19,7 +21,7 @@ namespace Services
     public:
         // Scans the command text for unique {{input}}, {{password}}, {{choose}}, {{confirm}} variables,
         // collects user input via modal dialogs, and returns false if user cancels any dialog.
-        static bool ResolveInputs(HWND parent, const std::wstring& commandText, std::map<std::wstring, std::wstring>& outInputs);
+        static bool ResolveInputs(HWND parent, const std::wstring& commandText, std::map<std::wstring, std::wstring>& outInputs, IUserInteractionService* interactionService = nullptr);
 
         // Resolves all variables in commandText and returns the expanded string
         static std::wstring ResolveVariables(

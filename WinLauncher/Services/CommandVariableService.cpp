@@ -1,6 +1,6 @@
 #define NOMINMAX
 #include "CommandVariableService.h"
-#include "../Config/PromptWindow.h"
+#include "../Contracts/IUserInteractionService.h"
 #include "ConfigPath.h"
 #include <algorithm>
 #include <cwctype>
@@ -225,7 +225,7 @@ namespace Services
 
     // ──── ResolveInputs ────────────────────────────────────────────────
 
-    bool CommandVariableService::ResolveInputs(HWND parent, const std::wstring& commandText, std::map<std::wstring, std::wstring>& outInputs)
+    bool CommandVariableService::ResolveInputs(HWND parent, const std::wstring& commandText, std::map<std::wstring, std::wstring>& outInputs, IUserInteractionService* interactionService)
     {
         std::wstring text = commandText;
         size_t pos = 0;
@@ -350,11 +350,16 @@ namespace Services
         // Process each unique prompt
         for (const auto& vp : varPrompts)
         {
+            if (!interactionService)
+            {
+                return false;
+            }
+
             if (vp.type == L"input")
             {
                 std::wstring result;
                 std::wstring displayPrompt = vp.prompt.empty() ? L"\u8BF7\u8F93\u5165\u8FD0\u884C\u65F6\u8F93\u5165\u5185\u5BB9:" : vp.prompt;
-                if (!PromptWindow::Show(parent, L"\u8FD0\u884C\u65F6\u8F93\u5165", displayPrompt.c_str(), result, L"", nullptr))
+                if (!interactionService->ShowPrompt(parent, L"\u8FD0\u884C\u65F6\u8F93\u5165", displayPrompt.c_str(), result, L""))
                     return false;
                 outInputs[L"input:" + vp.key] = result;
             }
@@ -362,21 +367,21 @@ namespace Services
             {
                 std::wstring result;
                 std::wstring displayPrompt = vp.prompt.empty() ? L"\u8BF7\u8F93\u5165\u5BC6\u7801:" : vp.prompt;
-                if (!PromptWindow::ShowPassword(parent, L"\u5BC6\u7801\u8F93\u5165", displayPrompt.c_str(), result, nullptr))
+                if (!interactionService->ShowPasswordPrompt(parent, L"\u5BC6\u7801\u8F93\u5165", displayPrompt.c_str(), result))
                     return false;
                 outInputs[L"password:" + vp.key] = result;
             }
             else if (vp.type == L"choose")
             {
                 std::wstring result;
-                if (!PromptWindow::ShowChoose(parent, L"\u8BF7\u9009\u62E9", L"\u8BF7\u9009\u62E9\u4E00\u9879:", vp.options, result, nullptr))
+                if (!interactionService->ShowChoosePrompt(parent, L"\u8BF7\u9009\u62E9", L"\u8BF7\u9009\u62E9\u4E00\u9879:", vp.options, result))
                     return false;
                 outInputs[L"choose:" + vp.key] = result;
             }
             else if (vp.type == L"confirm")
             {
                 std::wstring msg = vp.prompt.empty() ? L"\u786E\u5B9A\u7EE7\u7EED\u6267\u884C\u5417\uFF1F" : vp.prompt;
-                if (!PromptWindow::ShowConfirm(parent, L"\u64CD\u4F5C\u786E\u8BA4", msg.c_str(), nullptr))
+                if (!interactionService->ShowConfirm(parent, L"\u64CD\u4F5C\u786E\u8BA4", msg.c_str()))
                     return false;
                 // No value stored; existence in outInputs just signals "confirmed"
                 outInputs[L"confirm:" + vp.key] = L"1";

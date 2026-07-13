@@ -2,7 +2,7 @@
 #include "../GlassWindow.h"
 #include "../ShortcutManager.h"
 #include "../ViewModel/ConfigViewModel.h"
-#include "../Services/IIconService.h"
+#include "../Contracts/IIconService.h"
 #include "IConfigWindow.h"
 #include "CategoryList.h"
 #include "ShortcutPage.h"

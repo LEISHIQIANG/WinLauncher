@@ -2,7 +2,7 @@
 #include "GlassWindow.h"
 #include "ShortcutManager.h"
 #include "ViewModel/PopupViewModel.h"
-#include "Services/IIconService.h"
+#include "Contracts/IIconService.h"
 #include "Services/AppSceneMatcher.h"
 #include <vector>
 #include <unordered_map>
@@ -28,6 +28,7 @@ public:
     static bool IsVisible();
     static bool ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppContext* ctx, const std::vector<std::wstring>& selectedFiles = {});
     static HWND GetRestoreForegroundWindow();
+    static HWND GetHWNDStatic();
 
     int CellWidth() const;
     int CellHeight() const;

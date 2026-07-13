@@ -15,6 +15,9 @@
 #include "../Services/EnvironmentDetector.h"
 #include "../Services/IniConfigRepository.h"
 #include "../Services/SystemIconService.h"
+#include "../Services/CommandExecutionService.h"
+#include "../UI/UserInteractionService.h"
+#include "../UI/WindowCoordinator.h"
 #include "../TrayMenuWindow.h"
 #include "../Services/BatchLaunchService.h"
 #include "../Services/MacroService.h"
@@ -246,17 +249,23 @@ bool Application::CreateMainWindow()
 
 bool Application::InitializeServices()
 {
-    auto configRepository = std::make_unique<IniConfigRepository>(
+    auto configRepository = std::make_shared<IniConfigRepository>(
         m_appCtx->logger.get(),
         m_hMainWnd,
         AppMessages::ConfigChanged);
 
-    m_appCtx->configService = std::move(configRepository);
-    m_appCtx->iconService   = std::make_unique<SystemIconService>();
+    m_appCtx->configService = configRepository;
+    m_appCtx->iconService   = std::make_shared<SystemIconService>();
+    m_appCtx->userInteraction = std::make_shared<UserInteractionService>(m_appCtx.get());
+    m_appCtx->commandExecution = std::make_shared<CommandExecutionService>(m_appCtx);
+    m_appCtx->windowCoordinator = std::make_shared<WindowCoordinator>(m_appCtx.get());
 
     LOG_INFO(m_appCtx->logger, L"WinLauncher starting...");
     if (m_appCtx->pluginManager)
+    {
+        m_appCtx->pluginManager->SetUserInteraction(m_appCtx->userInteraction);
         m_appCtx->pluginManager->Initialize();
+    }
 
     // Validate autostart configuration and self-check
     AutoStartHelper::ValidateAndSelfCheck();
@@ -369,8 +378,15 @@ void Application::Shutdown()
     m_hMainWnd = nullptr;
 
     if (m_appCtx) LOG_INFO(m_appCtx->logger, L"Application::Shutdown: releasing window singletons");
-    PopupWindow::Release();
-    ConfigWindow::Release(true);
+    if (m_appCtx && m_appCtx->windowCoordinator)
+    {
+        m_appCtx->windowCoordinator->DestroyWindows();
+    }
+    else
+    {
+        PopupWindow::Release();
+        ConfigWindow::Release(true);
+    }
     TrayMenuWindow::Release();
     ToastWindow::Hide();
 

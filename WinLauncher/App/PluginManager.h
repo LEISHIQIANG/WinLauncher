@@ -73,6 +73,8 @@ struct PluginSettingInfo
     bool hasMax = false;
 };
 
+class IUserInteractionService;
+
 class PluginManager : public std::enable_shared_from_this<PluginManager>
 {
 public:
@@ -80,6 +82,8 @@ public:
         std::shared_ptr<UiDispatcher> uiDispatcher = nullptr,
         std::shared_ptr<BackgroundTaskService> backgroundTasks = nullptr);
     ~PluginManager();
+
+    void SetUserInteraction(const std::shared_ptr<IUserInteractionService>& userInteraction) { m_userInteraction = userInteraction; }
 
     void Initialize();
     void Shutdown();
@@ -281,4 +285,5 @@ private:
     std::atomic_bool m_shuttingDown = false;
     std::atomic_bool m_shutdownRequested = false;
     std::atomic_uint32_t m_activeExecutions{ 0 };
+    std::shared_ptr<IUserInteractionService> m_userInteraction;
 };

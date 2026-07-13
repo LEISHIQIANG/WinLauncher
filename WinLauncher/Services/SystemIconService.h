@@ -1,5 +1,5 @@
 #pragma once
-#include "IIconService.h"
+#include "../Contracts/IIconService.h"
 #include "../resource.h"
 #include "../App/Logger.h"
 #include <commoncontrols.h>

@@ -187,6 +187,9 @@
     <ClCompile Include="Services\UsageHistoryStore.cpp" />
     <ClCompile Include="Services\DiagnosticService.cpp" />
     <ClCompile Include="Services\MigrationBackupService.cpp" />
+    <ClCompile Include="Services\CommandExecutionService.cpp" />
+    <ClCompile Include="UI\WindowCoordinator.cpp" />
+    <ClCompile Include="UI\UserInteractionService.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
     <ClCompile Include="Config\MacroEditForm.cpp" />
     <ClCompile Include="Config\BatchLaunchDialog.cpp" />
@@ -225,11 +228,16 @@
     <!-- Model Layer -->
     <ClInclude Include="Model\AppearanceSettings.h" />
     <ClInclude Include="Model\ShortcutInfo.h" />
+    <!-- Contracts -->
+    <ClInclude Include="Contracts\IConfigService.h" />
+    <ClInclude Include="Contracts\IIconService.h" />
+    <ClInclude Include="Contracts\ICommandExecutionService.h" />
+    <ClInclude Include="Contracts\IUserInteractionService.h" />
+    <ClInclude Include="Contracts\IWindowCoordinator.h" />
     <!-- Services Layer -->
-    <ClInclude Include="Services\IConfigService.h" />
+    <ClInclude Include="Services\CommandExecutionService.h" />
     <ClInclude Include="Services\AppSceneMatcher.h" />
     <ClInclude Include="Services\ConfigPath.h" />
-    <ClInclude Include="Services\IIconService.h" />
     <ClInclude Include="Services\IniConfigRepository.h" />
     <ClInclude Include="Services\FolderWatcher.h" />
     <ClInclude Include="Services\FaviconFetcher.h" />
@@ -246,6 +254,9 @@
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />
     <ClInclude Include="ViewModel\ConfigViewModel.h" />
+    <!-- UI Layer -->
+    <ClInclude Include="UI\WindowCoordinator.h" />
+    <ClInclude Include="UI\UserInteractionService.h" />
     <!-- UI Controls -->
     <ClInclude Include="UI\Controls\IControl.h" />
     <ClInclude Include="UI\Controls\Button.h" />

@@ -14,12 +14,13 @@
 #include <thread>
 #include <map>
 #include <mutex>
+#include "../App/AppMessages.h"
 
 #pragma comment(lib, "comctl32.lib")
 
 static CommandPanelWindow* g_cmdPanelInstance = nullptr;
-static const UINT WM_COMMAND_PANEL_APPEND = WM_APP + 0x310;
-static const UINT WM_COMMAND_PANEL_REFRESH_DONE = WM_APP + 0x311;
+static const UINT WM_COMMAND_PANEL_APPEND = AppMessages::CommandPanelAppend;
+static const UINT WM_COMMAND_PANEL_REFRESH_DONE = AppMessages::CommandPanelRefreshDone;
 static const UINT_PTR COMMAND_PANEL_CARET_TIMER_ID = 0x999;
 static const UINT_PTR COMMAND_PANEL_LOADING_TIMER_ID = 0x998;
 static const UINT_PTR COMMAND_PANEL_APPEND_TIMER_ID = 0x997;

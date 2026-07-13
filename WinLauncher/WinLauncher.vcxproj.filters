@@ -102,6 +102,9 @@
     <ClCompile Include="Services\UsageHistoryStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\DiagnosticService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\MigrationBackupService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\CommandExecutionService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="UI\WindowCoordinator.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="UI\UserInteractionService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\FaviconFetcher.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -401,10 +404,28 @@
     <ClInclude Include="Services\FaviconFetcher.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Services\IConfigService.h">
+    <ClInclude Include="Contracts\IConfigService.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Services\IIconService.h">
+    <ClInclude Include="Contracts\IIconService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Contracts\ICommandExecutionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Contracts\IUserInteractionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Contracts\IWindowCoordinator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Services\CommandExecutionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\WindowCoordinator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\UserInteractionService.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\IniConfigRepository.h">

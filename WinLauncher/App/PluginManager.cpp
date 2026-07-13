@@ -2,7 +2,7 @@
 #include "UiDispatcher.h"
 #include "PluginInstaller.h"
 #include "../Config/CommandPanelWindow.h"
-#include "../Config/PromptWindow.h"
+#include "../Contracts/IUserInteractionService.h"
 #include "../Services/ConfigPath.h"
 #include "../Services/JsonImportHelper.h"
 #include "../ToastWindow.h"
@@ -2003,7 +2003,10 @@ bool WL_CALL PluginManager::HostShowInputDialog(void* hostContext, const wchar_t
     std::wstring value;
     bool accepted = false;
     if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.input", [&]() {
-        accepted = PromptWindow::Show(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, defaultText ? defaultText : L"", nullptr);
+        if (ctx->manager->m_userInteraction)
+        {
+            accepted = ctx->manager->m_userInteraction->ShowPrompt(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, defaultText ? defaultText : L"");
+        }
     }) || !accepted)
         return false;
     return CopyStringResult(value, outText);
@@ -2023,7 +2026,10 @@ bool WL_CALL PluginManager::HostShowPasswordDialog(void* hostContext, const wcha
     std::wstring value;
     bool accepted = false;
     if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.password", [&]() {
-        accepted = PromptWindow::ShowPassword(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value, nullptr);
+        if (ctx->manager->m_userInteraction)
+        {
+            accepted = ctx->manager->m_userInteraction->ShowPasswordPrompt(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", value);
+        }
     }) || !accepted)
         return false;
     return CopyStringResult(value, outText);
@@ -2046,7 +2052,10 @@ bool WL_CALL PluginManager::HostShowChooseDialog(void* hostContext, const wchar_
     std::wstring value;
     bool accepted = false;
     if (!ctx->manager->m_uiDispatcher || !ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.choose", [&]() {
-        accepted = PromptWindow::ShowChoose(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", items, value, nullptr);
+        if (ctx->manager->m_userInteraction)
+        {
+            accepted = ctx->manager->m_userInteraction->ShowChoosePrompt(nullptr, title ? title : L"WinLauncher", prompt ? prompt : L"", items, value);
+        }
     }) || !accepted)
         return false;
     return CopyStringResult(value, outSelected);
@@ -2060,7 +2069,10 @@ bool WL_CALL PluginManager::HostShowConfirmDialog(void* hostContext, const wchar
     bool accepted = false;
     if (!ctx->manager->m_uiDispatcher) return false;
     return ctx->manager->m_uiDispatcher->InvokeSync(L"plugin.ui.confirm", [&]() {
-        accepted = PromptWindow::ShowConfirm(nullptr, title ? title : L"WinLauncher", message ? message : L"", nullptr);
+        if (ctx->manager->m_userInteraction)
+        {
+            accepted = ctx->manager->m_userInteraction->ShowConfirm(nullptr, title ? title : L"WinLauncher", message ? message : L"");
+        }
     }) && accepted;
 }
 
