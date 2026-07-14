@@ -334,6 +334,20 @@ LRESULT SystemIconDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         return 0;
     }
 
+    case WM_WINDOWPOSCHANGED:
+    {
+        LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        UpdateChildLayout();
+        return res;
+    }
+
+    case WM_DPICHANGED:
+    {
+        LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        UpdateChildLayout();
+        return res;
+    }
+
     default:
         // Handle IME messaging
         if (m_form.IsInputFocused())
@@ -397,6 +411,13 @@ void SystemIconDialog::OnPaintContent(ID2D1HwndRenderTarget* rt)
     // 5. Draw Buttons
     DrawButton(rt, L"确定", D2D1::RectF(DLG_W - 176.0f, Y_BUTTONS + 6.0f, DLG_W - 96.0f, Y_BUTTONS + 30.0f), m_hoveredOk, true);
     DrawButton(rt, L"取消", D2D1::RectF(DLG_W - 88.0f, Y_BUTTONS + 6.0f, DLG_W - 20.0f, Y_BUTTONS + 30.0f), m_hoveredCancel, false);
+}
+
+void SystemIconDialog::UpdateChildLayout()
+{
+    m_form.UpdateLayout(
+        D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H),
+        GetWindowScale(GetHWND()));
 }
 
 void SystemIconDialog::EnsureFonts()

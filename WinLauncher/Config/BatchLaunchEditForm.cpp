@@ -271,8 +271,8 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
 
     // ──── 1. Available Shortcuts Grid ────
     D2D1_RECT_F leftBox = D2D1::RectF(m_bounds.left + 20, m_bounds.top + Y_BOX_LISTS, leftR, m_bounds.top + Y_BOX_LISTS + H_LIST_BOX);
-    if (bgBrush) rt->FillRectangle(D2D1::RectF(leftBox.left * scale, leftBox.top * scale, leftBox.right * scale, leftBox.bottom * scale), bgBrush.Get());
-    if (borderBrush) rt->DrawRectangle(D2D1::RectF(leftBox.left * scale, leftBox.top * scale, leftBox.right * scale, leftBox.bottom * scale), borderBrush.Get(), 1.0f);
+    if (bgBrush) rt->FillRectangle(leftBox, bgBrush.Get());
+    if (borderBrush) rt->DrawRectangle(leftBox, borderBrush.Get(), 1.0f);
 
     int cols = 3;
     float gridW = (leftBox.right - 8) - (leftBox.left + 4);
@@ -281,7 +281,7 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
     int rows = (int)ceil((float)m_availableItems.size() / cols);
     m_leftScrollMax = (float)(std::max)(0.0f, (rows * cellH) - H_LIST_BOX);
 
-    rt->PushAxisAlignedClip(D2D1::RectF((leftBox.left + 1) * scale, (leftBox.top + 1) * scale, (leftBox.right - 6) * scale, (leftBox.bottom - 1) * scale), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    rt->PushAxisAlignedClip(D2D1::RectF(leftBox.left + 1, leftBox.top + 1, leftBox.right - 6, leftBox.bottom - 1), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     for (size_t i = 0; i < m_availableItems.size(); ++i)
     {
         int row = (int)i / cols;
@@ -294,16 +294,16 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
             if ((int)i == m_hoveredLeftIdx)
             {
                 auto hoverBrush = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.08f));
-                if (hoverBrush) rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(cellRect.left * scale, cellRect.top * scale, cellRect.right * scale, cellRect.bottom * scale), 4.0f, 4.0f), hoverBrush.Get());
+                if (hoverBrush) rt->FillRoundedRectangle(D2D1::RoundedRect(cellRect, 4.0f, 4.0f), hoverBrush.Get());
             }
             float iconSize = 24.0f;
             float iconX = cx + (cellW - iconSize) * 0.5f;
             float iconY = cy + 3;
             if (m_availableItems[i].bitmap)
-                rt->DrawBitmap(m_availableItems[i].bitmap, D2D1::RectF(iconX * scale, iconY * scale, (iconX + iconSize) * scale, (iconY + iconSize) * scale));
+                rt->DrawBitmap(m_availableItems[i].bitmap, D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize));
             if (textBrush && m_tfSmallCenter)
             {
-                D2D1_RECT_F txtR = D2D1::RectF(cellRect.left * scale, (iconY + iconSize + 1) * scale, cellRect.right * scale, cellRect.bottom * scale);
+                D2D1_RECT_F txtR = D2D1::RectF(cellRect.left, iconY + iconSize + 1, cellRect.right, cellRect.bottom);
                 rt->DrawTextW(m_availableItems[i].name.c_str(), (UINT32)m_availableItems[i].name.size(), m_tfSmallCenter.Get(), txtR, textBrush.Get());
             }
         }
@@ -313,13 +313,13 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
 
     // ──── 2. Queue List (right) — cards with delete button ────
     D2D1_RECT_F rightBox = D2D1::RectF(rightL, m_bounds.top + Y_BOX_LISTS, R, m_bounds.top + Y_BOX_LISTS + H_LIST_BOX);
-    if (bgBrush) rt->FillRectangle(D2D1::RectF(rightBox.left * scale, rightBox.top * scale, rightBox.right * scale, rightBox.bottom * scale), bgBrush.Get());
-    if (borderBrush) rt->DrawRectangle(D2D1::RectF(rightBox.left * scale, rightBox.top * scale, rightBox.right * scale, rightBox.bottom * scale), borderBrush.Get(), 1.0f);
+    if (bgBrush) rt->FillRectangle(rightBox, bgBrush.Get());
+    if (borderBrush) rt->DrawRectangle(rightBox, borderBrush.Get(), 1.0f);
 
     float listH = H_LIST_BOX;
     m_rightScrollMax = (float)(std::max)(0.0f, (m_steps.size() * QUEUE_STEP_H) - listH);
 
-    rt->PushAxisAlignedClip(D2D1::RectF((rightBox.left + 1) * scale, (rightBox.top + 1) * scale, (rightBox.right - 6) * scale, (rightBox.bottom - 1) * scale), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    rt->PushAxisAlignedClip(D2D1::RectF(rightBox.left + 1, rightBox.top + 1, rightBox.right - 6, rightBox.bottom - 1), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
     // Draw non-dragged items first
     for (size_t i = 0; i < m_steps.size(); ++i)
@@ -330,7 +330,7 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (itemRect.bottom > rightBox.top && itemRect.top < rightBox.bottom)
         {
             auto cardBg = GetOrCreateBrush(rt, UIStyle::ThemeColor::ButtonBgNormal().d2d);
-            D2D1_ROUNDED_RECT cardRR = D2D1::RoundedRect(D2D1::RectF(itemRect.left * scale, itemRect.top * scale, itemRect.right * scale, itemRect.bottom * scale), 4.0f, 4.0f);
+            D2D1_ROUNDED_RECT cardRR = D2D1::RoundedRect(itemRect, 4.0f, 4.0f);
             if (cardBg) rt->FillRoundedRectangle(cardRR, cardBg.Get());
             float borderA = ((int)i == m_hoveredRightIdx) ? 0.12f : 0.06f;
             auto cardBorder = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 1.0f, 1.0f, borderA));
@@ -345,17 +345,17 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
             float iconSize = 24.0f;
             float iconY = cy + (QUEUE_STEP_H - iconSize) * 0.5f;
             if (bmp)
-                rt->DrawBitmap(bmp, D2D1::RectF((itemRect.left + 6) * scale, iconY * scale, (itemRect.left + 6 + iconSize) * scale, (iconY + iconSize) * scale));
+                rt->DrawBitmap(bmp, D2D1::RectF(itemRect.left + 6, iconY, itemRect.left + 6 + iconSize, iconY + iconSize));
             if (textBrush && m_tfNormal)
                 rt->DrawTextW(scName.c_str(), (UINT32)scName.size(), m_tfNormal.Get(),
-                              D2D1::RectF((itemRect.left + 6 + iconSize + 8) * scale, itemRect.top * scale, (itemRect.right - DEL_BTN_SIZE - 8) * scale, itemRect.bottom * scale), textBrush.Get());
+                              D2D1::RectF(itemRect.left + 6 + iconSize + 8, itemRect.top, itemRect.right - DEL_BTN_SIZE - 8, itemRect.bottom), textBrush.Get());
 
             // Delete button (right side)
             float delX = itemRect.right - DEL_BTN_SIZE - 4;
             float delY = cy + (QUEUE_STEP_H - DEL_BTN_SIZE) * 0.5f;
             D2D1_RECT_F delBtnRect = D2D1::RectF(delX, delY, delX + DEL_BTN_SIZE, delY + DEL_BTN_SIZE);
             bool delHov = ((int)i == m_hoveredDeleteIdx);
-            D2D1_ROUNDED_RECT delRR = D2D1::RoundedRect(D2D1::RectF(delBtnRect.left * scale, delBtnRect.top * scale, delBtnRect.right * scale, delBtnRect.bottom * scale), 3.0f, 3.0f);
+            D2D1_ROUNDED_RECT delRR = D2D1::RoundedRect(delBtnRect, 3.0f, 3.0f);
             if (delHov)
             {
                 auto delBg = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 0.3f, 0.3f, 0.5f));
@@ -371,7 +371,7 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
             if (m_tfBtn)
             {
                 auto delText = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
-                if (delText) rt->DrawTextW(L"－", 1, m_tfBtn.Get(), D2D1::RectF(delBtnRect.left * scale, delBtnRect.top * scale, delBtnRect.right * scale, delBtnRect.bottom * scale), delText.Get());
+                if (delText) rt->DrawTextW(L"－", 1, m_tfBtn.Get(), delBtnRect, delText.Get());
             }
         }
     }
@@ -384,7 +384,7 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         if (itemRect.bottom > rightBox.top && itemRect.top < rightBox.bottom)
         {
             auto cardBg = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.12f));
-            D2D1_ROUNDED_RECT cardRR = D2D1::RoundedRect(D2D1::RectF(itemRect.left * scale, itemRect.top * scale, itemRect.right * scale, itemRect.bottom * scale), 4.0f, 4.0f);
+            D2D1_ROUNDED_RECT cardRR = D2D1::RoundedRect(itemRect, 4.0f, 4.0f);
             if (cardBg) rt->FillRoundedRectangle(cardRR, cardBg.Get());
             auto cardBorder = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.25f));
             if (cardBorder) rt->DrawRoundedRectangle(cardRR, cardBorder.Get(), 1.0f);
@@ -398,10 +398,10 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
             float iconSize = 24.0f;
             float iconY = cy + (QUEUE_STEP_H - iconSize) * 0.5f;
             if (bmp)
-                rt->DrawBitmap(bmp, D2D1::RectF((itemRect.left + 6) * scale, iconY * scale, (itemRect.left + 6 + iconSize) * scale, (iconY + iconSize) * scale));
+                rt->DrawBitmap(bmp, D2D1::RectF(itemRect.left + 6, iconY, itemRect.left + 6 + iconSize, iconY + iconSize));
             if (textBrush && m_tfNormal)
                 rt->DrawTextW(scName.c_str(), (UINT32)scName.size(), m_tfNormal.Get(),
-                              D2D1::RectF((itemRect.left + 6 + iconSize + 8) * scale, itemRect.top * scale, (itemRect.right - DEL_BTN_SIZE - 8) * scale, itemRect.bottom * scale), textBrush.Get());
+                              D2D1::RectF(itemRect.left + 6 + iconSize + 8, itemRect.top, itemRect.right - DEL_BTN_SIZE - 8, itemRect.bottom), textBrush.Get());
         }
     }
 
@@ -762,7 +762,7 @@ void BatchLaunchEditForm::DrawScrollbar(ID2D1HwndRenderTarget* rt, const D2D1_RE
     float visibleRatio = barH / (barH + scrollMax);
     float thumbH = (std::max)(20.0f, barH * visibleRatio);
     float thumbY = rect.top + (scrollOffset / scrollMax) * (barH - thumbH);
-    D2D1_RECT_F thumbRect = D2D1::RectF((rect.right - barW - 2) * scale, thumbY * scale, (rect.right - 2) * scale, (thumbY + thumbH) * scale);
+    D2D1_RECT_F thumbRect = D2D1::RectF(rect.right - barW - 2, thumbY, rect.right - 2, thumbY + thumbH);
     auto thumbBrush = GetOrCreateBrush(rt, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.2f));
     if (thumbBrush) rt->FillRoundedRectangle(D2D1::RoundedRect(thumbRect, 3.0f, 3.0f), thumbBrush.Get());
 }
@@ -792,7 +792,6 @@ bool BatchLaunchEditForm::HitTestInvertDarkCheckbox(POINT pt)
 void BatchLaunchEditForm::DrawSectionLabel(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect)
 {
     if (!m_tfSmall) return;
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     D2D1_COLOR_F sepClr = UIStyle::ThemeColor::TextNormal().d2d;
     sepClr.a = 0.28f;
     auto sepBrush = GetOrCreateBrush(rt, sepClr);
@@ -802,22 +801,19 @@ void BatchLaunchEditForm::DrawSectionLabel(ID2D1HwndRenderTarget* rt, const wcha
         float textW = (float)wcslen(text) * 8.5f;
         float lineStart = rect.left + textW + 10.0f;
         lineStart = (std::min)(lineStart, rect.right);
-        rt->DrawLine(D2D1::Point2F(lineStart * scale, midY * scale),
-                     D2D1::Point2F(rect.right * scale, midY * scale), sepBrush.Get(), 0.35f);
+        rt->DrawLine(D2D1::Point2F(lineStart, midY),
+                     D2D1::Point2F(rect.right, midY), sepBrush.Get(), 0.35f);
     }
     D2D1_COLOR_F labelClr = UIStyle::ThemeColor::TextNormal().d2d;
     labelClr.a = 0.5f;
     auto labelBrush = GetOrCreateBrush(rt, labelClr);
     if (labelBrush)
-        rt->DrawTextW(text, (UINT32)wcslen(text), m_tfSmall.Get(),
-                      D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale),
-                      labelBrush.Get());
+        rt->DrawTextW(text, (UINT32)wcslen(text), m_tfSmall.Get(), rect, labelBrush.Get());
 }
 
 void BatchLaunchEditForm::DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect, bool hovered, bool disabled)
 {
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
-    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale), 4.0f, 4.0f);
+    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, 4.0f, 4.0f);
     bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
     D2D1_COLOR_F base = isLight ? D2D1::ColorF(0.f, 0.f, 0.f) : D2D1::ColorF(1.f, 1.f, 1.f);
     float bgA = disabled ? 0.02f : (hovered ? 0.09f : 0.04f);
@@ -829,13 +825,12 @@ void BatchLaunchEditForm::DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* t
     if (m_tfBtn)
     {
         auto textBrush = GetOrCreateBrush(rt, disabled ? UIStyle::ThemeColor::TextMuted().d2d : UIStyle::ThemeColor::TextNormal().d2d);
-        if (textBrush) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale), textBrush.Get());
+        if (textBrush) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), rect, textBrush.Get());
     }
 }
 
 void BatchLaunchEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, bool checked, bool hovered, const wchar_t* labelText)
 {
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     const float cbSize = 14.0f;
     D2D1_RECT_F boxRect = D2D1::RectF(
         rect.left,
@@ -843,7 +838,7 @@ void BatchLaunchEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_REC
         rect.left + cbSize,
         rect.top + (rect.bottom - rect.top - cbSize) * 0.5f + cbSize
     );
-    D2D1_ROUNDED_RECT rrBox = D2D1::RoundedRect(D2D1::RectF(boxRect.left * scale, boxRect.top * scale, boxRect.right * scale, boxRect.bottom * scale), 3.0f, 3.0f);
+    D2D1_ROUNDED_RECT rrBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
     bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
     D2D1_COLOR_F base = isLight ? D2D1::ColorF(0.f, 0.f, 0.f) : D2D1::ColorF(1.f, 1.f, 1.f);
 
@@ -856,8 +851,8 @@ void BatchLaunchEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_REC
         auto ckBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextOnAccent().d2d);
         if (ckBrush)
         {
-            float cx = (boxRect.left + cbSize * 0.5f) * scale;
-            float cy = (boxRect.top + cbSize * 0.5f) * scale;
+            float cx = boxRect.left + cbSize * 0.5f;
+            float cy = boxRect.top + cbSize * 0.5f;
             rt->DrawLine(D2D1::Point2F(cx - 4, cy), D2D1::Point2F(cx - 1, cy + 3.5f), ckBrush.Get(), 1.5f);
             rt->DrawLine(D2D1::Point2F(cx - 1, cy + 3.5f), D2D1::Point2F(cx + 4, cy - 3), ckBrush.Get(), 1.5f);
         }
@@ -874,7 +869,7 @@ void BatchLaunchEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_REC
 
     if (labelText && m_tfLabel)
     {
-        D2D1_RECT_F labelRect = D2D1::RectF((boxRect.right + 6) * scale, rect.top * scale, rect.right * scale, rect.bottom * scale);
+        D2D1_RECT_F labelRect = D2D1::RectF(boxRect.right + 6, rect.top, rect.right, rect.bottom);
         D2D1_COLOR_F tc = UIStyle::ThemeColor::TextNormal().d2d;
         tc.a = hovered ? 1.0f : 0.85f;
         auto tb = GetOrCreateBrush(rt, tc);
@@ -895,12 +890,11 @@ void BatchLaunchEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 {
     float W = m_bounds.right - m_bounds.left;
     const float previewSize = 36.0f;
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     D2D1_RECT_F previewRect = D2D1::RectF(
-        (m_bounds.left + W - 20 - previewSize) * scale,
-        (m_bounds.top + Y_PREVIEW) * scale,
-        (m_bounds.left + W - 20) * scale,
-        (m_bounds.top + Y_PREVIEW + previewSize) * scale
+        m_bounds.left + W - 20 - previewSize,
+        m_bounds.top + Y_PREVIEW,
+        m_bounds.left + W - 20,
+        m_bounds.top + Y_PREVIEW + previewSize
     );
 
     std::wstring iconPath = m_iconBox.GetText();

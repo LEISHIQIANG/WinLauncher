@@ -9,10 +9,10 @@
 #include <vector>
 
 static const int DLG_W = 360;
-static const float Y_TITLE = 8.0f;
+static const float Y_TITLE = 10.0f;
 static const float Y_FORM_TOP = 36.0f;
-static const float Y_BUTTONS = Y_FORM_TOP + BatchLaunchEditForm::PreferredContentHeight() + 15.0f;
-static const int DLG_H = (int)(Y_BUTTONS + 38.0f);
+static const float Y_BUTTONS = Y_FORM_TOP + BatchLaunchEditForm::PreferredContentHeight() + 20.0f;
+static const int DLG_H = (int)(Y_BUTTONS + 45.0f);
 
 static BatchLaunchDialog* g_bldInstance = nullptr;
 
@@ -337,6 +337,20 @@ LRESULT BatchLaunchDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LP
         return 0;
     }
 
+    case WM_WINDOWPOSCHANGED:
+    {
+        LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        UpdateChildLayout();
+        return res;
+    }
+
+    case WM_DPICHANGED:
+    {
+        LRESULT res = GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
+        UpdateChildLayout();
+        return res;
+    }
+
     case WM_MOUSEWHEEL:
     {
         POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -404,16 +418,18 @@ void BatchLaunchDialog::OnPaintContent(ID2D1HwndRenderTarget* rt)
 
 void BatchLaunchDialog::EnsureFonts()
 {
-    if (!m_tfTitle && m_dw)
-    {
-        m_dw->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"zh-CN", &m_tfTitle);
-        m_dw->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"zh-CN", &m_tfBtn);
-        if (m_tfBtn)
-        {
-            m_tfBtn->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            m_tfBtn->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        }
-    }
+    if (m_tfTitle) return;
+    UIStyle::Typography::CreateTextFormat(
+        m_dw.Get(), &m_tfTitle, 12.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    UIStyle::Typography::CreateTextFormat(
+        m_dw.Get(), &m_tfBtn, 10.0f, DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+}
+
+void BatchLaunchDialog::UpdateChildLayout()
+{
+    m_form.UpdateLayout(D2D1::RectF(0, Y_FORM_TOP, DLG_W, DLG_H), GetWindowScale(GetHWND()));
 }
 
 bool BatchLaunchDialog::HitTestRect(POINT pt, const D2D1_RECT_F& rect)
@@ -423,7 +439,9 @@ bool BatchLaunchDialog::HitTestRect(POINT pt, const D2D1_RECT_F& rect)
 
 bool BatchLaunchDialog::HitTestCloseButton(POINT pt)
 {
-    return HitTestRect(pt, D2D1::RectF(DLG_W - 25, 8, DLG_W - 9, 24));
+    RECT cr; GetClientRect(GetHWND(), &cr);
+    float w = static_cast<float>(cr.right) / DpiHelper::GetWindowScale(GetHWND());
+    return HitTestRect(pt, D2D1::RectF(w - 25, 8, w - 9, 24));
 }
 
 bool BatchLaunchDialog::HitTestOkButton(POINT pt)
@@ -438,36 +456,26 @@ bool BatchLaunchDialog::HitTestCancelButton(POINT pt)
 
 void BatchLaunchDialog::DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect, bool hovered, bool accent)
 {
-    D2D1_COLOR_F bgClr = accent
-        ? UIStyle::ThemeColor::Accent().d2d
-        : UIStyle::ThemeColor::ButtonBgNormal().d2d;
-    if (hovered)
+    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, 4.0f, 4.0f);
+    if (accent)
     {
-        bgClr.a = accent ? 0.9f : 0.25f;
-    }
-    else
-    {
-        bgClr.a = accent ? 0.8f : 0.15f;
-    }
-
-    auto bgBrush = GetOrCreateDialogBrush(rt, bgClr);
-    if (bgBrush)
-    {
-        rt->FillRoundedRectangle(D2D1::RoundedRect(rect, 4.0f, 4.0f), bgBrush.Get());
+        D2D1_COLOR_F bg = UIStyle::ThemeColor::Accent().d2d;
+        bg.a = hovered ? 0.80f : 0.64f;
+        auto bgBrush = GetOrCreateDialogBrush(rt, bg);
+        if (bgBrush) rt->FillRoundedRectangle(rr, bgBrush.Get());
+        auto borderBrush = GetOrCreateDialogBrush(rt, UIStyle::ThemeColor::Accent().d2d);
+        if (borderBrush) rt->DrawRoundedRectangle(rr, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
+        auto textBrush = GetOrCreateDialogBrush(rt, UIStyle::ThemeColor::TextOnAccent().d2d);
+        if (textBrush && m_tfBtn) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), rect, textBrush.Get());
+        return;
     }
 
-    auto borderBrush = GetOrCreateDialogBrush(rt, UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-    if (borderBrush && !accent)
-    {
-        rt->DrawRoundedRectangle(D2D1::RoundedRect(rect, 4.0f, 4.0f), borderBrush.Get(), 1.0f);
-    }
-
-    D2D1_COLOR_F textClr = accent
-        ? D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f)
-        : UIStyle::ThemeColor::TextNormal().d2d;
-    auto textBrush = GetOrCreateDialogBrush(rt, textClr);
-    if (textBrush && m_tfBtn)
-    {
-        rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), rect, textBrush.Get());
-    }
+    const bool isLight = UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light;
+    D2D1_COLOR_F base = isLight ? D2D1::ColorF(0.f, 0.f, 0.f) : D2D1::ColorF(1.f, 1.f, 1.f);
+    auto bgBrush = GetOrCreateDialogBrush(rt, D2D1::ColorF(base.r, base.g, base.b, hovered ? 0.09f : 0.04f));
+    if (bgBrush) rt->FillRoundedRectangle(rr, bgBrush.Get());
+    auto borderBrush = GetOrCreateDialogBrush(rt, D2D1::ColorF(base.r, base.g, base.b, hovered ? 0.16f : 0.075f));
+    if (borderBrush) rt->DrawRoundedRectangle(rr, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
+    auto textBrush = GetOrCreateDialogBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
+    if (textBrush && m_tfBtn) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), rect, textBrush.Get());
 }

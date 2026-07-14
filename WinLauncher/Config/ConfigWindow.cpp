@@ -1015,8 +1015,8 @@ void ConfigWindow::ClearCache()
         return;
 
     if (!ConfirmWindow::Show(GetHWND(), L"清理缓存",
-        L"将删除未使用的图标、日志、崩溃和诊断文件、配置历史及其他临时数据。\n"
-        L"会保留当前配置、当前配置正在使用的图标，以及已安装插件的必要文件。是否继续？",
+        L"清理未使用图标、日志及临时文件？\n"
+        L"配置、在用图标和已装插件会保留。",
         m_appCtx))
     {
         return;
@@ -1052,10 +1052,17 @@ void ConfigWindow::ClearCache()
         }, m_appCtx);
 
     const bool complete = result.failedItems == 0;
-    std::wstring message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个未使用文件，释放 " +
-        FormatReleasedSize(result.releasedBytes) + L"。\n已保留当前配置、其正在使用的图标及已安装插件的必要文件。";
-    if (!complete)
-        message += L"\n有 " + std::to_wstring(result.failedItems) + L" 个正在使用或无权限访问的项目未能删除，可关闭程序后重试。";
+    std::wstring message;
+    if (complete)
+    {
+        message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个未使用文件，释放 " +
+            FormatReleasedSize(result.releasedBytes) + L"。\n配置、在用图标和已安装插件均已保留。";
+    }
+    else
+    {
+        message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个文件，释放 " +
+            FormatReleasedSize(result.releasedBytes) + L"。\n另有 " + std::to_wstring(result.failedItems) + L" 项未清理，关闭程序后重试。";
+    }
     ConfirmWindow::Show(GetHWND(), complete ? L"缓存清理完成" : L"缓存已部分清理", message.c_str(), m_appCtx, false);
     InvalidateRect(GetHWND(), nullptr, FALSE);
 }

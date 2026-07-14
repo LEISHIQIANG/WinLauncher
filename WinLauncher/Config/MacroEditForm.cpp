@@ -171,7 +171,7 @@ void MacroEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         D2D1_RECT_F sr = D2D1::RectF(sx, m_bounds.top + Y_SPEED, sx + speedBtnW, m_bounds.top + Y_SPEED + 22);
         bool sel = (i == m_speedIdx);
         bool hov = (i == m_hoveredSpeedIdx);
-        D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(D2D1::RectF(sr.left * scale, sr.top * scale, sr.right * scale, sr.bottom * scale), 4.0f, 4.0f);
+        D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(sr, 4.0f, 4.0f);
         if (sel)
         {
             auto fill = GetOrCreateBrush(rt, UIStyle::ThemeColor::Accent().d2d);
@@ -192,8 +192,7 @@ void MacroEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
         {
             D2D1_COLOR_F tc = sel ? UIStyle::ThemeColor::TextOnAccent().d2d : UIStyle::ThemeColor::TextNormal().d2d;
             auto tb = GetOrCreateBrush(rt, tc);
-            if (tb) rt->DrawTextW(SPEED_LABELS[i], 2, m_tfBtn.Get(),
-                                  D2D1::RectF(sr.left * scale, sr.top * scale, sr.right * scale, sr.bottom * scale), tb.Get());
+            if (tb) rt->DrawTextW(SPEED_LABELS[i], 2, m_tfBtn.Get(), sr, tb.Get());
         }
         sx += speedBtnW + 4;
     }
@@ -629,7 +628,6 @@ bool MacroEditForm::HitTestInvertDarkCheckbox(POINT pt)
 void MacroEditForm::DrawSectionLabel(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect)
 {
     if (!m_tfSmall) return;
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     D2D1_COLOR_F sepClr = UIStyle::ThemeColor::TextNormal().d2d;
     sepClr.a = 0.28f;
     auto sepBrush = GetOrCreateBrush(rt, sepClr);
@@ -639,22 +637,19 @@ void MacroEditForm::DrawSectionLabel(ID2D1HwndRenderTarget* rt, const wchar_t* t
         float textW = (float)wcslen(text) * 8.5f;
         float lineStart = rect.left + textW + 10.0f;
         lineStart = (std::min)(lineStart, rect.right);
-        rt->DrawLine(D2D1::Point2F(lineStart * scale, midY * scale),
-                     D2D1::Point2F(rect.right * scale, midY * scale), sepBrush.Get(), 0.35f);
+        rt->DrawLine(D2D1::Point2F(lineStart, midY),
+                     D2D1::Point2F(rect.right, midY), sepBrush.Get(), 0.35f);
     }
     D2D1_COLOR_F labelClr = UIStyle::ThemeColor::TextNormal().d2d;
     labelClr.a = 0.5f;
     auto labelBrush = GetOrCreateBrush(rt, labelClr);
     if (labelBrush)
-        rt->DrawTextW(text, (UINT32)wcslen(text), m_tfSmall.Get(),
-                      D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale),
-                      labelBrush.Get());
+        rt->DrawTextW(text, (UINT32)wcslen(text), m_tfSmall.Get(), rect, labelBrush.Get());
 }
 
 void MacroEditForm::DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text, const D2D1_RECT_F& rect, bool hovered, bool disabled)
 {
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
-    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale), 4.0f, 4.0f);
+    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, 4.0f, 4.0f);
     bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
     D2D1_COLOR_F base = isLight ? D2D1::ColorF(0.f, 0.f, 0.f) : D2D1::ColorF(1.f, 1.f, 1.f);
     float bgA = disabled ? 0.02f : (hovered ? 0.09f : 0.04f);
@@ -666,13 +661,12 @@ void MacroEditForm::DrawButton(ID2D1HwndRenderTarget* rt, const wchar_t* text, c
     if (m_tfBtn)
     {
         auto textBrush = GetOrCreateBrush(rt, disabled ? UIStyle::ThemeColor::TextMuted().d2d : UIStyle::ThemeColor::TextNormal().d2d);
-        if (textBrush) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), D2D1::RectF(rect.left * scale, rect.top * scale, rect.right * scale, rect.bottom * scale), textBrush.Get());
+        if (textBrush) rt->DrawTextW(text, (UINT32)wcslen(text), m_tfBtn.Get(), rect, textBrush.Get());
     }
 }
 
 void MacroEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, bool checked, bool hovered, const wchar_t* labelText)
 {
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     const float cbSize = 14.0f;
     D2D1_RECT_F boxRect = D2D1::RectF(
         rect.left,
@@ -680,7 +674,7 @@ void MacroEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& r
         rect.left + cbSize,
         rect.top + (rect.bottom - rect.top - cbSize) * 0.5f + cbSize
     );
-    D2D1_ROUNDED_RECT rrBox = D2D1::RoundedRect(D2D1::RectF(boxRect.left * scale, boxRect.top * scale, boxRect.right * scale, boxRect.bottom * scale), 3.0f, 3.0f);
+    D2D1_ROUNDED_RECT rrBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
     bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
     D2D1_COLOR_F base = isLight ? D2D1::ColorF(0.f, 0.f, 0.f) : D2D1::ColorF(1.f, 1.f, 1.f);
 
@@ -693,8 +687,8 @@ void MacroEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& r
         auto ckBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextOnAccent().d2d);
         if (ckBrush)
         {
-            float cx = (boxRect.left + cbSize * 0.5f) * scale;
-            float cy = (boxRect.top + cbSize * 0.5f) * scale;
+            float cx = boxRect.left + cbSize * 0.5f;
+            float cy = boxRect.top + cbSize * 0.5f;
             rt->DrawLine(D2D1::Point2F(cx - 4, cy), D2D1::Point2F(cx - 1, cy + 3.5f), ckBrush.Get(), 1.5f);
             rt->DrawLine(D2D1::Point2F(cx - 1, cy + 3.5f), D2D1::Point2F(cx + 4, cy - 3), ckBrush.Get(), 1.5f);
         }
@@ -711,7 +705,7 @@ void MacroEditForm::DrawCheckbox(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& r
 
     if (labelText && m_tfLabel)
     {
-        D2D1_RECT_F labelRect = D2D1::RectF((boxRect.right + 6) * scale, rect.top * scale, rect.right * scale, rect.bottom * scale);
+        D2D1_RECT_F labelRect = D2D1::RectF(boxRect.right + 6, rect.top, rect.right, rect.bottom);
         D2D1_COLOR_F tc = UIStyle::ThemeColor::TextNormal().d2d;
         tc.a = hovered ? 1.0f : 0.85f;
         auto tb = GetOrCreateBrush(rt, tc);
@@ -732,12 +726,11 @@ void MacroEditForm::DrawIconPreview(ID2D1HwndRenderTarget* rt)
 {
     float W = m_bounds.right - m_bounds.left;
     const float previewSize = 36.0f;
-    float scale = DpiHelper::GetWindowScale(m_parentHWND);
     D2D1_RECT_F previewRect = D2D1::RectF(
-        (m_bounds.left + W - 20 - previewSize) * scale,
-        (m_bounds.top + Y_PREVIEW) * scale,
-        (m_bounds.left + W - 20) * scale,
-        (m_bounds.top + Y_PREVIEW + previewSize) * scale
+        m_bounds.left + W - 20 - previewSize,
+        m_bounds.top + Y_PREVIEW,
+        m_bounds.left + W - 20,
+        m_bounds.top + Y_PREVIEW + previewSize
     );
 
     std::wstring iconPath = m_iconBox.GetText();

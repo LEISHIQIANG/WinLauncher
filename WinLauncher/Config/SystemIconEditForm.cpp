@@ -246,8 +246,9 @@ void SystemIconEditForm::BrowseIconFile(HWND hWnd)
 
 void SystemIconEditForm::OnMouseMove(HWND hWnd, POINT pt, float scale, bool& repaint)
 {
-    m_nameBox.OnMouseMove(hWnd, pt, scale, repaint);
-    m_iconBox.OnMouseMove(hWnd, pt, scale, repaint);
+    const POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+    m_nameBox.OnMouseMove(hWnd, rawPt, scale, repaint);
+    m_iconBox.OnMouseMove(hWnd, rawPt, scale, repaint);
 
     auto update = [&](bool& state, bool newVal) {
         if (state != newVal) { state = newVal; repaint = true; }
@@ -260,6 +261,7 @@ void SystemIconEditForm::OnMouseMove(HWND hWnd, POINT pt, float scale, bool& rep
 
 void SystemIconEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint)
 {
+    const POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
     TextBox* targetBox = nullptr;
     if (m_nameBox.HitTest(pt)) targetBox = &m_nameBox;
     else if (m_iconBox.HitTest(pt)) targetBox = &m_iconBox;
@@ -274,7 +276,7 @@ void SystemIconEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& r
 
     if (m_focusedBox)
     {
-        m_focusedBox->OnLButtonDown(hWnd, pt, scale, repaint);
+        m_focusedBox->OnLButtonDown(hWnd, rawPt, scale, repaint);
     }
 
     if (HitTestBrowseIconButton(pt))
@@ -305,7 +307,8 @@ void SystemIconEditForm::OnLButtonDblClk(HWND hWnd, POINT pt, float scale, bool&
 {
     if (m_focusedBox && m_focusedBox->HitTest(pt))
     {
-        m_focusedBox->OnLButtonDblClk(hWnd, pt, scale, repaint);
+        const POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+        m_focusedBox->OnLButtonDblClk(hWnd, rawPt, scale, repaint);
     }
 }
 
@@ -313,7 +316,8 @@ void SystemIconEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& rep
 {
     if (m_focusedBox)
     {
-        m_focusedBox->OnLButtonUp(hWnd, pt, scale, repaint);
+        const POINT rawPt{ (int)(pt.x * scale), (int)(pt.y * scale) };
+        m_focusedBox->OnLButtonUp(hWnd, rawPt, scale, repaint);
     }
 }
 

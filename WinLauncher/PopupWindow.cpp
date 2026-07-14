@@ -58,6 +58,10 @@ static const UINT_PTR PLUGIN_SEARCH_TIMER_ID = 5;
 static const UINT_PTR FILE_SELECTION_TIMER_ID = 6;
 static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
 static const UINT PLUGIN_SEARCH_REFRESH_MS = 120;
+// Only snap after the spring has become visually stationary.  A larger
+// threshold makes the last visible pixels jump instead of settling smoothly.
+static constexpr float POPUP_PAGE_SETTLE_DISTANCE_PX = 0.75f;
+static constexpr float POPUP_PAGE_SETTLE_VELOCITY_PX_PER_SECOND = 36.0f;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
 static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
@@ -2510,7 +2514,14 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
         else if (finalError < -halfN) finalError += (float)numPages;
     }
 
-    if (std::abs(finalError) < 0.002f && std::abs(m_scrollVelocity) < 0.05f)
+    RECT clientRect{};
+    GetClientRect(hWnd, &clientRect);
+    const float pageWidthPx = (std::max)(1.0f, static_cast<float>(clientRect.right - clientRect.left));
+    const float remainingDistancePx = std::abs(finalError) * pageWidthPx;
+    const float remainingVelocityPx = std::abs(m_scrollVelocity) * pageWidthPx;
+
+    if (remainingDistancePx <= POPUP_PAGE_SETTLE_DISTANCE_PX &&
+        remainingVelocityPx <= POPUP_PAGE_SETTLE_VELOCITY_PX_PER_SECOND)
     {
         m_scrollPosition = target;
         m_scrollVelocity = 0.0f;
@@ -2521,6 +2532,8 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
         m_viewModel->UpdateAnimation();
 
     InvalidateRect(hWnd, nullptr, FALSE);
+    // Present each timer step instead of allowing the final spring frames to
+    // be coalesced with the next message-loop pass.
     UpdateWindow(hWnd);
 
     double frameElapsedMs = (GetTimeInSeconds() - frameStart) * 1000.0;
