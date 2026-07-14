@@ -738,6 +738,9 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 {
     HWND prevActive = GetForegroundWindow();
     double showStart = GetTimeInSeconds();
+    double dataReadyMs = 0.0;
+    double windowReadyMs = 0.0;
+    double firstFrameMs = 0.0;
 
     if (prevActive && prevActive != this->GetHWND())
     {
@@ -837,6 +840,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     popupCenter.y = targetY + h_px / 2;
 
     this->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
+    dataReadyMs = (GetTimeInSeconds() - showStart) * 1000.0;
 
     // 3. Handle window (create or reposition) and ensure stable render target.
     // Keep hidden windows hidden until the first frame is ready, otherwise a
@@ -892,6 +896,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 
     if (this->GetHWND())
     {
+        const double windowReadyStart = GetTimeInSeconds();
         if (this->m_rt)
         {
             this->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
@@ -955,6 +960,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         }
  
         this->StartAutoHideTimer();
+        windowReadyMs = (GetTimeInSeconds() - windowReadyStart) * 1000.0;
 
         const bool backgroundRefreshNeeded = this->m_bgCaptureDirty || this->m_bgCompositeDirty || !this->m_bgFinal;
         double bgElapsedMs = 0.0;
@@ -980,9 +986,11 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 
         if (needsShow)
         {
+            const double firstFrameStart = GetTimeInSeconds();
             this->PrepareOpenTransitionFrame();
             this->DoPaint();
             ShowWindow(this->GetHWND(), SW_SHOWNOACTIVATE);
+            firstFrameMs = (GetTimeInSeconds() - firstFrameStart) * 1000.0;
         }
         else
         {
@@ -997,11 +1005,16 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             this->m_viewModel->NotifyPopupShown();
 
         double showElapsedMs = (GetTimeInSeconds() - showStart) * 1000.0;
+        LOG_G_INFO_NODE(
+            L"ui.popup", L"show_timing",
+            L"total_ms=%.2f data_ms=%.2f window_ms=%.2f background_ms=%.2f first_frame_ms=%.2f cold=%d",
+            showElapsedMs, dataReadyMs, windowReadyMs, bgElapsedMs, firstFrameMs, needsShow ? 1 : 0);
         if (showElapsedMs >= POPUP_SLOW_SHOW_MS)
         {
-            LOG_G_WORNING(
-                L"PopupWindow perf: Show took %.2fms pages=%d dockItems=%d window=%dx%d",
-                showElapsedMs,
+            LOG_G_WARNING_NODE(
+                L"ui.popup", L"show_slow",
+                L"total_ms=%.2f data_ms=%.2f window_ms=%.2f background_ms=%.2f first_frame_ms=%.2f pages=%d dock_items=%d size=%dx%d",
+                showElapsedMs, dataReadyMs, windowReadyMs, bgElapsedMs, firstFrameMs,
                 (int)this->m_pages.size(),
                 (int)this->m_dockPage.shortcuts.size(),
                 w_px,
@@ -2532,9 +2545,9 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
         m_viewModel->UpdateAnimation();
 
     InvalidateRect(hWnd, nullptr, FALSE);
-    // Present each timer step instead of allowing the final spring frames to
-    // be coalesced with the next message-loop pass.
-    UpdateWindow(hWnd);
+    // The normal paint queue keeps frame work bounded.  Forcing a synchronous
+    // paint here can re-enter the legacy glass path and turn a 16 ms frame
+    // into a visible hitch on mixed-DPI displays.
 
     double frameElapsedMs = (GetTimeInSeconds() - frameStart) * 1000.0;
     double dtMs = (double)dt * 1000.0;

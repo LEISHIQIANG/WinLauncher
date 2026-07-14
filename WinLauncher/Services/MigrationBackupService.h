@@ -10,5 +10,4 @@ public:
     MigrationResult Restore(const std::wstring& zipPath) const;
 private:
     MigrationResult ExportToPath(const std::wstring& destPath) const;
-    static bool RunPowerShell(const std::wstring& command);
 };

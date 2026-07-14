@@ -1,40 +1,116 @@
 #include "DiagnosticService.h"
+#include "ArchiveUtility.h"
 #include "ConfigPath.h"
 #include "../App/Logger.h"
 #include "../version.h"
+
 #include <Windows.h>
-#include <fstream>
 #include <filesystem>
-#include <vector>
-#include <deque>
+#include <fstream>
+#include <map>
+
+namespace
+{
+    std::wstring Timestamp()
+    {
+        SYSTEMTIME now{};
+        GetLocalTime(&now);
+        wchar_t value[32]{};
+        swprintf_s(value, L"%04u%02u%02u-%02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+        return value;
+    }
+
+    // Diagnostic archives deliberately expose only stable identifiers and counts.
+    // Message text may contain paths, commands, URLs, selected files, or user input.
+    std::map<std::wstring, unsigned int> ReadEventCounts()
+    {
+        std::map<std::wstring, unsigned int> counts;
+        const std::filesystem::path log = std::filesystem::path(ConfigPath::GetUserLogDirectory()) / L"current.jsonl";
+        std::wifstream input(log);
+        std::wstring line;
+        while (std::getline(input, line))
+        {
+            const auto componentAt = line.find(L"\"component\":\"");
+            const auto eventAt = line.find(L"\"event\":\"");
+            const auto levelAt = line.find(L"\"level\":\"");
+            if (componentAt == std::wstring::npos || eventAt == std::wstring::npos || levelAt == std::wstring::npos)
+                continue;
+
+            const auto readValue = [&](size_t start) {
+                start = line.find(L'\"', start) + 1;
+                const size_t end = line.find(L'\"', start);
+                return end == std::wstring::npos ? std::wstring{} : line.substr(start, end - start);
+            };
+            const std::wstring component = readValue(componentAt + 12);
+            const std::wstring event = readValue(eventAt + 8);
+            const std::wstring level = readValue(levelAt + 8);
+            if (!component.empty() && !event.empty() && !level.empty())
+                ++counts[level + L":" + component + L":" + event];
+        }
+        return counts;
+    }
+
+    std::wstring JsonEscape(const std::wstring& value)
+    {
+        std::wstring escaped;
+        for (wchar_t ch : value)
+        {
+            if (ch == L'\\' || ch == L'\"') escaped += L'\\';
+            escaped += ch;
+        }
+        return escaped;
+    }
+}
 
 DiagnosticService::DiagnosticService(Logger* logger) : m_logger(logger) {}
-std::wstring DiagnosticService::GetDirectory() const { auto p=ConfigPath::GetUserDataDirectory()+L"\\diagnostics"; ConfigPath::EnsureDirectoryExists(p); return p; }
-std::wstring DiagnosticService::Sanitize(const std::wstring& value) { std::wstring result=value; wchar_t user[MAX_PATH]{}; GetEnvironmentVariableW(L"USERPROFILE",user,MAX_PATH); if (*user) { size_t p; while((p=result.find(user))!=std::wstring::npos) result.replace(p,wcslen(user),L"<user-path>"); } return result; }
+
+std::wstring DiagnosticService::GetDirectory() const
+{
+    const auto directory = ConfigPath::GetUserDataDirectory() + L"\\diagnostics";
+    ConfigPath::EnsureDirectoryExists(directory);
+    return directory;
+}
+
 bool DiagnosticService::CreatePackage(const std::wstring& destPath, std::wstring& outError) const
 {
-    wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st); swprintf_s(stamp,L"%04u%02u%02u-%02u%02u%02u",st.wYear,st.wMonth,st.wDay,st.wHour,st.wMinute,st.wSecond);
-    const std::wstring root=GetDirectory(), staging=root+L"\\package-"+stamp, json=staging+L"\\diagnostic.json";
-    ConfigPath::EnsureDirectoryExists(staging);
+    outError.clear();
+    const std::wstring staging = GetDirectory() + L"\\package-" + Timestamp();
+    const std::filesystem::path manifestPath = std::filesystem::path(staging) / L"diagnostic.json";
     auto cleanup = [&]() { std::error_code ignored; std::filesystem::remove_all(staging, ignored); };
-    std::wofstream manifest(json); if (!manifest) { cleanup(); outError=L"无法创建诊断文件"; return false; }
-    SYSTEM_INFO systemInfo{}; GetNativeSystemInfo(&systemInfo);
-    manifest << L"{\"schemaVersion\":1,\"app\":{\"version\":\"" << WINLAUNCHER_VERSION_WSTR << L"\"},\"environment\":{\"architecture\":" << systemInfo.wProcessorArchitecture << L"},\"recentEvents\":[],\"crashes\":[],\"plugins\":[],\"sanitization\":\"paths and user content removed\"}"; manifest.close();
-    const auto log=ConfigPath::GetUserLogDirectory()+L"\\current.jsonl";
-    if (std::filesystem::exists(log))
+    if (!ConfigPath::EnsureDirectoryExists(staging))
     {
-        std::wifstream in(log); std::deque<std::wstring> recent; std::wstring line;
-        while (std::getline(in, line)) { recent.push_back(Sanitize(line)); if (recent.size() > 2000) recent.pop_front(); }
-        std::wofstream out(staging+L"\\recent.jsonl"); for (const auto& entry : recent) out << entry << L"\n";
+        outError = L"无法创建诊断临时目录";
+        return false;
     }
-    if (m_logger)
+
+    std::wofstream manifest(manifestPath);
+    if (!manifest)
     {
-        std::ofstream debug(staging+L"\\debug-ring.jsonl", std::ios::binary | std::ios::trunc);
-        for (const auto& entry : m_logger->GetRecentDebugJsonLines()) debug << entry;
+        cleanup();
+        outError = L"无法创建诊断文件";
+        return false;
     }
-    std::wstring command=L"powershell.exe -NoProfile -NonInteractive -Command \"Compress-Archive -Path '"+staging+L"\\*' -DestinationPath '"+destPath+L"' -Force\"";
-    STARTUPINFOW si{sizeof(si)}; PROCESS_INFORMATION pi{}; std::vector<wchar_t> cmd(command.begin(),command.end()); cmd.push_back(0);
-    if (!CreateProcessW(nullptr,cmd.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)) { cleanup(); outError=L"无法启动本地压缩工具"; return false; }
-    WaitForSingleObject(pi.hProcess,30000); DWORD code=1; GetExitCodeProcess(pi.hProcess,&code); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); cleanup();
-    if(code!=0 || !std::filesystem::exists(destPath)) { outError=L"诊断包压缩失败"; return false; } LOG_INFO(m_logger,L"Diagnostic package created: %s",destPath.c_str()); return true;
+    SYSTEM_INFO systemInfo{};
+    GetNativeSystemInfo(&systemInfo);
+    manifest << L"{\"schemaVersion\":2,\"app\":{\"version\":\"" << WINLAUNCHER_VERSION_WSTR
+             << L"\"},\"environment\":{\"architecture\":" << systemInfo.wProcessorArchitecture
+             << L"},\"eventCounts\":[";
+    bool first = true;
+    for (const auto& [key, count] : ReadEventCounts())
+    {
+        if (!first) manifest << L",";
+        first = false;
+        manifest << L"{\"key\":\"" << JsonEscape(key) << L"\",\"count\":" << count << L"}";
+    }
+    manifest << L"],\"privacy\":\"metadata-only; no raw logs or user content\"}";
+    manifest.close();
+
+    if (!ArchiveUtility::CompressDirectoryContents(staging, destPath, 30000, outError))
+    {
+        cleanup();
+        return false;
+    }
+    cleanup();
+    LOG_INFO(m_logger, L"Diagnostic metadata package created.");
+    return true;
 }

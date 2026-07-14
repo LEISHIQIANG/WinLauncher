@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "BatchLaunchDialog.h"
+#include "DialogShell.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include <windowsx.h>
@@ -16,35 +17,8 @@ static const int DLG_H = (int)(Y_BUTTONS + 45.0f);
 
 static BatchLaunchDialog* g_bldInstance = nullptr;
 
-struct BatchDialogBrushCacheEntry
-{
-    D2D1_COLOR_F color;
-    ComPtr<ID2D1SolidColorBrush> brush;
-};
-static std::vector<BatchDialogBrushCacheEntry> g_batchDialogBrushCache;
-
-static ComPtr<ID2D1SolidColorBrush> GetOrCreateDialogBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color)
-{
-    for (auto& entry : g_batchDialogBrushCache)
-    {
-        if (entry.color.r == color.r && entry.color.g == color.g &&
-            entry.color.b == color.b && entry.color.a == color.a)
-        {
-            return entry.brush;
-        }
-    }
-
-    ComPtr<ID2D1SolidColorBrush> brush;
-    if (rt)
-    {
-        rt->CreateSolidColorBrush(color, &brush);
-        if (brush)
-        {
-            g_batchDialogBrushCache.push_back({ color, brush });
-        }
-    }
-    return brush;
-}
+static DialogShell::BrushCache g_batchDialogBrushCache;
+static ComPtr<ID2D1SolidColorBrush> GetOrCreateDialogBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color) { return g_batchDialogBrushCache.Get(rt, color); }
 
 BatchLaunchDialog::BatchLaunchDialog(const wchar_t* title, const InitParams& init, AppContext* ctx)
     : m_title(title)
@@ -156,7 +130,7 @@ bool BatchLaunchDialog::Show(HWND parent, const wchar_t* title,
         SetForegroundWindow(parent);
     }
 
-    g_batchDialogBrushCache.clear();
+    g_batchDialogBrushCache.Clear();
     return ok;
 }
 
@@ -195,7 +169,7 @@ LRESULT BatchLaunchDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LP
         KillTimer(hWnd, 0x999);
         KillTimer(hWnd, 0x998);
         m_form.Destroy();
-        g_batchDialogBrushCache.clear();
+        g_batchDialogBrushCache.Clear();
         PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0);
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         return 0;
@@ -434,7 +408,7 @@ void BatchLaunchDialog::UpdateChildLayout()
 
 bool BatchLaunchDialog::HitTestRect(POINT pt, const D2D1_RECT_F& rect)
 {
-    return (pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom);
+    return DialogShell::HitTestRect(pt, rect);
 }
 
 bool BatchLaunchDialog::HitTestCloseButton(POINT pt)

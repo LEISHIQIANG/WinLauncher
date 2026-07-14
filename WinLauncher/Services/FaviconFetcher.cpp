@@ -608,20 +608,14 @@ namespace
         if (limit <= 0) return L"";
 
         using TmpResult = std::pair<int, std::wstring>;
-        std::vector<std::future<TmpResult>> futures;
-        futures.reserve(limit);
+        // FetchFavicon already runs on BackgroundTaskService for editor and
+        // batch operations.  Do not create nested unowned async workers here:
+        // a multi-select operation would otherwise multiply worker count.
+        std::vector<TmpResult> results;
+        results.reserve(limit);
         for (int i = 0; i < limit; ++i)
         {
-            std::wstring candidateUrl = urls[i];
-            futures.push_back(std::async(std::launch::async,
-                [i, candidateUrl]() -> TmpResult { return { i, DownloadToTempFile(candidateUrl) }; }));
-        }
-
-        std::vector<TmpResult> results(futures.size(), { -1, L"" });
-        for (auto& future : futures)
-        {
-            try { auto result = future.get(); results[result.first] = std::move(result); }
-            catch (...) {}
+            results.push_back({ i, DownloadToTempFile(urls[i]) });
         }
 
         for (const auto& result : results)
@@ -976,7 +970,8 @@ namespace FaviconFetcher
             if (!fetchedPath.empty()) return fetchedPath;
         }
 
-        // 7. Strategy C: common well-known icon paths (probe in parallel with futures)
+        // 7. Strategy C: common well-known icon paths.  This stays within the
+        // caller-owned background task instead of opening nested async work.
         std::wstring origin = ExtractOrigin(url);
         if (!origin.empty())
         {
@@ -985,26 +980,12 @@ namespace FaviconFetcher
             for (int i = 0; k_CommonIconPaths[i] != nullptr; ++i)
                 commonUrls.push_back(origin + k_CommonIconPaths[i]);
 
-            // Launch parallel probes
             using TmpResult = std::pair<int /*index*/, std::wstring /*tmpPath*/>;
-            std::vector<std::future<TmpResult>> futures;
+            std::vector<TmpResult> results;
+            results.reserve(commonUrls.size());
             for (int i = 0; i < (int)commonUrls.size(); ++i)
             {
-                std::wstring probeUrl = commonUrls[i];
-                futures.push_back(std::async(std::launch::async,
-                    [i, probeUrl]() -> TmpResult
-                    {
-                        std::wstring tmp = DownloadToTempFile(probeUrl);
-                        return { i, tmp };
-                    }));
-            }
-
-            // Collect results in original priority order
-            std::vector<TmpResult> results(futures.size(), { -1, L"" });
-            for (auto& f : futures)
-            {
-                try { auto r = f.get(); results[r.first] = r; }
-                catch (...) {}
+                results.push_back({ i, DownloadToTempFile(commonUrls[i]) });
             }
 
             for (auto& r : results)

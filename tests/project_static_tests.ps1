@@ -108,6 +108,9 @@ Add-TestResult `
 
 $urlEditSource = Read-RepoFile "WinLauncher\Config\UrlEditForm.cpp"
 $faviconFetcherSource = Read-RepoFile "WinLauncher\Services\FaviconFetcher.cpp"
+$diagnosticSource = Read-RepoFile "WinLauncher\Services\DiagnosticService.cpp"
+$migrationSource = Read-RepoFile "WinLauncher\Services\MigrationBackupService.cpp"
+$folderWatcherSource = Read-RepoFile "WinLauncher\Services\FolderWatcher.cpp"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
@@ -144,6 +147,26 @@ Add-TestResult `
         $faviconFetcherSource -match 'HasOpaqueNeutralCanvas'
     ) `
     -Detail "Favicon fetching must try layered fallbacks while preserving supported source formats and alpha"
+
+Add-TestResult `
+    -Name "Favicon work stays inside the bounded background task service" `
+    -Passed ($faviconFetcherSource -notmatch 'std::async\s*\(') `
+    -Detail "Favicon probing must not create nested unmanaged async workers"
+
+Add-TestResult `
+    -Name "Diagnostics export metadata only" `
+    -Passed ($diagnosticSource -match 'schemaVersion\\\":2' -and $diagnosticSource -notmatch 'debug-ring\.jsonl' -and $diagnosticSource -notmatch 'recent\.jsonl' -and $diagnosticSource -match 'ArchiveUtility::CompressDirectoryContents') `
+    -Detail "Diagnostic ZIPs must not contain raw logs, paths, commands, or user content"
+
+Add-TestResult `
+    -Name "Migration validates ZIP paths before extraction and preserves merge semantics" `
+    -Passed ($migrationSource -match 'ValidateMigrationZip\(zipPath' -and $migrationSource -match 'ArchiveUtility::ExpandArchive' -and $migrationSource -match '本机额外数据已保留' -and $migrationSource -match 'kMaxMigrationUncompressedBytes') `
+    -Detail "Migration imports must reject unsafe ZIPs before extraction and only merge supplied data"
+
+Add-TestResult `
+    -Name "Folder watcher has per-folder backoff and recovery" `
+    -Passed ($folderWatcherSource -match 'kRecoveryDelaysMs\[\] = \{ 5000, 15000, 60000 \}' -and $folderWatcherSource -match 'folder_unavailable' -and $folderWatcherSource -match 'folder_recovered') `
+    -Detail "Missing sync folders must back off independently and recover without log storms"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
 $configViewModelSource = Read-RepoFile "WinLauncher\ViewModel\ConfigViewModel.h"

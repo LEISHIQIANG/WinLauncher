@@ -17,7 +17,8 @@
  *      %APPDATA%\WinLauncher\config\favicons\<sha1-of-url>.<format>.
  *      PNG and ICO alpha channels are preserved; no background is added.
  *
- * All network I/O uses WinInet and is safe to call from a worker thread.
+ * All network I/O runs inside the caller-owned BackgroundTaskService worker;
+ * this module never creates nested fire-and-forget workers.
  */
 
 #include <windows.h>

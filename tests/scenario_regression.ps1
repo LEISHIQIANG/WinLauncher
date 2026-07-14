@@ -15,5 +15,9 @@ if ($popup -notmatch 'RecordAccepted' -or $popup -notmatch 'prefixScore') { thro
 $migration = Get-Content (Join-Path $root 'WinLauncher/Services/MigrationBackupService.cpp') -Raw
 if ($migration -notmatch 'Preflight' -or $migration -notmatch 'manifest.json' -or $migration -notmatch 'pluginsIncluded') { throw 'Migration safety regression: preflight/manifest boundary missing.' }
 $diagnostics = Get-Content (Join-Path $root 'WinLauncher/Services/DiagnosticService.cpp') -Raw
-if ($diagnostics -notmatch 'Sanitize' -or $diagnostics -notmatch 'Compress-Archive' -or $diagnostics -match 'MiniDump') { throw 'Diagnostic privacy regression.' }
+$archiveUtility = Get-Content (Join-Path $root 'WinLauncher/Services/ArchiveUtility.cpp') -Raw
+if ($diagnostics -notmatch 'schemaVersion\\":2' -or
+    $diagnostics -match 'debug-ring\.jsonl|recent\.jsonl|MiniDump' -or
+    $diagnostics -notmatch 'ArchiveUtility::CompressDirectoryContents' -or
+    $archiveUtility -notmatch 'PowerShellSingleQuoted|WaitForSingleObject|file_size') { throw 'Diagnostic privacy regression.' }
 Write-Host 'Scenario regression checks passed.'

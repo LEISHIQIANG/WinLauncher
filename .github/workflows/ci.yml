@@ -16,6 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run maintenance checks, static tests, and Release build
+      - name: Run maintenance checks, static tests, Release build, and plugin packages
         shell: pwsh
-        run: .\scripts\ci_check.ps1 -Configuration Release -Platform x64
+        run: .\scripts\ci_check.ps1 -Configuration Release -Platform x64 -BuildPlugins

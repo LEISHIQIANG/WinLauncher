@@ -38,6 +38,8 @@
     <ClCompile Include="..\..\WinLauncher\App\BackgroundTaskService.cpp" />
     <ClCompile Include="..\..\WinLauncher\App\CrashReporter.cpp" />
     <ClCompile Include="..\..\WinLauncher\App\Logger.cpp" />
+    <ClCompile Include="..\..\WinLauncher\Services\ArchiveUtility.cpp" />
+    <ClCompile Include="..\..\WinLauncher\Services\MigrationBackupService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\WinLauncher\App\BackgroundTaskService.h" />
@@ -45,6 +47,8 @@
     <ClInclude Include="..\..\WinLauncher\App\CrashReporter.h" />
     <ClInclude Include="..\..\WinLauncher\App\EventBus.h" />
     <ClInclude Include="..\..\WinLauncher\App\Logger.h" />
+    <ClInclude Include="..\..\WinLauncher\Services\ArchiveUtility.h" />
+    <ClInclude Include="..\..\WinLauncher\Services\MigrationBackupService.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

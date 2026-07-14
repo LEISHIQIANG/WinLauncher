@@ -102,6 +102,7 @@
     <ClCompile Include="Services\UsageHistoryStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\DiagnosticService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\MigrationBackupService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\ArchiveUtility.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\CommandExecutionService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="UI\WindowCoordinator.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="UI\UserInteractionService.cpp"><Filter>源文件</Filter></ClCompile>
@@ -362,6 +363,7 @@
     <ClInclude Include="Config\MacroDialog.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Config\DialogShell.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\MacroEditForm.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -434,6 +436,7 @@
     <ClInclude Include="Services\UsageHistoryStore.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\DiagnosticService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\MigrationBackupService.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Services\ArchiveUtility.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\SystemIconService.h">
       <Filter>头文件</Filter>
     </ClInclude>

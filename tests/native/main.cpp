@@ -3,11 +3,14 @@
 #include "../../WinLauncher/App/EventBus.h"
 #include "../../WinLauncher/App/Logger.h"
 #include "../../WinLauncher/App/InputHookThreadStop.h"
+#include "../../WinLauncher/Services/ArchiveUtility.h"
+#include "../../WinLauncher/Services/MigrationBackupService.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -40,6 +43,36 @@ static bool HasNonEmptyCrashArtifacts(const std::wstring& directory)
         if (entry.path().extension() == L".txt") text = true;
     }
     return dump && text;
+}
+
+static void AppendU16(std::vector<unsigned char>& bytes, uint16_t value)
+{
+    bytes.push_back(static_cast<unsigned char>(value & 0xff));
+    bytes.push_back(static_cast<unsigned char>((value >> 8) & 0xff));
+}
+
+static void AppendU32(std::vector<unsigned char>& bytes, uint32_t value)
+{
+    AppendU16(bytes, static_cast<uint16_t>(value & 0xffff));
+    AppendU16(bytes, static_cast<uint16_t>((value >> 16) & 0xffff));
+}
+
+static void WriteCentralDirectoryOnlyZip(const std::wstring& path, const std::string& name)
+{
+    std::vector<unsigned char> bytes;
+    AppendU32(bytes, 0x02014b50);
+    AppendU16(bytes, 20); AppendU16(bytes, 20); AppendU16(bytes, 0); AppendU16(bytes, 0);
+    AppendU16(bytes, 0); AppendU16(bytes, 0); AppendU32(bytes, 0); AppendU32(bytes, 0); AppendU32(bytes, 0);
+    AppendU16(bytes, static_cast<uint16_t>(name.size())); AppendU16(bytes, 0); AppendU16(bytes, 0);
+    AppendU16(bytes, 0); AppendU16(bytes, 0); AppendU32(bytes, 0); AppendU32(bytes, 0);
+    bytes.insert(bytes.end(), name.begin(), name.end());
+    const uint32_t centralSize = static_cast<uint32_t>(bytes.size());
+    AppendU32(bytes, 0x06054b50);
+    AppendU16(bytes, 0); AppendU16(bytes, 0); AppendU16(bytes, 1); AppendU16(bytes, 1);
+    AppendU32(bytes, centralSize); AppendU32(bytes, 0); AppendU16(bytes, 0);
+    FILE* file = _wfopen(path.c_str(), L"wb");
+    fwrite(bytes.data(), 1, bytes.size(), file);
+    fclose(file);
 }
 
 static DWORD WINAPI CooperativeHookLikeThread(LPVOID)
@@ -139,6 +172,34 @@ int wmain(int argc, wchar_t** argv)
         if (called != 1) return Fail(L"event bus did not skip unsubscribed callback or isolate exception");
     }
 
+    {
+        MigrationBackupService migration;
+        const std::wstring maliciousZip = temp + L"\\migration-traversal.zip";
+        WriteCentralDirectoryOnlyZip(maliciousZip, "../outside.txt");
+        if (migration.Preflight(maliciousZip).ok)
+            return Fail(L"migration preflight accepted a traversal ZIP before extraction");
+        const std::wstring allowedZip = temp + L"\\migration-manifest.zip";
+        WriteCentralDirectoryOnlyZip(allowedZip, "manifest.json");
+        if (!migration.Preflight(allowedZip).ok)
+            return Fail(L"migration preflight rejected an allowed central-directory entry");
+    }
+
+    {
+        const fs::path quotedSource = fs::path(temp) / L"archive's-source";
+        const fs::path quotedZip = fs::path(temp) / L"export's.zip";
+        const fs::path quotedExtract = fs::path(temp) / L"archive's-expanded";
+        fs::create_directories(quotedSource);
+        std::ofstream(quotedSource / L"metadata.txt") << "archive escaping regression";
+
+        std::wstring archiveError;
+        if (!ArchiveUtility::CompressDirectoryContents(quotedSource.wstring(), quotedZip.wstring(), 10000, archiveError))
+            return Fail(L"archive export failed for a path containing an apostrophe");
+        if (!ArchiveUtility::ExpandArchive(quotedZip.wstring(), quotedExtract.wstring(), 10000, archiveError))
+            return Fail(L"archive import failed for a path containing an apostrophe");
+        if (!fs::exists(quotedExtract / L"metadata.txt"))
+            return Fail(L"archive round trip lost a file for a path containing an apostrophe");
+    }
+
     std::wstring crashDir = temp + L"\\crash";
     fs::create_directories(crashDir);
     wchar_t exePath[MAX_PATH]{};
@@ -154,6 +215,6 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(process.hProcess);
     if (!HasNonEmptyCrashArtifacts(crashDir)) return Fail(L"crash reporter did not create non-empty dump and metadata");
 
-    fwprintf(stdout, L"[PASS] native async, callback, and crash tests\n");
+    fwprintf(stdout, L"[PASS] native async, callback, crash, migration ZIP, and archive escaping tests\n");
     return 0;
 }

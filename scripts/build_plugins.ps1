@@ -54,7 +54,7 @@ if ($IncludeSamples) {
     $sampleRoot = Join-Path $repoRoot "SDK\samples\hello_world"
     $sampleScript = Join-Path $sampleRoot "package.ps1"
     $sampleManifest = Join-Path $sampleRoot "plugin.json"
-    if (Test-Path -LiteralPath $sampleScript -and Test-Path -LiteralPath $sampleManifest) {
+    if ((Test-Path -LiteralPath $sampleScript) -and (Test-Path -LiteralPath $sampleManifest)) {
         $manifest = Get-Content -LiteralPath $sampleManifest -Raw | ConvertFrom-Json
         $pluginId = [string]$manifest.id
         if ($requested.Count -eq 0 -or

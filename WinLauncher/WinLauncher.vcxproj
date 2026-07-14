@@ -188,6 +188,7 @@
     <ClCompile Include="Services\DiagnosticService.cpp" />
     <ClCompile Include="Services\MigrationBackupService.cpp" />
     <ClCompile Include="Services\CommandExecutionService.cpp" />
+    <ClCompile Include="Services\ArchiveUtility.cpp" />
     <ClCompile Include="UI\WindowCoordinator.cpp" />
     <ClCompile Include="UI\UserInteractionService.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
@@ -236,6 +237,7 @@
     <ClInclude Include="Contracts\IWindowCoordinator.h" />
     <!-- Services Layer -->
     <ClInclude Include="Services\CommandExecutionService.h" />
+    <ClInclude Include="Services\ArchiveUtility.h" />
     <ClInclude Include="Services\AppSceneMatcher.h" />
     <ClInclude Include="Services\ConfigPath.h" />
     <ClInclude Include="Services\IniConfigRepository.h" />
@@ -298,6 +300,7 @@
     <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginABI.h" />
     <ClInclude Include="SDK\include\WinLauncher\WinLauncherPluginCpp.h" />
     <ClInclude Include="Config\MacroDialog.h" />
+    <ClInclude Include="Config\DialogShell.h" />
     <ClInclude Include="Config\MacroEditForm.h" />
     <ClInclude Include="Config\BatchLaunchDialog.h" />
     <ClInclude Include="Config\BatchLaunchEditForm.h" />
