@@ -22,7 +22,7 @@ function Add-TestResult {
 
 function Read-RepoFile {
     param([string]$RelativePath)
-    return Get-Content -LiteralPath (Join-Path $repoRoot $RelativePath) -Raw
+    return Get-Content -Encoding UTF8 -LiteralPath (Join-Path $repoRoot $RelativePath) -Raw
 }
 
 $updateHeader = Read-RepoFile "WinLauncher\Services\UpdateService.h"
@@ -101,7 +101,7 @@ Add-TestResult `
     -Passed (
         $popupSource -match 'PopupCommandDispatcher::IsBuiltin\(item\.pluginId, item\.pluginCommandId, L"winlauncher\.reload"\)' -and
         $popupSource -match 'silent reload result' -and
-        $popupSource -match 'ToastWindow::Show\(ok \? L"插件已重新加载"' -and
+        $popupSource -match ('ToastWindow::Show\(ok \? L"' + (-join [char[]]@(0x63D2, 0x4EF6, 0x5DF2, 0x91CD, 0x65B0, 0x52A0, 0x8F7D)) + '"') -and
         $popupSource -match 'ExecuteSlashCommand\(\s*L"", item\.pluginCommandId.*nullptr\)'
     ) `
     -Detail "The built-in reload slash command must refresh plugins without opening a command output panel"
@@ -160,7 +160,7 @@ Add-TestResult `
 
 Add-TestResult `
     -Name "Migration validates ZIP paths before extraction and preserves merge semantics" `
-    -Passed ($migrationSource -match 'ValidateMigrationZip\(zipPath' -and $migrationSource -match 'ArchiveUtility::ExpandArchive' -and $migrationSource -match '本机额外数据已保留' -and $migrationSource -match 'kMaxMigrationUncompressedBytes') `
+    -Passed ($migrationSource -match 'ValidateMigrationZip\(zipPath' -and $migrationSource -match 'ArchiveUtility::ExpandArchive' -and $migrationSource -match (-join [char[]]@(0x672C, 0x673A, 0x989D, 0x5916, 0x6570, 0x636E, 0x5DF2, 0x4FDD, 0x7559)) -and $migrationSource -match 'kMaxMigrationUncompressedBytes') `
     -Detail "Migration imports must reject unsafe ZIPs before extraction and only merge supplied data"
 
 Add-TestResult `
@@ -190,6 +190,10 @@ $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $shortcutPageHeader = Read-RepoFile "WinLauncher\Config\ShortcutPage.h"
 $commandEditFormSource = Read-RepoFile "WinLauncher\Config\CommandEditForm.cpp"
 $environmentDetectorSource = Read-RepoFile "WinLauncher\Services\EnvironmentDetector.cpp"
+$pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
+$shortcutManagerSource = Read-RepoFile "WinLauncher\ShortcutManager.cpp"
+$updateServiceSource = Read-RepoFile "WinLauncher\Services\UpdateService.cpp"
+$fileToolsSource = Read-RepoFile "plugins\file_tools\file_tools.cpp"
 
 Add-TestResult `
     -Name "Visible secondary windows retain shadows after deactivation" `
@@ -214,8 +218,8 @@ Add-TestResult `
     -Passed (
         $shortcutPageSource -match 'preserveMultiSelection' -and
         $shortcutPageSource -match 'selectedIndices\.size\(\) > 1' -and
-        $shortcutPageSource -match 'L"删除"' -and
-        $shortcutPageSource -match 'L"获取图标"' -and
+        $shortcutPageSource -match ('L"' + (-join [char[]]@(0x5220, 0x9664)) + '"') -and
+        $shortcutPageSource -match ('L"' + (-join [char[]]@(0x83B7, 0x53D6, 0x56FE, 0x6807)) + '"') -and
         $shortcutPageSource -match 'FetchSelectedUrlFavicons' -and
         $shortcutPageSource -match 'Model::ShortcutType::Url' -and
         $shortcutPageSource -match 'Submit\(\s*L"config\.url_favicon\.batch"' -and
@@ -262,7 +266,7 @@ Add-TestResult `
 Add-TestResult `
     -Name "Detached threads are isolated to bounded shutdown fallback" `
     -Passed (
-        @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "WinLauncher") -Recurse -Include *.cpp,*.h |
+        @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "WinLauncher") -Recurse -File -Include *.cpp,*.h |
             Where-Object { $_.Name -ne "BackgroundTaskService.cpp" } |
             Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -cmatch '\.detach\s*\(' }).Count -eq 0
     ) `
@@ -348,8 +352,8 @@ Add-TestResult `
         $popupSource -match 'configuredTimeout >= 1 && configuredTimeout <= 3600' -and
         $popupSource -match 'invalid timeout=.*using default 300 seconds' -and
         (
-            $popupSource -match '秒超时时间，进程已终止' -or
-            $commandExecSource -match '秒超时时间，进程已终止'
+            $popupSource -match (-join [char[]]@(0x79D2, 0x8D85, 0x65F6, 0x65F6, 0x95F4, 0xFF0C, 0x8FDB, 0x7A0B, 0x5DF2, 0x7EC8, 0x6B62)) -or
+            $commandExecSource -match (-join [char[]]@(0x79D2, 0x8D85, 0x65F6, 0x65F6, 0x95F4, 0xFF0C, 0x8FDB, 0x7A0B, 0x5DF2, 0x7EC8, 0x6B62))
         )
     ) `
     -Detail "Invalid command timeout settings must use the 300-second default and clearly label terminated commands"
@@ -381,7 +385,7 @@ Add-TestResult `
     -Passed (
         ([regex]::Matches($commandPanelSource, 'm_refreshRunning = false;')).Count -ge 2 -and
         ([regex]::Matches($commandPanelSource, 'm_workerGeneration = 0;')).Count -ge 2 -and
-        ([regex]::Matches($commandPanelSource, '后台任务繁忙，命令未启动')).Count -ge 2
+        ([regex]::Matches($commandPanelSource, (-join [char[]]@(0x540E, 0x53F0, 0x4EFB, 0x52A1, 0x7E41, 0x5FD9, 0xFF0C, 0x547D, 0x4EE4, 0x672A, 0x542F, 0x52A8)))).Count -ge 2
     ) `
     -Detail "A saturated task queue must not leave a reused or new command panel spinning indefinitely"
 
@@ -537,10 +541,70 @@ Add-TestResult `
     ) `
     -Detail "Plugin submissions, UI dispatch, and background tasks must stop before window teardown"
 
+Add-TestResult `
+    -Name "Single-instance Mutex guard is implemented" `
+    -Passed (
+        $applicationSource -match 'CreateMutexW\(' -and
+        $applicationSource -match 'ERROR_ALREADY_EXISTS' -and
+        $applicationSource -match 'ReleaseMutex\(m_hSingleInstanceMutex\)' -and
+        $applicationSource -match 'CloseHandle\(m_hSingleInstanceMutex\)'
+    ) `
+    -Detail "Process startup must check named Mutex to guard against concurrent startup race conditions"
+
+Add-TestResult `
+    -Name "Hook watchdog auto-recovery is wired" `
+    -Passed (
+        $applicationSource -match 'PostMessageW\(hWnd, AppMessages::RestartHook' -and
+        $applicationSource -match 'shouldRecoverHooks\s*=\s*false'
+    ) `
+    -Detail "The UI watchdog must trigger a hook restart when the UI thread becomes responsive again"
+
+Add-TestResult `
+    -Name "Direct2D device-loss recovery fallback is implemented" `
+    -Passed (
+        $glassWindowSource -match 'm_consecutiveDeviceLossCount\+\+' -and
+        ($glassWindowSource -match 'gpu_crash_recovery\.marker' -or
+         $glassWindowSource -match 'GetGpuCrashMarkerPath()') -and
+        $glassWindowSource -match 'm_consecutiveDeviceLossCount\s*=\s*0'
+    ) `
+    -Detail "D2D drawing target recreation must monitor consecutive failures and write the recovery marker"
+
+Add-TestResult `
+    -Name "Configuration and plugin writes are atomic" `
+    -Passed (
+        $shortcutManagerSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING' -and
+        $pluginManagerSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING'
+    ) `
+    -Detail "All file writes of user shortcuts and plugin settings must write to .tmp and swap atomically"
+
+Add-TestResult `
+    -Name "Update service download is atomic and has connection timeouts" `
+    -Passed (
+        $updateServiceSource -match 'INTERNET_OPTION_CONNECT_TIMEOUT' -and
+        $updateServiceSource -match 'INTERNET_OPTION_RECEIVE_TIMEOUT' -and
+        $updateServiceSource -match 'MoveFileExW\(tempTargetPath\.c_str\(\), targetPath\.c_str\(\), MOVEFILE_REPLACE_EXISTING'
+    ) `
+    -Detail "The update service download must configure WinINet timeouts and write to target path atomically"
+
+Add-TestResult `
+    -Name "File Tools plugin uses permissive file sharing" `
+    -Passed (
+        $fileToolsSource -match 'CreateFileW\(path\.c_str\(\),\s*GENERIC_READ,\s*FILE_SHARE_READ\s*\|\s*FILE_SHARE_WRITE\s*\|\s*FILE_SHARE_DELETE' -and
+        $fileToolsSource -match 'CreateFileW\(fullPath\.c_str\(\),\s*GENERIC_READ,\s*FILE_SHARE_READ\s*\|\s*FILE_SHARE_WRITE\s*\|\s*FILE_SHARE_DELETE'
+    ) `
+    -Detail "The File Tools hash and size operations must open files with read, write, and delete sharing"
+
+Add-TestResult `
+    -Name "Popup show grace period is implemented" `
+    -Passed (
+        $popupSource -match 'GetTimeInSeconds\(\)\s*-\s*m_showTimeSeconds\s*<\s*0\.5'
+    ) `
+    -Detail "PopupWindow must ignore auto-close triggers within 500ms grace period to prevent cold-startup close race conditions"
+
 $projectPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj"
 $filtersPath = Join-Path $repoRoot "WinLauncher\WinLauncher.vcxproj.filters"
-$projectXml = [xml](Get-Content -LiteralPath $projectPath)
-$filtersXml = [xml](Get-Content -LiteralPath $filtersPath)
+$projectXml = [xml](Get-Content -Encoding UTF8 -LiteralPath $projectPath -Raw)
+$filtersXml = [xml](Get-Content -Encoding UTF8 -LiteralPath $filtersPath -Raw)
 $projectNs = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
 $projectNs.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
 $filtersNs = New-Object System.Xml.XmlNamespaceManager($filtersXml.NameTable)
@@ -555,6 +619,56 @@ foreach ($kind in @("ClCompile", "ClInclude", "ResourceCompile", "Manifest")) {
         -Passed ($missing.Count -eq 0) `
         -Detail $(if ($missing.Count -eq 0) { "$($projectItems.Count) entries" } else { $missing -join ", " })
 }
+
+# --- P3-A 新增稳定性断言 ---
+
+# GPU 崩溃恢复标记路径必须通过 ConfigPath::GetGpuCrashMarkerPath() 统一获取，
+# 不得使用 GetEnvironmentVariableW("APPDATA",...) 手动拼接。
+$glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
+$applicationSource = Read-RepoFile "WinLauncher\App\Application.cpp"
+Add-TestResult `
+    -Name "GPU crash marker path uses ConfigPath (GlassWindow compositor)" `
+    -Passed ($glassWindowSource -match 'ConfigPath::GetGpuCrashMarkerPath\(\)' -and
+             ($glassWindowSource -notmatch 'GetEnvironmentVariableW\(L"APPDATA"[^)]*\)\s*\)\s*\{[\s\S]{0,200}gpu_crash_recovery')) `
+    -Detail "GlassWindow compositor-path GPU marker must use ConfigPath::GetGpuCrashMarkerPath()"
+
+Add-TestResult `
+    -Name "GPU crash marker path uses ConfigPath (GlassWindow legacy)" `
+    -Passed ($glassWindowSource -match 'ConfigPath::GetGpuCrashMarkerPath\(\)') `
+    -Detail "GlassWindow legacy-path GPU marker must use ConfigPath::GetGpuCrashMarkerPath()"
+
+Add-TestResult `
+    -Name "GPU crash marker path uses ConfigPath (Application startup)" `
+    -Passed ($applicationSource -match 'ConfigPath::GetGpuCrashMarkerPath\(\)' -and
+             $applicationSource -notmatch 'GetEnvironmentVariableW\(L"APPDATA"[^)]*gpu_crash') `
+    -Detail "Application::Run GPU marker detection must use ConfigPath::GetGpuCrashMarkerPath()"
+
+# RestartApp 定时器必须使用 AppMessages::RestartAppTimerId 命名常量，不得包含裸 0xDEAD
+Add-TestResult `
+    -Name "RestartApp timer uses named constant, no magic 0xDEAD" `
+    -Passed ($applicationSource -match 'AppMessages::RestartAppTimerId' -and
+             $applicationSource -notmatch 'SetTimer\s*\([^,]+,\s*0xDEAD\s*,') `
+    -Detail "SetTimer in RestartApp must use AppMessages::RestartAppTimerId"
+
+# AppMessages.h 必须声明 RestartAppTimerId 常量
+$appMessagesSource = Read-RepoFile "WinLauncher\App\AppMessages.h"
+Add-TestResult `
+    -Name "AppMessages.h declares RestartAppTimerId" `
+    -Passed ($appMessagesSource -match 'RestartAppTimerId') `
+    -Detail "AppMessages.h must define RestartAppTimerId for timer ID registration"
+
+# FaviconFetcher Strategy C 必须包含后台任务取消检查
+# Check using the pre-loaded $faviconFetcherSource variable
+$hasCancellation = $false
+if ($faviconFetcherSource) {
+    $hasCancellation = $faviconFetcherSource.Contains("IsCurrentTaskCancellationRequested")
+} else {
+    Write-Host "WARNING: faviconFetcherSource is null!"
+}
+Add-TestResult `
+    -Name "FaviconFetcher Strategy C checks cancellation before each download" `
+    -Passed ($hasCancellation) `
+    -Detail "FaviconFetcher common-icon-paths loop must check BackgroundTaskService::IsCurrentTaskCancellationRequested()"
 
 $failed = @($results | Where-Object { -not $_.Passed })
 foreach ($result in $results) {

@@ -52,4 +52,5 @@ private:
     };
     std::shared_ptr<UiHeartbeatState> m_uiHeartbeat;
     BackgroundTaskService::TaskHandle m_uiWatchdogTask;
+    HANDLE m_hSingleInstanceMutex = nullptr;
 };

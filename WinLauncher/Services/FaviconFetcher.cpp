@@ -8,6 +8,7 @@
 #define NOMINMAX
 #include "FaviconFetcher.h"
 #include "ConfigPath.h"
+#include "../App/BackgroundTaskService.h"
 
 #include <windows.h>
 #include <wininet.h>
@@ -985,6 +986,9 @@ namespace FaviconFetcher
             results.reserve(commonUrls.size());
             for (int i = 0; i < (int)commonUrls.size(); ++i)
             {
+                // 检查后台任务是否已被取消（如弹窗关闭、编辑器替换），避免阻塞线程
+                if (BackgroundTaskService::IsCurrentTaskCancellationRequested())
+                    break;
                 results.push_back({ i, DownloadToTempFile(commonUrls[i]) });
             }
 

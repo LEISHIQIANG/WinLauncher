@@ -362,6 +362,7 @@ PopupWindow::PopupWindow(AppContext* ctx)
     , m_hoveredTab(-1)
     , m_hoveredDock(-1)
     , m_cursorBlink(true)
+    , m_showTimeSeconds(0.0)
 {
     m_appCtx = ctx;
 
@@ -501,7 +502,7 @@ void PopupWindow::OnConfigChanged()
                 si.builtinIconId = vs.builtinIconId;
                 si.iconInvertLight = vs.iconInvertLight;
                 si.iconInvertDark = vs.iconInvertDark;
-                si.hIcon = ShortcutManager::GetShortcutIcon(si);
+                si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
                 pp.shortcuts.push_back(std::move(si));
             }
             m_pages.push_back(std::move(pp));
@@ -529,7 +530,7 @@ void PopupWindow::OnConfigChanged()
             si.builtinIconId = vs.builtinIconId;
             si.iconInvertLight = vs.iconInvertLight;
             si.iconInvertDark = vs.iconInvertDark;
-            si.hIcon = ShortcutManager::GetShortcutIcon(si);
+            si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
             m_dockPage.shortcuts.push_back(std::move(si));
         }
 
@@ -993,9 +994,15 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         SetActiveWindow(this->GetHWND());
         SetForegroundWindow(this->GetHWND());
         SetFocus(this->GetHWND());
+        this->m_showTimeSeconds = GetTimeInSeconds();
 
         if (this->m_viewModel)
             this->m_viewModel->NotifyPopupShown();
+
+        if (needsShow || sceneAppChanged)
+        {
+            this->RefreshIcons(false);
+        }
 
         double showElapsedMs = (GetTimeInSeconds() - showStart) * 1000.0;
         LOG_G_INFO_NODE(
@@ -1774,55 +1781,74 @@ void PopupWindow::EnsureIcons()
     }
 }
 
-void PopupWindow::RefreshIcons()
+void PopupWindow::RefreshIcons(bool clearExisting)
 {
     if (!m_rt || !m_appCtx || !m_appCtx->backgroundTasks) return;
     auto state = m_iconRefresh.Begin();
     if (!state) return;
     HWND hwnd = GetHWND();
 
-    // Keep the familiar refresh feedback: visible icons briefly return to
-    // placeholders, while expensive Shell extraction continues off the UI
-    // thread.  Off-screen pages retain their cache until they are visited.
-    const int pageCount = static_cast<int>(m_pages.size());
-    for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
+    if (clearExisting)
     {
-        int distance = std::abs(pageIndex - m_currentPage);
-        if (pageCount > 1) distance = (std::min)(distance, pageCount - distance);
-        if (distance > 1) continue;
-        auto& page = m_pages[pageIndex];
-        for (auto*& bitmap : page.iconBitmaps)
+        // Keep the familiar refresh feedback: visible icons briefly return to
+        // placeholders, while expensive Shell extraction continues off the UI
+        // thread.  Off-screen pages retain their cache until they are visited.
+        const int pageCount = static_cast<int>(m_pages.size());
+        for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
+        {
+            int distance = std::abs(pageIndex - m_currentPage);
+            if (pageCount > 1) distance = (std::min)(distance, pageCount - distance);
+            if (distance > 1) continue;
+            auto& page = m_pages[pageIndex];
+            for (auto*& bitmap : page.iconBitmaps)
+            {
+                if (bitmap) bitmap->Release();
+                bitmap = nullptr;
+            }
+            for (auto& shortcut : page.shortcuts)
+            {
+                if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
+                shortcut.hIcon = nullptr;
+            }
+        }
+        for (auto*& bitmap : m_dockPage.iconBitmaps)
         {
             if (bitmap) bitmap->Release();
             bitmap = nullptr;
         }
-        for (auto& shortcut : page.shortcuts)
+        for (auto& shortcut : m_dockPage.shortcuts)
         {
             if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
             shortcut.hIcon = nullptr;
         }
+        m_bmpBrushCache.clear();
+        EnsureIcons();
+        InvalidateRect(hwnd, nullptr, FALSE);
+        UpdateWindow(hwnd);
     }
-    for (auto*& bitmap : m_dockPage.iconBitmaps)
-    {
-        if (bitmap) bitmap->Release();
-        bitmap = nullptr;
-    }
-    for (auto& shortcut : m_dockPage.shortcuts)
-    {
-        if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
-        shortcut.hIcon = nullptr;
-    }
-    m_bmpBrushCache.clear();
-    EnsureIcons();
-    InvalidateRect(hwnd, nullptr, FALSE);
-    UpdateWindow(hwnd);
 
     std::vector<std::tuple<bool, size_t, size_t, RendShortcutInfo>> jobs;
     for (size_t pageIndex = 0; pageIndex < m_pages.size(); ++pageIndex)
+    {
         for (size_t shortcutIndex = 0; shortcutIndex < m_pages[pageIndex].shortcuts.size(); ++shortcutIndex)
-            jobs.emplace_back(false, pageIndex, shortcutIndex, m_pages[pageIndex].shortcuts[shortcutIndex]);
+        {
+            auto& sc = m_pages[pageIndex].shortcuts[shortcutIndex];
+            if (!clearExisting && sc.hIcon != nullptr) continue;
+            jobs.emplace_back(false, pageIndex, shortcutIndex, sc);
+        }
+    }
     for (size_t shortcutIndex = 0; shortcutIndex < m_dockPage.shortcuts.size(); ++shortcutIndex)
-        jobs.emplace_back(true, 0, shortcutIndex, m_dockPage.shortcuts[shortcutIndex]);
+    {
+        auto& sc = m_dockPage.shortcuts[shortcutIndex];
+        if (!clearExisting && sc.hIcon != nullptr) continue;
+        jobs.emplace_back(true, 0, shortcutIndex, sc);
+    }
+
+    if (jobs.empty())
+    {
+        m_iconRefresh.Complete();
+        return;
+    }
 
     m_iconRefreshTask = m_appCtx->backgroundTasks->Submit(L"popup.icon_refresh", BackgroundTaskService::Priority::Normal,
         [state, hwnd, jobs = std::move(jobs)](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) mutable {
@@ -2466,6 +2492,12 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             if (m_pinned) return 0;
             if (m_pressedShortcutKind != PressedShortcutKind::None) return 0;
 
+            // Grace period: do not close within 500ms of showing the popup
+            if (GetTimeInSeconds() - m_showTimeSeconds < 0.5)
+            {
+                return 0;
+            }
+
             POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
             bool outside = pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom;
@@ -2964,6 +2996,13 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         m_hovered = -1;
         if (!m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)
         {
+            // Grace period: do not close within 500ms of showing the popup
+            if (GetTimeInSeconds() - m_showTimeSeconds < 0.5)
+            {
+                ResetPressedShortcut();
+                return 0;
+            }
+
             POINT pt; GetCursorPos(&pt); ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
             if (pt.x < 0 || pt.y < 0 || pt.x >= cr.right || pt.y >= cr.bottom)

@@ -25,4 +25,7 @@ namespace AppMessages
     constexpr UINT ShowTrayMenu            = WM_APP + 0x99; // 延迟显示托盘菜单
     constexpr UINT CommandPanelAppend       = WM_APP + 0x310;
     constexpr UINT CommandPanelRefreshDone  = WM_APP + 0x311;
+
+    // 内部定时器 ID（与 WM_APP 消息不同，这些用于 SetTimer）
+    constexpr UINT_PTR RestartAppTimerId  = 0xDEAD; // RestartApp 延迟重启定时器
 }

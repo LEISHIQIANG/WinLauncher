@@ -67,11 +67,17 @@ int Application::Run()
     if (HandleHelperCommandLine())
         return 0;
 
-    // Check if an instance is already running
-    HWND hExisting = FindWindowW(L"WinLauncherMain", nullptr);
-    if (hExisting)
+    // Check if an instance is already running using a named Mutex
+    m_hSingleInstanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\WinLauncher_SingleInstance_Mutex");
+    if (m_hSingleInstanceMutex && GetLastError() == ERROR_ALREADY_EXISTS)
     {
-        PostMessageW(hExisting, AppMessages::ShowConfigWindow, 0, 0);
+        HWND hExisting = FindWindowW(L"WinLauncherMain", nullptr);
+        if (hExisting)
+        {
+            PostMessageW(hExisting, AppMessages::ShowConfigWindow, 0, 0);
+        }
+        CloseHandle(m_hSingleInstanceMutex);
+        m_hSingleInstanceMutex = nullptr;
         return 0;
     }
 
@@ -92,19 +98,34 @@ int Application::Run()
     auto heartbeat = m_uiHeartbeat;
     auto heartbeatLogger = m_appCtx->logger;
     m_uiWatchdogTask = m_appCtx->backgroundTasks->Submit(L"ui.watchdog", BackgroundTaskService::Priority::High,
-        [heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+        [hWnd = m_hMainWnd, heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             ULONGLONG lastWarning = 0;
+            bool shouldRecoverHooks = false;
             while (!cancellation->IsCancellationRequested() && !heartbeat->stopping)
             {
                 Sleep(250);
                 ULONGLONG now = GetTickCount64();
                 ULONGLONG last = heartbeat->lastTick.load();
-                if (last != 0 && now - last > 2000 && (lastWarning == 0 || now - lastWarning >= 10000))
+                if (last != 0)
                 {
-                    LOG_WARNING_NODE(heartbeatLogger, L"ui.health", L"stall", L"elapsed_ms=%llu",
-                        static_cast<unsigned long long>(now - last));
-                    CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(now - last) + L"ms");
-                    lastWarning = now;
+                    ULONGLONG elapsed = now - last;
+                    if (elapsed > 3500)
+                    {
+                        if (lastWarning == 0 || now - lastWarning >= 10000)
+                        {
+                            LOG_WARNING_NODE(heartbeatLogger, L"ui.health", L"stall", L"elapsed_ms=%llu",
+                                static_cast<unsigned long long>(elapsed));
+                            CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(elapsed) + L"ms");
+                            lastWarning = now;
+                        }
+                        shouldRecoverHooks = true;
+                    }
+                    else if (shouldRecoverHooks && elapsed <= 250)
+                    {
+                        LOG_INFO(heartbeatLogger, L"ui.health: UI thread unblocked after stall, posting hook recovery message");
+                        PostMessageW(hWnd, AppMessages::RestartHook, 0, 0);
+                        shouldRecoverHooks = false;
+                    }
                 }
             }
         });
@@ -117,23 +138,19 @@ int Application::Run()
 
     // Check GPU crash recovery marker from previous session
     {
-        wchar_t markerPath[MAX_PATH]{};
-        if (GetEnvironmentVariableW(L"APPDATA", markerPath, MAX_PATH))
+        const std::wstring markerPath = ConfigPath::GetGpuCrashMarkerPath();
+        HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hMarker != INVALID_HANDLE_VALUE)
         {
-            wcscat_s(markerPath, L"\\WinLauncher\\config\\gpu_crash_recovery.marker");
-            HANDLE hMarker = CreateFileW(markerPath, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-            if (hMarker != INVALID_HANDLE_VALUE)
+            CloseHandle(hMarker);
+            DeleteFileW(markerPath.c_str());
+            LOG_INFO(m_appCtx->logger, L"Application::Run: GPU crash recovery marker found — disabling hardware acceleration");
+            if (m_appCtx->configService)
             {
-                CloseHandle(hMarker);
-                DeleteFileW(markerPath);
-                LOG_INFO(m_appCtx->logger, L"Application::Run: GPU crash recovery marker found — disabling hardware acceleration");
-                if (m_appCtx->configService)
-                {
-                    m_appCtx->configService->SetHardwareAccelerationEnabled(false);
-                }
-                UIStyle::Performance::SetHardwareAccelerationEnabled(false);
+                m_appCtx->configService->SetHardwareAccelerationEnabled(false);
             }
+            UIStyle::Performance::SetHardwareAccelerationEnabled(false);
         }
     }
 
@@ -421,6 +438,13 @@ void Application::Shutdown()
         CoUninitialize();
         m_comInitialized = false;
     }
+
+    if (m_hSingleInstanceMutex)
+    {
+        ReleaseMutex(m_hSingleInstanceMutex);
+        CloseHandle(m_hSingleInstanceMutex);
+        m_hSingleInstanceMutex = nullptr;
+    }
 }
 
 void Application::AddTrayIcon()
@@ -562,7 +586,7 @@ void Application::RestartApp()
     // Schedule relaunch via a timer so any pending messages drain first.
     // Destroy the main window BEFORE ShellExecuteExW so the new instance
     // won't find it via FindWindowW and kill itself as a duplicate.
-    SetTimer(m_hMainWnd, 0xDEAD, 350, [](HWND hWnd, UINT, UINT_PTR id, DWORD) {
+    SetTimer(m_hMainWnd, AppMessages::RestartAppTimerId, 350, [](HWND hWnd, UINT, UINT_PTR id, DWORD) {
         KillTimer(hWnd, id);
 
         // Destroy the hidden main window before launching the replacement.

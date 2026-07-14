@@ -44,8 +44,8 @@ public:
     static void FreeShortcuts(std::vector<RendShortcutInfo>& shortcuts);
     static std::wstring FindConfigDir();
     static HICON GetShortcutIcon(const std::wstring& targetPath);
-    static HICON GetShortcutIcon(const RendShortcutInfo& shortcut);
-    static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut);
+    static HICON GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly = false);
+    static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly = false);
     static bool UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut);
     static Model::ShortcutTargetKind InferTargetKind(const std::wstring& path);
     static std::wstring ResolveSystemTargetPath(const std::wstring& targetPath);

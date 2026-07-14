@@ -160,4 +160,5 @@ private:
     std::unique_ptr<Compositor> m_compositor;
 
     std::unique_ptr<ShadowWindow> m_shadowWindow;
+    int m_consecutiveDeviceLossCount = 0;
 };

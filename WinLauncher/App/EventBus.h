@@ -58,24 +58,29 @@ public:
 
     void Publish(EventType type)
     {
-        std::vector<Token> tokens;
+        // 一次性快照当前类型的所有 handler（含 token 和 handler 本身），
+        // 避免逐 token 重新锁定 + 重新线性查找（O(n²) → O(n)）。
+        // 在分发期间新注册的 handler 不会被本次 Publish 调用到，这是期望语义。
+        std::vector<std::pair<Token, Handler>> snapshot;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto it = m_handlers.find(type);
             if (it == m_handlers.end()) return;
-            for (const auto& entry : it->second) tokens.push_back(entry.first);
+            snapshot = it->second;
         }
-        for (Token token : tokens)
+        for (auto& [token, handler] : snapshot)
         {
-            Handler handler;
+            // 分发前重新检查 handler 是否仍然有效（支持 Unsubscribe-during-dispatch）
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 auto it = m_handlers.find(type);
-                if (it == m_handlers.end()) continue;
+                if (it == m_handlers.end()) break;
+                bool found = false;
                 for (const auto& entry : it->second)
                 {
-                    if (entry.first == token) { handler = entry.second; break; }
+                    if (entry.first == token) { found = true; break; }
                 }
+                if (!found) continue;
             }
             if (handler)
                 CallbackGuard::Invoke(m_logger.get(), L"event_bus", handler);

@@ -74,7 +74,7 @@ private:
     int HitTestDot(POINT pt);
     int HitTestDock(POINT pt);
     void EnsureIcons();
-    void RefreshIcons();
+    void RefreshIcons(bool clearExisting = true);
     void ApplyRefreshedIcons();
     void CancelIconRefresh();
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
@@ -159,6 +159,7 @@ private:
     int m_hoveredDock;   // index into m_dockPage.shortcuts, -1 if none
     bool m_cursorBlink;
     bool m_destroyOnHide = false;
+    double m_showTimeSeconds = 0.0;
     HWND m_restoreForegroundWnd = nullptr;
     PressedShortcutKind m_pressedShortcutKind = PressedShortcutKind::None;
     int m_pressedShortcutIndex = -1;

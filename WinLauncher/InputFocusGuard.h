@@ -34,9 +34,6 @@ namespace InputFocusGuard
         gui.cbSize = sizeof(gui);
         if (foregroundTid != 0 && GetGUIThreadInfo(foregroundTid, &gui))
         {
-            if (gui.hwndCaret)
-                return true;
-
             if (IsLikelyNativeTextInput(gui.hwndFocus))
                 return true;
         }

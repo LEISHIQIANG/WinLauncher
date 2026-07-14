@@ -3,6 +3,7 @@
 #include "DpiHelper.h"
 #include "App/Logger.h"
 #include "Config/UIStyle.h"
+#include "Services/ConfigPath.h"
 #include <windowsx.h>
 #include <dwmapi.h>
 #include <d2d1helper.h>
@@ -59,6 +60,7 @@ float GlassWindow::GetSystemWindowScale(HWND hwnd)
 GlassWindow::GlassWindow()
 {
     m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
+    m_consecutiveDeviceLossCount = 0;
 }
 
 GlassWindow::~GlassWindow()
@@ -1244,6 +1246,19 @@ void GlassWindow::DoPaint()
         if (hr == D2DERR_RECREATE_TARGET)
         {
             LOG_G_WARNING_NODE(L"ui.glass", L"paint_recreate_target", L"path=compositor hr=0x%08X hwnd=%p", hr, m_hWnd);
+            m_consecutiveDeviceLossCount++;
+            if (m_consecutiveDeviceLossCount > 3)
+            {
+                LOG_G_ERROR_NODE(L"ui.glass", L"paint_device_loss_loop", L"Device loss loop detected on compositor path, writing marker and falling back");
+                {
+                    const std::wstring markerPath = ConfigPath::GetGpuCrashMarkerPath();
+                    ConfigPath::EnsureDirectoryExists(ConfigPath::GetUserConfigDirectory());
+                    HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+                }
+                UIStyle::Performance::SetHardwareAccelerationEnabled(false);
+                if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetHardwareAccelerationEnabled(false);
+            }
             ResetBackgroundResources(L"paint_recreate_target_compositor", true);
             if (m_compositor) m_compositor->MarkAllDirty();
             EnsureD2D();
@@ -1256,6 +1271,10 @@ void GlassWindow::DoPaint()
             {
                 LOG_G_ERROR_NODE(L"ui.glass", L"paint_enddraw_failed", L"path=compositor hr=0x%08X hwnd=%p", hr, m_hWnd);
             }
+        }
+        else
+        {
+            m_consecutiveDeviceLossCount = 0;
         }
         return;
     }
@@ -1350,6 +1369,19 @@ void GlassWindow::DoPaint()
     if (hr == D2DERR_RECREATE_TARGET)
     {
         LOG_G_WARNING_NODE(L"ui.glass", L"paint_recreate_target", L"path=legacy hr=0x%08X hwnd=%p", hr, m_hWnd);
+        m_consecutiveDeviceLossCount++;
+        if (m_consecutiveDeviceLossCount > 3)
+        {
+            LOG_G_ERROR_NODE(L"ui.glass", L"paint_device_loss_loop", L"Device loss loop detected on legacy path, writing marker and falling back");
+            {
+                const std::wstring markerPath = ConfigPath::GetGpuCrashMarkerPath();
+                ConfigPath::EnsureDirectoryExists(ConfigPath::GetUserConfigDirectory());
+                HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+            }
+            UIStyle::Performance::SetHardwareAccelerationEnabled(false);
+            if (m_appCtx && m_appCtx->configService) m_appCtx->configService->SetHardwareAccelerationEnabled(false);
+        }
         ResetBackgroundResources(L"paint_recreate_target_legacy", true);
         EnsureD2D();
         InvalidateRect(m_hWnd, nullptr, FALSE);
@@ -1361,6 +1393,10 @@ void GlassWindow::DoPaint()
         {
             LOG_G_ERROR_NODE(L"ui.glass", L"paint_enddraw_failed", L"path=legacy hr=0x%08X hwnd=%p", hr, m_hWnd);
         }
+    }
+    else
+    {
+        m_consecutiveDeviceLossCount = 0;
     }
 }
 

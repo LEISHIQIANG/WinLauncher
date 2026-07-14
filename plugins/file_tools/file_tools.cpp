@@ -182,7 +182,7 @@ namespace
 
     bool UpdateHashFileContent(HCRYPTHASH hash, const wstring& path, wstring& error)
     {
-        HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hFile == INVALID_HANDLE_VALUE)
         {
@@ -355,7 +355,7 @@ namespace
             replace(normalized.begin(), normalized.end(), L'\\', L'/');
 
             LARGE_INTEGER size{};
-            HANDLE sizeFile = CreateFileW(fullPath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+            HANDLE sizeFile = CreateFileW(fullPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (sizeFile == INVALID_HANDLE_VALUE || !GetFileSizeEx(sizeFile, &size))
             {

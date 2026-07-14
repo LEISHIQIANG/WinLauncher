@@ -79,6 +79,13 @@ namespace ConfigPath
         return GetUserPluginDirectory() + L"\\cache";
     }
 
+    // GPU Direct2D 崩溃恢复标记路径。写入标记后下次启动自动降级至软件渲染。
+    // 所有读写此标记的代码必须使用此函数，不得手动拼接 %APPDATA% 路径。
+    inline std::wstring GetGpuCrashMarkerPath()
+    {
+        return GetUserConfigDirectory() + L"\\gpu_crash_recovery.marker";
+    }
+
     inline std::wstring PrepareUserConfigDirectory()
     {
         std::wstring userConfigDir = GetUserConfigDirectory();

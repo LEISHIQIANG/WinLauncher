@@ -474,6 +474,11 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, co
     bool downloadSuccess = false;
     if (hSession)
     {
+        DWORD connectTimeout = 8000;
+        DWORD recvTimeout = 12000;
+        InternetSetOptionW(hSession, INTERNET_OPTION_CONNECT_TIMEOUT, (LPVOID)&connectTimeout, sizeof(connectTimeout));
+        InternetSetOptionW(hSession, INTERNET_OPTION_RECEIVE_TIMEOUT, (LPVOID)&recvTimeout, sizeof(recvTimeout));
+
         HINTERNET hUrl = InternetOpenUrlW(
             hSession,
             downloadUrl.c_str(),
@@ -494,7 +499,8 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, co
             DWORD bufLen = sizeof(contentLength);
             HttpQueryInfoW(hUrl, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER, &contentLength, &bufLen, nullptr);
 
-            std::ofstream outFile(targetPath, std::ios::binary | std::ios::trunc);
+            std::wstring tempTargetPath = targetPath + L".tmp";
+            std::ofstream outFile(tempTargetPath, std::ios::binary | std::ios::trunc);
             if (httpSuccess && outFile.is_open())
             {
                 char buf[8192];
@@ -550,12 +556,21 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, co
                 }
                 outFile.close();
                 downloadSuccess = readOk && writeOk && (contentLength == 0 || totalBytesRead == contentLength);
+                if (downloadSuccess)
+                {
+                    DeleteFileW(targetPath.c_str());
+                    if (!MoveFileExW(tempTargetPath.c_str(), targetPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                    {
+                        downloadSuccess = false;
+                    }
+                }
                 if (!downloadSuccess)
                 {
+                    DeleteFileW(tempTargetPath.c_str());
                     DeleteFileW(targetPath.c_str());
                     if (logger)
                     {
-                        LOG_ERROR(logger, L"UpdateService: Download incomplete. readOk=%d writeOk=%d bytes=%lu expected=%lu",
+                        LOG_ERROR(logger, L"UpdateService: Download incomplete or atomic move failed. readOk=%d writeOk=%d bytes=%lu expected=%lu",
                                   readOk ? 1 : 0, writeOk ? 1 : 0, totalBytesRead, contentLength);
                     }
                 }
@@ -571,7 +586,10 @@ void UpdateService::PerformDownloadAndInstall(HWND parentWnd, Logger* logger, co
     }
 
     if (!downloadSuccess)
-        DeleteFileW(targetPath.c_str());
+    {
+        DeleteFileW((targetPath + L".tmp").c_str());
+    }
+    if (!downloadSuccess) DeleteFileW(targetPath.c_str());
 
     if (downloadSuccess)
     {

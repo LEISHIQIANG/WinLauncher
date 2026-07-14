@@ -34,7 +34,7 @@ foreach ($dir in $pluginDirs) {
         continue
     }
 
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -Encoding UTF8 -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $pluginId = [string]$manifest.id
 
     if ($requested.Count -gt 0 -and
@@ -55,7 +55,7 @@ if ($IncludeSamples) {
     $sampleScript = Join-Path $sampleRoot "package.ps1"
     $sampleManifest = Join-Path $sampleRoot "plugin.json"
     if ((Test-Path -LiteralPath $sampleScript) -and (Test-Path -LiteralPath $sampleManifest)) {
-        $manifest = Get-Content -LiteralPath $sampleManifest -Raw | ConvertFrom-Json
+        $manifest = Get-Content -Encoding UTF8 -LiteralPath $sampleManifest -Raw | ConvertFrom-Json
         $pluginId = [string]$manifest.id
         if ($requested.Count -eq 0 -or
             $requested.ContainsKey("hello_world") -or

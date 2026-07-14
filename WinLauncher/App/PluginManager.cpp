@@ -1813,7 +1813,9 @@ bool PluginManager::WritePluginConfigValue(const std::wstring& pluginId, const s
 
     std::wstring parent = path.substr(0, path.find_last_of(L"\\/"));
     ConfigPath::EnsureDirectoryExists(parent);
-    std::ofstream fs(path, std::ios::binary | std::ios::trunc);
+    std::wstring tempPath = path + L".tmp";
+    DeleteFileW(tempPath.c_str());
+    std::ofstream fs(tempPath, std::ios::binary | std::ios::trunc);
     if (!fs)
         return false;
 
@@ -1828,7 +1830,16 @@ bool PluginManager::WritePluginConfigValue(const std::wstring& pluginId, const s
         fs << ToUtf8(line);
     }
     fs << "\n}\n";
-    return true;
+    fs.close();
+    if (fs.fail())
+    {
+        DeleteFileW(tempPath.c_str());
+        return false;
+    }
+    if (MoveFileExW(tempPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        return true;
+    DeleteFileW(tempPath.c_str());
+    return false;
 }
 
 uint64_t PluginManager::RegisterDialogState(const std::wstring& pluginId, const std::wstring& message, bool cancelable, uint64_t total)

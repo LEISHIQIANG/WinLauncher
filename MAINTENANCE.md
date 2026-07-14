@@ -20,7 +20,7 @@ This file is the project maintenance contract for day-to-day changes. The mainte
    - For flicker fixes, verify close/disappear paths, outside-click teardown, shadow opacity, and DPI-aware hit testing.
 
 4. Configuration, user data, and release path
-   - Runtime state belongs under `%APPDATA%\WinLauncher`; config, backup, plugin install, plugin state, cache, log, and private plugin data must not leak into the source tree.
+   - Runtime state belongs under `%APPDATA%\WinLauncher`; config, backup, plugin install, plugin state, cache, log, and private plugin data must not leak into the source tree. GPU crash markers must be read/written via `ConfigPath::GetGpuCrashMarkerPath()` to prevent path truncation and path resolution mismatches.
    - Every project change must update `RELEASE_NOTES.md` for the current version from `WinLauncher/version.h`.
    - Release validation must confirm the executable, update metadata, plugin packages when changed, SDK docs when changed, and release notes describe the same behavior.
 
@@ -48,7 +48,7 @@ The following rules keep the launcher maintainable as features are added. They a
 
 2. UI, background work, and lifetime
    - Keep all Direct2D, HWND, menu, Toast, and dialog mutations on the UI thread. Background work returns through `UiDispatcher` with a lifetime check.
-   - Submit feature work through `BackgroundTaskService`; do not introduce detached threads, unmanaged callbacks, or unbounded waits.
+   - Submit feature work through `BackgroundTaskService`; do not introduce detached threads, unmanaged callbacks, or unbounded waits. Async tasks with loops (like network favicon fetching) must check `BackgroundTaskService::IsCurrentTaskCancellationRequested()` to terminate early when the task is cancelled.
    - Every asynchronous owner must have a cancellation point for hide, close, replacement, and application shutdown. Obsolete results must be discarded rather than written into a newer window or request.
    - Startup probes such as optional command-environment detection run once in the background. Their consumers reuse the completed snapshot and must not repeat disk or PATH scans on UI interaction paths.
 

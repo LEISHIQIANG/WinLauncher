@@ -112,7 +112,7 @@ catch {
 
 $releaseNotesPath = Resolve-RepoPath "RELEASE_NOTES.md"
 if (Test-Path -LiteralPath $releaseNotesPath) {
-    $releaseNotes = Get-Content -LiteralPath $releaseNotesPath -Raw
+    $releaseNotes = Get-Content -Encoding UTF8 -LiteralPath $releaseNotesPath -Raw
     $hasCurrentSection = $currentVersion -and ($releaseNotes -match "(?m)^##\s+$([regex]::Escape($currentVersion))\s*$")
     Add-Check "release notes current version" $hasCurrentSection "expected section: ## $currentVersion"
 }
@@ -183,8 +183,8 @@ $mainProjectPath = Resolve-RepoPath "WinLauncher\WinLauncher.vcxproj"
 $mainFiltersPath = Resolve-RepoPath "WinLauncher\WinLauncher.vcxproj.filters"
 if ((Test-Path -LiteralPath $mainProjectPath) -and (Test-Path -LiteralPath $mainFiltersPath)) {
     try {
-        $projectXml = [xml](Get-Content -LiteralPath $mainProjectPath)
-        $filtersXml = [xml](Get-Content -LiteralPath $mainFiltersPath)
+        $projectXml = [xml](Get-Content -Encoding UTF8 -LiteralPath $mainProjectPath -Raw)
+        $filtersXml = [xml](Get-Content -Encoding UTF8 -LiteralPath $mainFiltersPath -Raw)
 
         $projectNs = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
         $projectNs.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
@@ -226,7 +226,7 @@ if (Test-Path -LiteralPath $pluginRoot) {
             Where-Object {
                 if (-not (Test-Path -LiteralPath $_)) { return $false }
                 try {
-                    ((Get-Content -LiteralPath $_ -Raw) | ConvertFrom-Json).id -eq $pluginId
+                    ((Get-Content -Encoding UTF8 -LiteralPath $_ -Raw) | ConvertFrom-Json).id -eq $pluginId
                 }
                 catch {
                     return $false
@@ -245,7 +245,7 @@ if (Test-Path -LiteralPath $pluginRoot) {
         }
 
         try {
-            $manifest = (Get-Content -LiteralPath $manifestPath -Raw) | ConvertFrom-Json
+            $manifest = (Get-Content -Encoding UTF8 -LiteralPath $manifestPath -Raw) | ConvertFrom-Json
             $id = [string]$manifest.id
             $entry = [string]$manifest.entry
             $validManifest = -not [string]::IsNullOrWhiteSpace($id) -and
@@ -291,7 +291,7 @@ $sampleManifestPath = Resolve-RepoPath "SDK\samples\hello_world\plugin.json"
 $samplePackageScript = Resolve-RepoPath "SDK\samples\hello_world\package.ps1"
 if ((Test-Path -LiteralPath $sampleManifestPath) -and (Test-Path -LiteralPath $samplePackageScript)) {
     try {
-        $sampleManifest = Get-Content -LiteralPath $sampleManifestPath -Raw | ConvertFrom-Json
+        $sampleManifest = Get-Content -Encoding UTF8 -LiteralPath $sampleManifestPath -Raw | ConvertFrom-Json
         $sampleId = [string]$sampleManifest.id
         $sampleEntry = [string]$sampleManifest.entry
         $validSampleManifest = $sampleId -eq "example.hello_world" -and

@@ -73,14 +73,27 @@ static std::wstring ReadFileToString(const std::wstring& path)
 
 static bool WriteStringToFile(const std::wstring& path, const std::wstring& wstr)
 {
-    std::ofstream fs(path, std::ios::binary | std::ios::trunc);
+    std::wstring tempPath = path + L".tmp";
+    DeleteFileW(tempPath.c_str());
+    std::ofstream fs(tempPath, std::ios::binary | std::ios::trunc);
     if (!fs) return false;
-    if (wstr.empty()) return true;
-    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    std::string bytes(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &bytes[0], len, nullptr, nullptr);
-    fs.write(bytes.data(), bytes.size());
-    return true;
+    if (!wstr.empty())
+    {
+        int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+        std::string bytes(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &bytes[0], len, nullptr, nullptr);
+        fs.write(bytes.data(), bytes.size());
+    }
+    fs.close();
+    if (fs.fail())
+    {
+        DeleteFileW(tempPath.c_str());
+        return false;
+    }
+    if (MoveFileExW(tempPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        return true;
+    DeleteFileW(tempPath.c_str());
+    return false;
 }
 
 static HICON GetAssociatedIcon(const std::wstring& sampleName, DWORD attributes)
@@ -804,11 +817,12 @@ Model::ShortcutTargetKind ShortcutManager::InferTargetKind(const std::wstring& p
     return Model::ShortcutTargetKind::Unknown;
 }
 
-HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
+HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly)
 {
     Model::IconSource source = NormalizeIconSource(shortcut.iconSource, shortcut.iconPath, shortcut.builtinIconId);
     if (source == Model::IconSource::CustomPath)
     {
+        if (fastOnly) return nullptr;
         HICON hIcon = GetShortcutIcon(shortcut.iconPath);
         if (hIcon) return hIcon;
     }
@@ -839,6 +853,11 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut)
             HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_UP_ARROW_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
             if (hIcon) return hIcon;
         }
+    }
+
+    if (fastOnly)
+    {
+        return nullptr;
     }
 
     if ((shortcut.type == Model::ShortcutType::File || shortcut.type == Model::ShortcutType::System) && !shortcut.targetPath.empty())
@@ -886,7 +905,7 @@ void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut)
     shortcut.hIcon = GetShortcutIcon(shortcut);
 }
 
-HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)
+HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly)
 {
     RendShortcutInfo renderInfo;
     renderInfo.id = shortcut.id;
@@ -901,5 +920,5 @@ HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut)
     renderInfo.builtinIconId = shortcut.builtinIconId;
     renderInfo.iconInvertLight = shortcut.iconInvertLight;
     renderInfo.iconInvertDark = shortcut.iconInvertDark;
-    return GetShortcutIcon(renderInfo);
+    return GetShortcutIcon(renderInfo, fastOnly);
 }
