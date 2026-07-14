@@ -12,9 +12,10 @@ foreach ($path in $required) {
     if (-not (Test-Path (Join-Path $root $path))) { throw "Scenario regression prerequisite missing: $path" }
 }
 $popup = Get-Content (Join-Path $root 'WinLauncher/PopupWindow.cpp') -Raw
+$popupSearchService = Get-Content (Join-Path $root 'WinLauncher/Popup/PopupSearchService.cpp') -Raw
 $popupSearchModel = Get-Content (Join-Path $root 'WinLauncher/Popup/PopupSearchModel.cpp') -Raw
 if ($popup -notmatch 'RecordAccepted' -or
-    $popup -notmatch 'PopupSearchModel::SortKey' -or
+    $popupSearchService -notmatch 'PopupSearchModel::SortKey' -or
     $popupSearchModel -notmatch 'prefixScore' -or
     $popupSearchModel -notmatch '-static_cast<int64_t>\(usage\.launchCount\)') {
     throw 'Search ranking regression: local usage ordering is not wired.'

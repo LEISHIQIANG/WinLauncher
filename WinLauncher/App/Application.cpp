@@ -559,19 +559,26 @@ void Application::RestartApp()
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartApp: restarting application...");
 
-    // Schedule relaunch via a timer (300ms) so the toast can show briefly
-    // We post WM_QUIT after the timer fires
+    // Schedule relaunch via a timer so any pending messages drain first.
+    // Destroy the main window BEFORE ShellExecuteExW so the new instance
+    // won't find it via FindWindowW and kill itself as a duplicate.
     SetTimer(m_hMainWnd, 0xDEAD, 350, [](HWND hWnd, UINT, UINT_PTR id, DWORD) {
         KillTimer(hWnd, id);
-        wchar_t exePath2[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, exePath2, MAX_PATH);
-        SHELLEXECUTEINFOW sei2{};
-        sei2.cbSize = sizeof(sei2);
-        sei2.fMask  = SEE_MASK_NOASYNC;
-        sei2.lpVerb = L"open";
-        sei2.lpFile = exePath2;
-        sei2.nShow  = SW_NORMAL;
-        if (!ShellExecuteExW(&sei2))
+
+        // Destroy the hidden main window before launching the replacement.
+        // This ensures FindWindowW(L"WinLauncherMain") in the new process
+        // returns NULL and the single-instance guard passes.
+        DestroyWindow(hWnd);
+
+        wchar_t exePath[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        SHELLEXECUTEINFOW sei{};
+        sei.cbSize = sizeof(sei);
+        sei.fMask  = SEE_MASK_NOASYNC;
+        sei.lpVerb = L"open";
+        sei.lpFile = exePath;
+        sei.nShow  = SW_NORMAL;
+        if (!ShellExecuteExW(&sei))
         {
             ToastWindow::Show(L"重启失败，WinLauncher 将继续运行", 2200);
             return;
@@ -735,12 +742,16 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     case AppMessages::TrayIcon:
         if (lParam == WM_RBUTTONUP)
         {
-            ShowTrayMenuAtCursor();
+            PostMessageW(hWnd, AppMessages::ShowTrayMenu, 0, 0);
         }
         else if (lParam == WM_LBUTTONDBLCLK || lParam == WM_LBUTTONUP)
         {
             ShowConfigWindow();
         }
+        return 0;
+
+    case AppMessages::ShowTrayMenu:
+        ShowTrayMenuAtCursor();
         return 0;
 
     case WM_DESTROY:

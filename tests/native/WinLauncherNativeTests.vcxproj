@@ -47,7 +47,6 @@
     <ClCompile Include="..\..\WinLauncher\Services\FileSelectionService.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupIconRefreshController.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupCommandDispatcher.cpp" />
-    <ClCompile Include="..\..\WinLauncher\Popup\PopupSearchService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\WinLauncher\App\BackgroundTaskService.h" />
@@ -64,7 +63,6 @@
     <ClInclude Include="..\..\WinLauncher\Services\FileSelectionService.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupIconRefreshController.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupCommandDispatcher.h" />
-    <ClInclude Include="..\..\WinLauncher\Popup\PopupSearchService.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

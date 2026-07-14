@@ -3,6 +3,7 @@
 #include "App/AppMessages.h"
 #include "DpiHelper.h"
 #include <windowsx.h>
+#include <shellapi.h>
 #include "PopupWindow.h"
 #include "Config/UIStyle.h"
 
@@ -54,14 +55,45 @@ void TrayMenuWindow::Show(POINT pt)
 
     s_instance = new TrayMenuWindow(s_ctx);
 
+    RECT iconRect{};
+    bool hasIconRect = false;
+    if (s_hMainWnd)
+    {
+        NOTIFYICONIDENTIFIER nid{};
+        nid.cbSize = sizeof(nid);
+        nid.hWnd = s_hMainWnd;
+        nid.uID = 1;
+        hasIconRect = SUCCEEDED(Shell_NotifyIconGetRect(&nid, &iconRect));
+    }
+
+    HMONITOR hm = hasIconRect ? MonitorFromRect(&iconRect, MONITOR_DEFAULTTONEAREST)
+                              : MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{ sizeof(mi) };
-    HMONITOR hm = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     GetMonitorInfoW(hm, &mi);
     RECT wa = mi.rcWork;
+    RECT rcMonitor = mi.rcMonitor;
 
     float scale  = DpiHelper::GetDpiScaleForMonitor(hm);
     int   w_px   = (int)(MENU_W_LG * scale);
     int   h_px   = (int)(MENU_H_LG * scale);
+
+    if (hasIconRect)
+    {
+        pt.x = iconRect.left;
+        int iconCenterY = (iconRect.top + iconRect.bottom) / 2;
+        int monitorCenterY = (rcMonitor.top + rcMonitor.bottom) / 2;
+        int gap = (int)(2.0f * scale);
+        if (iconCenterY < monitorCenterY)
+        {
+            // Taskbar is at the top
+            pt.y = iconRect.bottom + gap;
+        }
+        else
+        {
+            // Taskbar is at the bottom
+            pt.y = iconRect.top - h_px - gap;
+        }
+    }
 
     if (pt.x + w_px > wa.right)  pt.x = wa.right  - w_px;
     if (pt.y + h_px > wa.bottom) pt.y = wa.bottom  - h_px;

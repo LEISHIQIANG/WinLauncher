@@ -8,11 +8,11 @@ std::wstring PopupCommandDispatcher::UsageKey(bool localShortcut, const std::wst
 
 bool PopupCommandDispatcher::IsBuiltin(const std::wstring& pluginId, const std::wstring& commandId, const wchar_t* builtinId)
 {
-    return pluginId.empty() && builtinId && commandId == builtinId;
+    return builtinId && commandId == builtinId;
 }
 
 std::wstring PopupCommandDispatcher::NormalizeResultMessage(bool succeeded, std::wstring message)
 {
-    if (message.empty()) message = succeeded ? L"命令已执行，无输出。" : L"命令执行失败，无错误详情。";
+    if (message.empty() && !succeeded) message = L"命令执行失败，无错误详情。";
     return succeeded ? message : L"执行失败：\r\n" + message;
 }

@@ -133,7 +133,8 @@ int wmain(int argc, wchar_t** argv)
         // frequency breaks ties within same match tier.
         const PopupSearchModel::Usage heavy{ 100, 1000 };
         const PopupSearchModel::Usage light{ 1, 500 };
-        const PopupSearchModel::Usage recent{ 0, 2000 };
+        const PopupSearchModel::Usage recent{ 1, 2000 };
+        const PopupSearchModel::Usage unused{};
         const auto prefixHeavy  = PopupSearchModel::SortKey(L"calc", L"ca", heavy);
         const auto prefixLight  = PopupSearchModel::SortKey(L"calc", L"ca", light);
         const auto midHeavy     = PopupSearchModel::SortKey(L"calculator", L"lcu", heavy);
@@ -182,7 +183,7 @@ int wmain(int argc, wchar_t** argv)
             return Fail(L"popup command dispatch policy regressed");
 
         // UsageKey disambiguation: plugin command vs local shortcut.
-        if (PopupCommandDispatcher::UsageKey(false, L"id", L"plugin", L"command") != L"plugin:command")
+        if (PopupCommandDispatcher::UsageKey(false, L"id", L"plugin", L"command") != L"plugin:plugin:command")
             return Fail(L"popup command dispatch: plugin UsageKey must not include shortcut id");
         if (PopupCommandDispatcher::UsageKey(true, L"", L"plugin", L"command") != L"shortcut:")
             return Fail(L"popup command dispatch: shortcut UsageKey with empty id must still prefix");

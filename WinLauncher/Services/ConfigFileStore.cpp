@@ -8,10 +8,10 @@ std::wstring ConfigFileStore::ReadUtf8(const std::wstring& path)
     if (!file) return L"";
     const std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (bytes.empty()) return L"";
-    const int length = MultiByteToWideChar(CP_UTF8, 0, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
+    const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
     if (length <= 0) return L"";
     std::wstring result(length, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, bytes.data(), static_cast<int>(bytes.size()), result.data(), length);
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), static_cast<int>(bytes.size()), result.data(), length);
     return result;
 }
 
