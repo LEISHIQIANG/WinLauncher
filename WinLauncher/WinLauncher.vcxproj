@@ -149,6 +149,12 @@
     <ClCompile Include="GlassWindow.cpp" />
     <ClCompile Include="ShadowWindow.cpp" />
     <ClCompile Include="PopupWindow.cpp" />
+    <ClCompile Include="Popup\PopupLayout.cpp" />
+    <ClCompile Include="Popup\PopupSearchModel.cpp" />
+    <ClCompile Include="Popup\PopupFileSelectionController.cpp" />
+    <ClCompile Include="Popup\PopupIconRefreshController.cpp" />
+    <ClCompile Include="Popup\PopupCommandDispatcher.cpp" />
+    <ClCompile Include="Popup\PopupSearchService.cpp" />
     <ClCompile Include="TrayMenuWindow.cpp" />
     <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="Config\ConfigWindow.cpp" />
@@ -175,6 +181,9 @@
     <ClCompile Include="Config\SystemIconEditForm.cpp" />
     <ClCompile Include="Config\TextBox.cpp" />
     <ClCompile Include="Services\FolderWatcher.cpp" />
+    <ClCompile Include="Services\IniConfigRepository.cpp" />
+    <ClCompile Include="Services\IniConfigDocument.cpp" />
+    <ClCompile Include="Services\ConfigFileStore.cpp" />
     <ClCompile Include="Services\FaviconFetcher.cpp" />
     <ClCompile Include="Services\SyncFolderService.cpp" />
     <ClCompile Include="Services\PrivilegeLaunchService.cpp" />
@@ -241,6 +250,14 @@
     <ClInclude Include="Services\AppSceneMatcher.h" />
     <ClInclude Include="Services\ConfigPath.h" />
     <ClInclude Include="Services\IniConfigRepository.h" />
+    <ClInclude Include="Services\IniConfigDocument.h" />
+    <ClInclude Include="Services\ConfigFileStore.h" />
+    <ClInclude Include="Popup\PopupLayout.h" />
+    <ClInclude Include="Popup\PopupSearchModel.h" />
+    <ClInclude Include="Popup\PopupFileSelectionController.h" />
+    <ClInclude Include="Popup\PopupIconRefreshController.h" />
+    <ClInclude Include="Popup\PopupCommandDispatcher.h" />
+    <ClInclude Include="Popup\PopupSearchService.h" />
     <ClInclude Include="Services\FolderWatcher.h" />
     <ClInclude Include="Services\FaviconFetcher.h" />
     <ClInclude Include="Services\SyncFolderService.h" />

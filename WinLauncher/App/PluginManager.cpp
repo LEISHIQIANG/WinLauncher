@@ -425,6 +425,7 @@ PluginManager::PluginManager(std::shared_ptr<EventBus> eventBus, std::shared_ptr
 PluginManager::~PluginManager()
 {
     Shutdown();
+    AbandonRetiringPluginsForProcessExit();
 }
 
 void PluginManager::Initialize()
@@ -495,6 +496,15 @@ void PluginManager::RequestShutdown()
         m_searchCacheReady = false;
     }
     m_searchTask.Cancel();
+
+    std::vector<std::shared_ptr<LoadedPlugin>> loaded;
+    {
+        std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
+        for (const auto& [pluginId, item] : m_loadedPlugins)
+            loaded.push_back(item);
+    }
+    for (const auto& item : loaded)
+        item->RequestCooperativeShutdown();
 }
 
 bool PluginManager::Rescan(std::wstring* message)
@@ -508,6 +518,11 @@ bool PluginManager::Rescan(std::wstring* message)
     {
         if (message) *message = L"仍有插件命令正在运行，请结束后重试";
         LOG_WORNING(m_logger, L"PluginManager::Rescan rejected: active executions=%u", m_activeExecutions.load());
+        return false;
+    }
+    if (HasRetiringPlugins())
+    {
+        if (message) *message = L"插件仍在停止，请稍后重试";
         return false;
     }
     {
@@ -565,12 +580,24 @@ bool PluginManager::InstallPackage(const std::wstring& packagePath, std::wstring
         message = m_shutdownRequested ? L"程序正在退出，无法安装插件" : L"仍有插件命令正在运行，请结束后再安装";
         return false;
     }
+    if (HasRetiringPlugins())
+    {
+        message = L"插件仍在停止，请稍后再安装";
+        return false;
+    }
     PluginManifest packageManifest;
     if (!PluginInstaller::InspectPackage(packagePath, packageManifest, message))
         return false;
 
     if (m_plugins.find(packageManifest.id) != m_plugins.end())
+    {
         UnloadPlugin(packageManifest.id);
+        if (HasRetiringPlugins())
+        {
+            message = L"现有插件仍在停止，请稍后再安装";
+            return false;
+        }
+    }
 
     std::wstring pluginId;
     if (!PluginInstaller::InstallPackage(packagePath, pluginId, message))
@@ -588,6 +615,11 @@ bool PluginManager::UninstallPlugin(const std::wstring& pluginId, std::wstring& 
         message = m_shutdownRequested ? L"程序正在退出，无法卸载插件" : L"仍有插件命令正在运行，请结束后再卸载";
         return false;
     }
+    if (HasRetiringPlugins())
+    {
+        message = L"插件仍在停止，请稍后再卸载";
+        return false;
+    }
     auto it = m_plugins.find(pluginId);
     if (it == m_plugins.end())
     {
@@ -596,6 +628,11 @@ bool PluginManager::UninstallPlugin(const std::wstring& pluginId, std::wstring& 
     }
 
     UnloadPlugin(pluginId);
+    if (HasRetiringPlugins())
+    {
+        message = L"插件仍在停止，请稍后再卸载";
+        return false;
+    }
     if (!PluginInstaller::UninstallPlugin(it->second.manifest, message))
         return false;
 
@@ -611,6 +648,8 @@ bool PluginManager::UninstallPlugin(const std::wstring& pluginId, std::wstring& 
 bool PluginManager::SetPluginEnabled(const std::wstring& pluginId, bool enabled)
 {
     if (m_shutdownRequested || m_activeExecutions.load() != 0)
+        return false;
+    if (HasRetiringPlugins())
         return false;
     auto it = m_plugins.find(pluginId);
     if (it == m_plugins.end())
@@ -630,7 +669,8 @@ bool PluginManager::SetPluginEnabled(const std::wstring& pluginId, bool enabled)
     else
     {
         UnloadPlugin(pluginId);
-        record.statusText = record.valid ? L"已禁用" : L"不可用";
+        if (!HasRetiringPlugins())
+            record.statusText = record.valid ? L"已禁用" : L"不可用";
     }
 
     if (m_stateStore)
@@ -1339,12 +1379,102 @@ void PluginManager::UnloadPlugin(const std::wstring& pluginId)
     if (recordIt != m_plugins.end())
     {
         recordIt->second.loaded = false;
-        recordIt->second.statusText = recordIt->second.state.enabled ? L"未加载" : L"已禁用";
         ClearCommandsForPlugin(pluginId, true);
         ClearSlashCommandsForPlugin(pluginId, true);
         ClearPopupActionsForPlugin(pluginId);
     }
+
+    if (loaded->SupportsCooperativeShutdown())
+    {
+        loaded->RequestCooperativeShutdown();
+        if (!loaded->IsCooperativeShutdownComplete())
+        {
+            if (recordIt != m_plugins.end())
+                recordIt->second.statusText = L"正在停止";
+            {
+                std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
+                m_retiringPlugins[pluginId] = loaded;
+            }
+            ScheduleRetirement(pluginId, loaded);
+            LOG_INFO(m_logger, L"Plugin retirement scheduled: %s", pluginId.c_str());
+            return;
+        }
+    }
+
+    if (recordIt != m_plugins.end())
+        recordIt->second.statusText = recordIt->second.state.enabled ? L"未加载" : L"已禁用";
+    loaded->Destroy();
     LOG_INFO(m_logger, L"Plugin unloaded: %s", pluginId.c_str());
+}
+
+bool PluginManager::HasRetiringPlugins() const
+{
+    std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
+    return !m_retiringPlugins.empty();
+}
+
+void PluginManager::ScheduleRetirement(const std::wstring& pluginId, const std::shared_ptr<LoadedPlugin>& loaded)
+{
+    // During process teardown PluginManager may already be in its destructor,
+    // where shared_from_this() would throw. Keeping the module resident is
+    // safer than attempting to unload code with callbacks still in flight.
+    auto self = weak_from_this().lock();
+    if (!self)
+    {
+        LOG_WORNING(m_logger, L"Plugin retirement deferred to process exit: %s", pluginId.c_str());
+        return;
+    }
+    auto waitForShutdown = [self, pluginId, loaded](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+        while (!loaded->IsCooperativeShutdownComplete())
+        {
+            if (cancellation->IsCancellationRequested())
+            {
+                self->AbandonRetiringPluginsForProcessExit();
+                return;
+            }
+            Sleep(25);
+        }
+        self->FinalizeRetirement(pluginId, loaded);
+    };
+
+    if (m_backgroundTasks)
+    {
+        if (m_backgroundTasks->Submit(L"plugin.retire." + pluginId, BackgroundTaskService::Priority::Normal, waitForShutdown))
+            return;
+    }
+
+    // A host without an async runtime keeps the DLL loaded. This is safer than
+    // synchronously blocking the UI or unloading code with outstanding work.
+    LOG_WORNING(m_logger, L"Plugin retirement requires the background task service: %s", pluginId.c_str());
+}
+
+void PluginManager::FinalizeRetirement(const std::wstring& pluginId, const std::shared_ptr<LoadedPlugin>& loaded)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
+        const auto it = m_retiringPlugins.find(pluginId);
+        if (it == m_retiringPlugins.end() || it->second != loaded)
+            return;
+        m_retiringPlugins.erase(it);
+    }
+
+    const auto recordIt = m_plugins.find(pluginId);
+    if (recordIt != m_plugins.end())
+        recordIt->second.statusText = recordIt->second.state.enabled ? L"未加载" : L"已禁用";
+    loaded->Destroy();
+    LOG_INFO(m_logger, L"Plugin retirement completed: %s", pluginId.c_str());
+}
+
+void PluginManager::AbandonRetiringPluginsForProcessExit() noexcept
+{
+    // If Windows is tearing the host down before a cooperative callback has
+    // returned, deliberately retain the module. Calling FreeLibrary here would
+    // leave the callback executing code that no longer exists.
+    static auto* retained = new std::vector<std::shared_ptr<LoadedPlugin>>();
+    std::lock_guard<std::mutex> lock(m_loadedPluginsMutex);
+    for (auto& [pluginId, loaded] : m_retiringPlugins)
+        retained->push_back(std::move(loaded));
+    m_retiringPlugins.clear();
 }
 
 bool PluginManager::RegisterRuntimeCommand(const std::wstring& pluginId, const WLCommandDescriptorV1* command)

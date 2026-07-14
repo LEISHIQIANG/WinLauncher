@@ -88,7 +88,14 @@ try {
         }
         Write-Host "Executable version verified: $actualVersion"
 
-        $nativeTests = Join-Path $repoRoot "$Platform\$Configuration\WinLauncherNativeTests.exe"
+        $nativeProject = Join-Path $repoRoot "tests\native\WinLauncherNativeTests.vcxproj"
+        Write-Host "== Build native stability tests $Configuration|$Platform =="
+        & $msbuild $nativeProject /p:Configuration=$Configuration /p:Platform=$Platform /m:1
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        $nativeTests = Join-Path $repoRoot "tests\native\$Platform\$Configuration\WinLauncherNativeTests.exe"
         if (-not (Test-Path -LiteralPath $nativeTests)) {
             throw "Native test executable is missing: $nativeTests"
         }

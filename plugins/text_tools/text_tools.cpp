@@ -396,6 +396,8 @@ WL_EXPORT bool WL_CALL WinLauncherPlugin_Create(const WLHostApiV1* host, WLPlugi
     inst->onPopupShown = nullptr;
     inst->onPopupHidden = nullptr;
     inst->search = &Search;
+    inst->requestShutdown = nullptr;
+    inst->isShutdownComplete = nullptr;
 
     *outInstance = inst;
     return true;

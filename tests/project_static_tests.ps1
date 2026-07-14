@@ -99,7 +99,7 @@ Add-TestResult `
 Add-TestResult `
     -Name "Built-in reload is silent" `
     -Passed (
-        $popupSource -match 'item\.pluginCommandId == L"winlauncher\.reload"' -and
+        $popupSource -match 'PopupCommandDispatcher::IsBuiltin\(item\.pluginId, item\.pluginCommandId, L"winlauncher\.reload"\)' -and
         $popupSource -match 'silent reload result' -and
         $popupSource -match 'ToastWindow::Show\(ok \? L"插件已重新加载"' -and
         $popupSource -match 'ExecuteSlashCommand\(\s*L"", item\.pluginCommandId.*nullptr\)'
@@ -168,9 +168,15 @@ Add-TestResult `
     -Passed ($folderWatcherSource -match 'kRecoveryDelaysMs\[\] = \{ 5000, 15000, 60000 \}' -and $folderWatcherSource -match 'folder_unavailable' -and $folderWatcherSource -match 'folder_recovered') `
     -Detail "Missing sync folders must back off independently and recover without log storms"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
+$popupFileSelectionControllerSource = Read-RepoFile "WinLauncher\Popup\PopupFileSelectionController.cpp"
+$popupIconRefreshControllerSource = Read-RepoFile "WinLauncher\Popup\PopupIconRefreshController.cpp"
+$fileSelectionServiceSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
 $configViewModelSource = Read-RepoFile "WinLauncher\ViewModel\ConfigViewModel.h"
-$iniConfigSource = Read-RepoFile "WinLauncher\Services\IniConfigRepository.h"
+$iniConfigHeader = Read-RepoFile "WinLauncher\Services\IniConfigRepository.h"
+$iniConfigSource = Read-RepoFile "WinLauncher\Services\IniConfigRepository.cpp"
+$pluginAbiSource = Read-RepoFile "WinLauncher\SDK\include\WinLauncher\WinLauncherPluginABI.h"
+$networkPluginSource = Read-RepoFile "plugins\network_tools\network_tools.cpp"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 $glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
 $shadowWindowSource = Read-RepoFile "WinLauncher\ShadowWindow.cpp"
@@ -289,7 +295,7 @@ Add-TestResult `
     -Passed (
         $popupSource -match 'distance\s*>\s*1\)\s*continue' -and
         $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(\)' -and
-        $popupSource -match 'm_iconRefreshPending\s*=\s*false'
+        $popupIconRefreshControllerSource -match 'm_pending\s*=\s*false'
     ) `
     -Detail "First paint should defer off-screen bitmaps, and hidden popups must not keep refreshing icons"
 
@@ -353,11 +359,22 @@ Add-TestResult `
     -Passed (
         $popupHeader -match 'void\s+CancelFileSelectionQuery\(\)' -and
         $popupSource -match 'void\s+PopupWindow::CancelFileSelectionQuery\(\)' -and
-        $popupSource -match 'm_selectionRequest->Cancel\(\)' -and
+        $popupSource -match 'm_fileSelection\.Cancel\(\)' -and
+        $popupFileSelectionControllerSource -match 'request->Cancel\(\)' -and
         $popupSource -match 'KillTimer\(hWnd, FILE_SELECTION_TIMER_ID\)' -and
         ([regex]::Matches($popupSource, 'CancelFileSelectionQuery\(\);')).Count -ge 5
     ) `
     -Detail "Closing, destroying, replacing, and releasing popups must cancel obsolete Shell selection work"
+
+Add-TestResult `
+    -Name "File selection fallback completes with its original request context" `
+    -Passed (
+        $fileSelectionServiceSource -match 'const auto completeEmpty' -and
+        $fileSelectionServiceSource -match 'm_result\.sourceHwnd = activeHwnd' -and
+        $fileSelectionServiceSource -match 'm_result\.capturedTime = capturedTime' -and
+        ([regex]::Matches($fileSelectionServiceSource, 'completeEmpty\(\);')).Count -ge 2
+    ) `
+    -Detail "An unavailable or saturated task service must finish selection capture without leaving the popup pending"
 
 Add-TestResult `
     -Name "Command panel clears loading state when task submission fails" `
@@ -371,6 +388,15 @@ Add-TestResult `
 Add-TestResult `
     -Name "Configuration writes are immediate and observers reload only saved state" `
     -Passed (
+        $iniConfigHeader -match 'class\s+IniConfigRepository\s+final\s*:\s*public\s+IConfigService' -and
+        $iniConfigHeader -match 'std::unique_ptr<Impl>\s+m_impl' -and
+        $iniConfigSource -match 'IniConfigDocument::Escape' -and
+        $iniConfigSource -match 'IniConfigDocument::Unescape' -and
+        $iniConfigSource -match 'ConfigFileStore::ReadUtf8' -and
+        $iniConfigSource -match 'ConfigFileStore::AtomicWriteUtf8' -and
+        $iniConfigSource -match 'ConfigFileStore::IsPathUnderDirectory' -and
+        $iniConfigSource -notmatch 'static std::wstring EscapeValue' -and
+        $iniConfigSource -notmatch 'static std::wstring ReadFile' -and
         $iniConfigSource -match 'WriteConfigContent\(content, pages\.size\(\)\);' -and
         $iniConfigSource -match 'std::lock_guard<std::mutex> writeLock\(m_configWriteMutex\)' -and
         $iniConfigSource -notmatch 'QueueConfigWrite' -and
@@ -385,6 +411,21 @@ Add-TestResult `
     -Name "Plugin UI and shutdown use guarded lifetimes" `
     -Passed ($pluginManagerSource -match 'RequestShutdown' -and $pluginManagerSource -match 'm_activeExecutions' -and $pluginManagerSource -match 'm_uiDispatcher->InvokeSync' -and $pluginManagerSource -match 'm_uiDispatcher->Post' -and $pluginManagerSource -match 'IsCurrentTaskCancellationRequested') `
     -Detail "Plugin tasks must retain manager lifetime and marshal UI work"
+
+Add-TestResult `
+    -Name "Plugins use size-guarded cooperative unload and DNS cancellation" `
+    -Passed (
+        $pluginAbiSource -match 'requestShutdown' -and
+        $pluginAbiSource -match 'isShutdownComplete' -and
+        $pluginManagerSource -match 'SupportsCooperativeShutdown' -and
+        $pluginManagerSource -match 'm_retiringPlugins' -and
+        $pluginManagerSource -match 'Plugin retirement scheduled' -and
+        $pluginManagerSource -match 'weak_from_this\(\)\.lock\(\)' -and
+        $networkPluginSource -match 'DnsQueryEx' -and
+        $networkPluginSource -match 'DnsCancelQuery' -and
+        $networkPluginSource -notmatch '\.detach\s*\('
+    ) `
+    -Detail "Async plugins must retain their DLL until cancellation callbacks have completed"
 
 Add-TestResult `
     -Name "Crash reporting is independent from normal logger locks" `
@@ -482,6 +523,7 @@ Add-TestResult `
 
 $pluginShutdownIndex = $applicationSource.IndexOf('m_appCtx->pluginManager->RequestShutdown()')
 $dispatcherShutdownIndex = $applicationSource.IndexOf('m_appCtx->uiDispatcher->Shutdown()')
+$pluginRetirementIndex = $applicationSource.IndexOf('m_appCtx->pluginManager->Shutdown()')
 $backgroundShutdownIndex = $applicationSource.IndexOf('m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500))')
 $destroyMainWindowIndex = $applicationSource.IndexOf('DestroyWindow(m_hMainWnd)')
 Add-TestResult `
@@ -489,7 +531,8 @@ Add-TestResult `
     -Passed (
         $pluginShutdownIndex -ge 0 -and
         $dispatcherShutdownIndex -gt $pluginShutdownIndex -and
-        $backgroundShutdownIndex -gt $dispatcherShutdownIndex -and
+        $pluginRetirementIndex -gt $dispatcherShutdownIndex -and
+        $backgroundShutdownIndex -gt $pluginRetirementIndex -and
         $destroyMainWindowIndex -gt $backgroundShutdownIndex
     ) `
     -Detail "Plugin submissions, UI dispatch, and background tasks must stop before window teardown"

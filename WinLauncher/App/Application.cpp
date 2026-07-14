@@ -363,6 +363,13 @@ void Application::Shutdown()
     if (m_appCtx && m_appCtx->uiDispatcher)
         m_appCtx->uiDispatcher->Shutdown();
 
+    // Begin plugin retirement while the task service is still available. A
+    // cooperative plugin such as /dns can finish its cancellation callbacks
+    // without blocking the UI; the task service later owns the bounded
+    // process-exit fallback for anything that remains in flight.
+    if (m_appCtx && m_appCtx->pluginManager)
+        m_appCtx->pluginManager->Shutdown();
+
     // Cancel update work before the task service can enter its bounded
     // shutdown fallback; update callbacks must not target torn-down windows.
     UpdateService::GetInstance().Shutdown();

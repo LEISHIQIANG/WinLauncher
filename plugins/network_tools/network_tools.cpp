@@ -26,7 +26,6 @@
 namespace
 {
     using namespace std;
-    atomic<int> g_activeDnsProbeThreads = 0;
 
     void WriteResult(WLStringResultV1* out, const wstring& text)
     {
@@ -316,42 +315,96 @@ namespace
             L"\n";
     }
 
-    void TriggerDnsLeakProbe(const wstring& id, int index)
+    // DnsQueryEx keeps both the cancellation handle and result storage owned by
+    // the session until every completion callback has returned. The host can
+    // therefore retain this plugin DLL safely while cancellation drains.
+    class DnsLeakProbeSession
     {
-        wstring host = to_wstring(index) + L"." + id + L".bash.ws";
-        PDNS_RECORDW records = nullptr;
-        DNS_STATUS status = DnsQuery_W(
-            host.c_str(),
-            DNS_TYPE_A,
-            DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE,
-            nullptr,
-            &records,
-            nullptr);
-        if (records)
-            DnsRecordListFree(records, DnsFreeRecordList);
-        if (status != ERROR_SUCCESS)
+    public:
+        bool Start(const wstring& id)
         {
-            records = nullptr;
-            DnsQuery_W(
-                host.c_str(),
-                DNS_TYPE_AAAA,
-                DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE,
-                nullptr,
-                &records,
-                nullptr);
-            if (records)
-                DnsRecordListFree(records, DnsFreeRecordList);
-        }
-    }
+            lock_guard<recursive_mutex> lock(m_mutex);
+            if (!m_requests.empty() && m_completed != m_requests.size())
+                return false;
+            m_cancelRequested = false;
+            m_requests.clear();
+            m_completed = 0;
+            for (int index = 1; index <= 10; ++index)
+            {
+                auto item = make_unique<Request>();
+                item->owner = this;
+                item->host = to_wstring(index) + L"." + id + L".bash.ws";
+                item->request.Version = DNS_QUERY_REQUEST_VERSION1;
+                item->request.QueryName = item->host.c_str();
+                item->request.QueryType = DNS_TYPE_A;
+                item->request.QueryOptions = DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE;
+                item->request.pQueryCompletionCallback = &OnCompleted;
+                item->request.pQueryContext = item.get();
+                item->result.Version = DNS_QUERY_RESULTS_VERSION1;
+                Request* raw = item.get();
+                m_requests.push_back(std::move(item));
 
-    void LaunchDnsLeakProbe(const wstring& id, int index)
-    {
-        g_activeDnsProbeThreads.fetch_add(1);
-        thread([id, index]() {
-            TriggerDnsLeakProbe(id, index);
-            g_activeDnsProbeThreads.fetch_sub(1);
-        }).detach();
-    }
+                const DNS_STATUS status = DnsQueryEx(&raw->request, &raw->result, &raw->cancel);
+                if (status != DNS_REQUEST_PENDING)
+                    CompleteLocked(raw);
+            }
+            return true;
+        }
+
+        void Cancel()
+        {
+            lock_guard<recursive_mutex> lock(m_mutex);
+            if (m_cancelRequested) return;
+            m_cancelRequested = true;
+            for (const auto& item : m_requests)
+            {
+                if (!item->completed)
+                    DnsCancelQuery(&item->cancel);
+            }
+        }
+
+        bool IsComplete() const
+        {
+            lock_guard<recursive_mutex> lock(m_mutex);
+            return m_completed == m_requests.size();
+        }
+
+    private:
+        struct Request
+        {
+            DnsLeakProbeSession* owner = nullptr;
+            wstring host;
+            DNS_QUERY_REQUEST request{};
+            DNS_QUERY_RESULT result{};
+            DNS_QUERY_CANCEL cancel{};
+            bool completed = false;
+        };
+
+        static void WINAPI OnCompleted(void* context, DNS_QUERY_RESULT*)
+        {
+            auto* item = static_cast<Request*>(context);
+            if (!item || !item->owner) return;
+            lock_guard<recursive_mutex> lock(item->owner->m_mutex);
+            item->owner->CompleteLocked(item);
+        }
+
+        void CompleteLocked(Request* item)
+        {
+            if (!item || item->completed) return;
+            item->completed = true;
+            if (item->result.pQueryRecords)
+            {
+                DnsRecordListFree(item->result.pQueryRecords, DnsFreeRecordList);
+                item->result.pQueryRecords = nullptr;
+            }
+            ++m_completed;
+        }
+
+        mutable recursive_mutex m_mutex;
+        vector<unique_ptr<Request>> m_requests;
+        size_t m_completed = 0;
+        bool m_cancelRequested = false;
+    };
 
     vector<DnsLeakRecord> ParseDnsLeakRows(const wstring& text)
     {
@@ -380,7 +433,7 @@ namespace
         return records;
     }
 
-    wstring DoDNSLeakTest(const WLHostApiV1* host)
+    wstring DoDNSLeakTest(const WLHostApiV1* host, const shared_ptr<DnsLeakProbeSession>& session)
     {
         wstring id = HttpGet(L"https://bash.ws/id");
         id = Trim(id);
@@ -392,8 +445,10 @@ namespace
             L"Session: " + id + L"\n\n"
             L"Detecting DNS servers...\n\n");
 
-        for (int i = 1; i <= 10; ++i)
-            LaunchDnsLeakProbe(id, i);
+        if (!session)
+            return L"DNS Leak Test failed: probe session is unavailable.";
+        if (!session->Start(id))
+            return L"DNS Leak Test is already running. Please wait for it to finish.";
 
         vector<DnsLeakRecord> rows;
         vector<DnsLeakRecord> streamedDnsRows;
@@ -709,6 +764,7 @@ namespace
     {
         const WLHostApiV1* host = nullptr;
         bool winsockStarted = false;
+        shared_ptr<DnsLeakProbeSession> dnsSession = make_shared<DnsLeakProbeSession>();
     };
 
     bool WL_CALL OnLoad(void* userData)
@@ -727,14 +783,24 @@ namespace
     void WL_CALL OnUnload(void* userData)
     {
         auto* p = static_cast<Plugin*>(userData);
-        DWORD start = GetTickCount();
-        while (g_activeDnsProbeThreads.load() > 0 && GetTickCount() - start < 6000)
-            Sleep(50);
         if (p && p->winsockStarted)
         {
             WSACleanup();
             p->winsockStarted = false;
         }
+    }
+
+    void WL_CALL RequestShutdown(void* userData)
+    {
+        auto* p = static_cast<Plugin*>(userData);
+        if (p && p->dnsSession)
+            p->dnsSession->Cancel();
+    }
+
+    bool WL_CALL IsShutdownComplete(void* userData)
+    {
+        auto* p = static_cast<Plugin*>(userData);
+        return !p || !p->dnsSession || p->dnsSession->IsComplete();
     }
     bool WL_CALL ExecuteCommand(void*, const WLCommandContextV1*, WLStringResultV1*) { return true; }
 
@@ -753,7 +819,7 @@ namespace
         }
         else if (cmd == L"dns")
         {
-            WriteResult(out, DoDNSLeakTest(p->host));
+            WriteResult(out, DoDNSLeakTest(p->host, p->dnsSession));
         }
         else if (cmd == L"ip")         WriteResult(out, DoLocalIP());
         else if (cmd == L"port")
@@ -781,6 +847,7 @@ WL_EXPORT bool WL_CALL WinLauncherPlugin_Create(const WLHostApiV1* host, WLPlugi
     i->onLoad = &OnLoad; i->onUnload = &OnUnload;
     i->executeCommand = &ExecuteCommand; i->executeSlashCommand = &ExecuteSlashCommand;
     i->onPopupShown = nullptr; i->onPopupHidden = nullptr; i->search = &Search;
+    i->requestShutdown = &RequestShutdown; i->isShutdownComplete = &IsShutdownComplete;
     *outInstance = i;
     return true;
 }

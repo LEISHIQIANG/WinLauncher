@@ -10,6 +10,9 @@
 #include <regex>
 #include <thread>
 #include "PopupWindow.h"
+#include "Popup/PopupLayout.h"
+#include "Popup/PopupSearchModel.h"
+#include "Popup/PopupCommandDispatcher.h"
 #include "Contracts/ICommandExecutionService.h"
 #include "Contracts/IUserInteractionService.h"
 #include "DpiHelper.h"
@@ -339,9 +342,7 @@ bool PopupWindow::IsFileSelectionValid(double elapsedSeconds) const
 
 void PopupWindow::ClearCapturedFileSelection()
 {
-    std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-    m_selectedFilesCtx.filePaths.clear();
-    m_selectedFilesCtx.isPending = false;
+    m_fileSelection.Clear();
 }
 
 
@@ -431,14 +432,6 @@ PopupWindow::~PopupWindow()
             m_appCtx->eventBus->Unsubscribe(EventType::UiScaleChanged, m_uiScaleChangedToken);
     }
     ClearPages();
-}
-
-PopupWindow::IconRefreshState::~IconRefreshState()
-{
-    for (const auto& result : results)
-    {
-        if (result.icon) DestroyIcon(result.icon);
-    }
 }
 
 void PopupWindow::ClearPages()
@@ -1270,9 +1263,8 @@ void PopupWindow::UpdateSearch()
     }
 
     std::wstring queryLower = m_searchQuery;
-    std::transform(queryLower.begin(), queryLower.end(), queryLower.begin(), [](wchar_t c) {
-        return (wchar_t)towlower(c);
-    });
+    std::transform(queryLower.begin(), queryLower.end(), queryLower.begin(),
+        [](wchar_t c) { return (wchar_t)towlower(c); });
 
     bool slashMode = !m_searchQuery.empty() && m_searchQuery.front() == L'/';
     if (slashMode)
@@ -1280,106 +1272,28 @@ void PopupWindow::UpdateSearch()
         if (m_appCtx && m_appCtx->pluginManager)
         {
             m_appCtx->pluginManager->RequestSearch(L"");
-            auto slashCommands = m_appCtx->pluginManager->SearchSlashCommands(m_searchQuery);
-            for (const auto& command : slashCommands)
-            {
-                SearchResultItem item;
-                item.kind = SearchResultItem::Kind::SlashCommand;
-                item.shortcut.name = L"/" + command.commandName;
-                item.originalPageIndex = -1;
-                item.originalShortcutIndex = -1;
-                item.pluginId = command.pluginId;
-                item.pluginCommandId = command.commandId;
-                item.subtitle = command.usage.empty() ? command.description : command.usage;
-                item.iconPath = command.icon;
-                m_searchResults.push_back(item);
-            }
+            m_searchResults = PopupSearchService::CollectSlashCommands(
+                m_searchQuery, m_appCtx->pluginManager.get());
         }
         KillTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID);
     }
     else
     {
-        for (size_t pIndex = 0; pIndex < m_pages.size(); pIndex++)
-        {
-            const auto& page = m_pages[pIndex];
-            for (size_t sIndex = 0; sIndex < page.shortcuts.size(); sIndex++)
-            {
-                const auto& sc = page.shortcuts[sIndex];
-                std::wstring nameLower = sc.name;
-                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](wchar_t c) {
-                    return (wchar_t)towlower(c);
-                });
-
-                if (nameLower.find(queryLower) != std::wstring::npos)
-                {
-                    SearchResultItem item;
-                    item.shortcut = sc;
-                    if (sIndex < page.iconBitmaps.size())
-                    {
-                        item.bitmap = page.iconBitmaps[sIndex];
-                    }
-                    item.originalPageIndex = ToModelPageIndex((int)pIndex);
-                    item.originalShortcutIndex = (int)sIndex;
-                    m_searchResults.push_back(item);
-                }
-            }
-        }
-
-        // Also search dock page shortcuts
-        for (size_t sIndex = 0; sIndex < m_dockPage.shortcuts.size(); sIndex++)
-        {
-            const auto& sc = m_dockPage.shortcuts[sIndex];
-            std::wstring nameLower = sc.name;
-            std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), [](wchar_t c) {
-                return (wchar_t)towlower(c);
-            });
-            if (nameLower.find(queryLower) != std::wstring::npos)
-            {
-                SearchResultItem item;
-                item.shortcut = sc;
-                if (sIndex < m_dockPage.iconBitmaps.size())
-                    item.bitmap = m_dockPage.iconBitmaps[sIndex];
-                item.originalPageIndex = -2; // Sentinel: dock page
-                item.originalShortcutIndex = (int)sIndex;
-                m_searchResults.push_back(item);
-            }
-        }
+        m_searchResults = PopupSearchService::CollectLocalShortcuts(
+            queryLower, m_pages, m_dockPage, &m_pageModelIndices);
 
         if (m_appCtx && m_appCtx->pluginManager)
         {
             m_appCtx->pluginManager->RequestSearch(m_searchQuery);
 
-            auto pluginCommands = m_appCtx->pluginManager->SearchCommands(m_searchQuery);
-            for (const auto& command : pluginCommands)
-            {
-                SearchResultItem item;
-                item.kind = SearchResultItem::Kind::PluginCommand;
-                item.shortcut.name = command.title;
-                item.originalPageIndex = -1;
-                item.originalShortcutIndex = -1;
-            item.pluginId = command.pluginId;
-            item.pluginCommandId = command.commandId;
-            item.subtitle = command.description;
-            item.iconPath = command.icon;
-            m_searchResults.push_back(std::move(item));
-            }
+            bool pluginSearchRunning = false;
+            auto pluginResults = PopupSearchService::CollectPluginResults(
+                m_searchQuery, m_appCtx->pluginManager.get(), pluginSearchRunning);
+            m_searchResults.insert(m_searchResults.end(),
+                std::make_move_iterator(pluginResults.begin()),
+                std::make_move_iterator(pluginResults.end()));
 
-            auto pluginResults = m_appCtx->pluginManager->GetCachedSearchResults(m_searchQuery);
-            for (const auto& result : pluginResults)
-            {
-                SearchResultItem item;
-                item.kind = SearchResultItem::Kind::PluginSearchResult;
-                item.shortcut.name = result.title;
-                item.originalPageIndex = -1;
-                item.originalShortcutIndex = -1;
-                item.pluginId = result.pluginId;
-                item.pluginCommandId = result.commandId;
-                item.subtitle = result.description;
-                item.iconPath = result.icon;
-                m_searchResults.push_back(std::move(item));
-            }
-
-            if (m_appCtx->pluginManager->IsSearchRunning(m_searchQuery))
+            if (pluginSearchRunning)
                 SetTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID, PLUGIN_SEARCH_REFRESH_MS, nullptr);
             else
                 KillTimer(GetHWND(), PLUGIN_SEARCH_TIMER_ID);
@@ -1389,29 +1303,8 @@ void PopupWindow::UpdateSearch()
     int sortMode = (m_appCtx && m_appCtx->configService)
         ? m_appCtx->configService->GetSortMode()
         : 0;
-    if (sortMode == 1 && !slashMode)
-    {
-        std::stable_sort(m_searchResults.begin(), m_searchResults.end(), [&](const SearchResultItem& a, const SearchResultItem& b) {
-            auto score = [&](const SearchResultItem& item) {
-                std::wstring name = item.shortcut.name;
-                std::transform(name.begin(), name.end(), name.begin(), [](wchar_t c) {
-                    return (wchar_t)towlower(c);
-                });
-                size_t pos = name.find(queryLower);
-                int posScore = (pos == std::wstring::npos) ? 10000 : (int)pos;
-                UsageHistoryEntry usage{};
-                if (m_appCtx && m_appCtx->usageHistory) {
-                    std::wstring key = item.kind == SearchResultItem::Kind::LocalShortcut
-                        ? L"shortcut:" + item.shortcut.id
-                        : L"plugin:" + item.pluginId + L":" + item.pluginCommandId;
-                    usage = m_appCtx->usageHistory->Get(key);
-                }
-                const int prefixScore = name.rfind(queryLower, 0) == 0 ? 0 : 1;
-                return std::make_tuple(prefixScore, posScore, 0ULL - usage.launchCount, 0ULL - usage.lastUsedUtc, item.originalPageIndex, item.originalShortcutIndex);
-            };
-            return score(a) < score(b);
-        });
-    }
+    PopupSearchService::SortByRelevance(
+        m_searchResults, queryLower, sortMode, slashMode, m_appCtx ? m_appCtx->usageHistory : nullptr);
 }
 
 void PopupWindow::ExecuteSearchResult(int index)
@@ -1421,9 +1314,8 @@ void PopupWindow::ExecuteSearchResult(int index)
 
     auto& item = m_searchResults[index];
     if (m_appCtx && m_appCtx->usageHistory) {
-        const std::wstring key = item.kind == SearchResultItem::Kind::LocalShortcut
-            ? L"shortcut:" + item.shortcut.id
-            : L"plugin:" + item.pluginId + L":" + item.pluginCommandId;
+        const std::wstring key = PopupCommandDispatcher::UsageKey(
+            item.kind == SearchResultItem::Kind::LocalShortcut, item.shortcut.id, item.pluginId, item.pluginCommandId);
         // A result reached execution dispatch; failures/cancellations do not record a completion later.
         m_appCtx->usageHistory->RecordAccepted(key);
     }
@@ -1432,8 +1324,7 @@ void PopupWindow::ExecuteSearchResult(int index)
         if (!m_appCtx || !m_appCtx->pluginManager)
             return;
 
-        if (item.pluginId.empty() &&
-            item.pluginCommandId == L"winlauncher.settings")
+        if (PopupCommandDispatcher::IsBuiltin(item.pluginId, item.pluginCommandId, L"winlauncher.settings"))
         {
             if (m_appCtx->hMainWnd)
                 PostMessageW(m_appCtx->hMainWnd, AppMessages::ShowConfigWindow, 0, 0);
@@ -1442,8 +1333,7 @@ void PopupWindow::ExecuteSearchResult(int index)
 
         // Reload is a quick built-in maintenance action. It has no output the
         // user needs to inspect, so avoid opening an otherwise empty panel.
-        if (item.pluginId.empty() &&
-            item.pluginCommandId == L"winlauncher.reload")
+        if (PopupCommandDispatcher::IsBuiltin(item.pluginId, item.pluginCommandId, L"winlauncher.reload"))
         {
             std::wstring message;
             const bool ok = m_appCtx->pluginManager->ExecuteSlashCommand(
@@ -1456,27 +1346,12 @@ void PopupWindow::ExecuteSearchResult(int index)
         std::vector<std::wstring> files;
         for (int wait = 0; wait < 25; ++wait)
         {
-            bool pending = false;
-            {
-                std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-                pending = m_selectedFilesCtx.isPending;
-            }
-            if (!pending)
+            if (!m_fileSelection.IsPending())
                 break;
             Sleep(10);
         }
 
-        {
-            std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-            double now = GetTimeInSeconds();
-            if (!m_selectedFilesCtx.isPending &&
-                !m_selectedFilesCtx.filePaths.empty() &&
-                IsFileSelectionValid(now - m_selectedFilesCtx.capturedTime))
-            {
-                files = m_selectedFilesCtx.filePaths;
-                m_selectedFilesCtx.filePaths.clear();
-            }
-        }
+        m_fileSelection.Consume(GetTimeInSeconds(), GetFileSelectionValiditySeconds(), files);
 
         std::wstring panelTitle = L"/ 命令输出 - " + item.shortcut.name;
         std::wstring pluginId = item.pluginId;
@@ -1496,11 +1371,7 @@ void PopupWindow::ExecuteSearchResult(int index)
                 commandId.c_str(),
                 ok ? 1 : 0);
 
-            if (message.empty())
-                message = ok ? L"命令已执行，无输出。" : L"命令执行失败，无错误详情。";
-            if (!ok)
-                message = L"执行失败：\r\n" + message;
-            CommandPanelWindow::PostAppend(panelHwnd, message);
+            CommandPanelWindow::PostAppend(panelHwnd, PopupCommandDispatcher::NormalizeResultMessage(ok, std::move(message)));
         };
         CommandPanelWindow::ShowLive(GetHWND(), panelTitle.c_str(), L"", worker, m_appCtx, worker);
         return;
@@ -1529,11 +1400,7 @@ void PopupWindow::ExecuteSearchResult(int index)
                 commandId.c_str(),
                 ok ? 1 : 0);
 
-            if (message.empty())
-                message = ok ? L"命令已执行，无输出。" : L"命令执行失败，无错误详情。";
-            if (!ok)
-                message = L"执行失败：\r\n" + message;
-            CommandPanelWindow::PostAppend(panelHwnd, message);
+            CommandPanelWindow::PostAppend(panelHwnd, PopupCommandDispatcher::NormalizeResultMessage(ok, std::move(message)));
         };
         CommandPanelWindow::ShowLive(GetHWND(), panelTitle.c_str(), L"", worker, m_appCtx, worker);
         return;
@@ -1910,18 +1777,8 @@ void PopupWindow::EnsureIcons()
 void PopupWindow::RefreshIcons()
 {
     if (!m_rt || !m_appCtx || !m_appCtx->backgroundTasks) return;
-    if (m_refreshingIcons)
-    {
-        // One active Shell extraction already reflects the latest shortcut
-        // state.  Coalesce repeated refresh gestures rather than enqueueing a
-        // second whole-dataset disk pass.
-        return;
-    }
-    m_refreshingIcons = true;
-    const uint64_t generation = ++m_iconRefreshGeneration;
-    auto state = std::make_shared<IconRefreshState>();
-    state->generation = generation;
-    m_iconRefreshState = state;
+    auto state = m_iconRefresh.Begin();
+    if (!state) return;
     HWND hwnd = GetHWND();
 
     // Keep the familiar refresh feedback: visible icons briefly return to
@@ -1989,8 +1846,7 @@ void PopupWindow::RefreshIcons()
         });
     if (!m_iconRefreshTask)
     {
-        m_refreshingIcons = false;
-        m_iconRefreshState.reset();
+        m_iconRefresh.Cancel();
         LOG_G_WORNING(L"PopupWindow perf: icon refresh was not queued");
     }
 }
@@ -1999,22 +1855,14 @@ void PopupWindow::CancelIconRefresh()
 {
     m_iconRefreshTask.Cancel();
     m_iconRefreshTask = {};
-    if (m_iconRefreshState) m_iconRefreshState->cancelled = true;
-    m_iconRefreshState.reset();
-    m_refreshingIcons = false;
-    m_iconRefreshPending = false;
-    ++m_iconRefreshGeneration;
+    m_iconRefresh.Cancel();
 }
 
 void PopupWindow::ApplyRefreshedIcons()
 {
-    auto state = m_iconRefreshState;
-    if (!state || state->cancelled || state->generation != m_iconRefreshGeneration) return;
-    std::vector<RefreshedIcon> results;
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        results.swap(state->results);
-    }
+    auto state = m_iconRefresh.Current();
+    if (!m_iconRefresh.IsCurrent(state)) return;
+    auto results = m_iconRefresh.Take(state);
     const double started = GetTimeInSeconds();
     int applied = 0;
     for (auto& result : results)
@@ -2032,16 +1880,15 @@ void PopupWindow::ApplyRefreshedIcons()
         ++applied;
     }
     m_bmpBrushCache.clear();
-    m_refreshingIcons = false;
+    m_iconRefresh.Complete();
     m_iconRefreshTask = {};
     EnsureIcons();
     InvalidateRect(GetHWND(), nullptr, FALSE);
     LOG_G_DEBUG(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
                applied, results.size(), (GetTimeInSeconds() - started) * 1000.0,
-               static_cast<unsigned long long>(m_iconRefreshGeneration));
-    if (m_iconRefreshPending)
+               static_cast<unsigned long long>(m_iconRefresh.Generation()));
+    if (m_iconRefresh.TakePending())
     {
-        m_iconRefreshPending = false;
         RefreshIcons();
     }
 }
@@ -2219,18 +2066,8 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
     // Active file selection feedback (timeline)
     double now = GetTimeInSeconds();
     double elapsed = 0.0;
-    bool hasActiveSelection = false;
-    {
-        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty())
-        {
-            elapsed = now - m_selectedFilesCtx.capturedTime;
-            if (IsFileSelectionValid(elapsed))
-            {
-                hasActiveSelection = true;
-            }
-        }
-    }
+    std::vector<std::wstring> selectionPreview;
+    const bool hasActiveSelection = m_fileSelection.Peek(now, GetFileSelectionValiditySeconds(), selectionPreview, &elapsed);
 
     if (hasActiveSelection)
     {
@@ -2339,53 +2176,15 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
 
 int PopupWindow::HitTest(POINT pt)
 {
-    int topBarHeight = GetHeaderLayout().topBarHeight;
-    int cols = GetColumns();
-    int rows = GetRows();
-    int cw = CellWidth(), ch = CellHeight();
-    int wndPad = GetWndPadding();
-    int iconGap = GetIconGap();
+    PopupLayout::GridMetrics metrics{ GetColumns(), GetRows(), CellWidth(), CellHeight(), GetWndPadding(), GetIconGap(), GetHeaderLayout().topBarHeight };
+    const int gridTop = metrics.padding + metrics.headerHeight;
 
     if (m_searchActive && !m_searchQuery.empty())
-    {
-        int n = (int)m_searchResults.size();
-        int maxCells = cols * rows;
-        if (n > maxCells) n = maxCells;
-
-        for (int i = 0; i < n; i++)
-        {
-            int col = i % cols, row = i / cols;
-            RECT rc{
-                wndPad + col * cw,
-                wndPad + row * ch + topBarHeight,
-                wndPad + col * cw + cw - iconGap,
-                wndPad + row * ch + ch - iconGap + topBarHeight
-            };
-            if (PtInRect(&rc, pt)) return i;
-        }
-        return -1;
-    }
+        return PopupLayout::HitTestGrid(metrics, (int)m_searchResults.size(), pt, gridTop);
 
     if (m_pages.empty() || m_currentPage < 0 || m_currentPage >= (int)m_pages.size())
         return -1;
-
-    const auto& page = m_pages[m_currentPage];
-    int n = (int)page.shortcuts.size();
-    int maxCells = cols * rows;
-    if (n > maxCells) n = maxCells;
-
-    for (int i = 0; i < n; i++)
-    {
-        int col = i % cols, row = i / cols;
-        RECT rc{
-            wndPad + col * cw,
-            wndPad + row * ch + topBarHeight,
-            wndPad + col * cw + cw - iconGap,
-            wndPad + row * ch + ch - iconGap + topBarHeight
-        };
-        if (PtInRect(&rc, pt)) return i;
-    }
-    return -1;
+    return PopupLayout::HitTestGrid(metrics, (int)m_pages[m_currentPage].shortcuts.size(), pt, gridTop);
 }
 
 int PopupWindow::HitTestDot(POINT pt)
@@ -2395,37 +2194,13 @@ int PopupWindow::HitTestDot(POINT pt)
 
 int PopupWindow::HitTestDock(POINT pt)
 {
-    int dockRows    = GetDockHeight();  // row count
-    int cols        = GetColumns();
-    int cw          = CellWidth();
-    int ch          = CellHeight();
-    int wndPad      = GetWndPadding();
-    int iconGap     = GetIconGap();
-    int mainRows    = GetRows();
-    int topBarHeight = GetHeaderLayout().topBarHeight;
-
-    int mainGridCardBottom = wndPad + mainRows * ch - iconGap + topBarHeight;
-    int lineY = mainGridCardBottom + wndPad;
-    int dockTopY = lineY + wndPad;
+    const int dockRows = GetDockHeight();
+    PopupLayout::GridMetrics metrics{ GetColumns(), GetRows(), CellWidth(), CellHeight(), GetWndPadding(), GetIconGap(), GetHeaderLayout().topBarHeight };
+    const int dockTopY = PopupLayout::DockTop(metrics, dockRows);
 
     if (pt.y < dockTopY) return -1;
-
-    int n = (int)m_dockPage.shortcuts.size();
-    int maxCells = cols * dockRows;
-    if (n > maxCells) n = maxCells;
-
-    for (int i = 0; i < n; i++)
-    {
-        int col = i % cols, row = i / cols;
-        RECT rc {
-            wndPad + col * cw,
-            dockTopY + row * ch,
-            wndPad + col * cw + cw - iconGap,
-            dockTopY + row * ch + ch - iconGap
-        };
-        if (PtInRect(&rc, pt)) return i;
-    }
-    return -1;
+    metrics.rows = dockRows;
+    return PopupLayout::HitTestGrid(metrics, (int)m_dockPage.shortcuts.size(), pt, dockTopY);
 }
 
 void PopupWindow::StartPageAnimationLoop()
@@ -2750,23 +2525,16 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         {
             double now = GetTimeInSeconds();
             double elapsed = 0.0;
-            bool isEmpty = false;
-            {
-                std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-                elapsed = now - m_selectedFilesCtx.capturedTime;
-                isEmpty = m_selectedFilesCtx.filePaths.empty();
-            }
+            std::vector<std::wstring> selectionPreview;
+            const bool hasSelection = m_fileSelection.Peek(now, -1, selectionPreview, &elapsed);
+            const bool isEmpty = !hasSelection;
 
             const int validitySeconds = GetFileSelectionValiditySeconds();
             const bool selectionExpired = !IsSelectionWithinValidity(elapsed, validitySeconds);
             if (selectionExpired || isEmpty || validitySeconds < 0)
             {
                 KillTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID);
-                if (selectionExpired)
-                {
-                    std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-                    m_selectedFilesCtx.filePaths.clear();
-                }
+                if (selectionExpired) m_fileSelection.ExpireIfNeeded(now, validitySeconds);
             }
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
@@ -2821,7 +2589,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_USER_REFRESH_ICONS:
     {
-        if (!m_refreshingIcons) return 0;
+        if (!m_iconRefresh.IsRefreshing()) return 0;
         ApplyRefreshedIcons();
         return 0;
     }
@@ -3477,14 +3245,8 @@ static std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, A
     std::vector<std::wstring> files;
     if (PopupWindow::s_instance)
     {
-        std::lock_guard<std::mutex> lock(PopupWindow::s_instance->m_selectedFilesMutex);
-        double now = GetTimeInSeconds();
-        if (!PopupWindow::s_instance->m_selectedFilesCtx.isPending && 
-            !PopupWindow::s_instance->m_selectedFilesCtx.filePaths.empty() && 
-            PopupWindow::s_instance->IsFileSelectionValid(now - PopupWindow::s_instance->m_selectedFilesCtx.capturedTime))
-        {
-            files = PopupWindow::s_instance->m_selectedFilesCtx.filePaths;
-        }
+        PopupWindow::s_instance->m_fileSelection.Peek(
+            GetTimeInSeconds(), PopupWindow::s_instance->GetFileSelectionValiditySeconds(), files);
     }
 
     std::map<std::wstring, std::wstring> inputValues;
@@ -3662,17 +3424,7 @@ void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
 {
     HWND hWnd = GetHWND();
     std::vector<std::wstring> files;
-    bool hasFiles = false;
-    {
-        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-        double now = GetTimeInSeconds();
-        if (!m_selectedFilesCtx.isPending && !m_selectedFilesCtx.filePaths.empty() && IsFileSelectionValid(now - m_selectedFilesCtx.capturedTime))
-        {
-            files = m_selectedFilesCtx.filePaths;
-            hasFiles = true;
-            m_selectedFilesCtx.filePaths.clear();
-        }
-    }
+    const bool hasFiles = m_fileSelection.Consume(GetTimeInSeconds(), GetFileSelectionValiditySeconds(), files);
 
     const bool isVirtualSystemAction =
         sc.type == Model::ShortcutType::System &&
@@ -3798,27 +3550,16 @@ void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT 
         KillTimer(hWnd, TIMELINE_ANIMATION_TIMER_ID);
     }
 
-    {
-        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-        m_selectedFilesCtx.filePaths.clear();
-        m_selectedFilesCtx.sourceHwnd = activeHwnd;
-        m_selectedFilesCtx.capturedTime = GetTimeInSeconds();
-        m_selectedFilesCtx.isPending = true;
-    }
-
     CancelFileSelectionQuery();
-    m_selectionRequest = Services::FileSelectionService::CaptureSelectedFilesAsync(
+    const auto request = Services::FileSelectionService::CaptureSelectedFilesAsync(
         activeHwnd, clickPt, popupCenter, m_appCtx ? m_appCtx->backgroundTasks : nullptr);
+    m_fileSelection.Begin(request, activeHwnd, GetTimeInSeconds());
     if (hWnd) SetTimer(hWnd, FILE_SELECTION_TIMER_ID, 30, nullptr);
 }
 
 void PopupWindow::CancelFileSelectionQuery()
 {
-    if (m_selectionRequest)
-    {
-        m_selectionRequest->Cancel();
-        m_selectionRequest.reset();
-    }
+    m_fileSelection.Cancel();
 
     if (HWND hWnd = GetHWND())
         KillTimer(hWnd, FILE_SELECTION_TIMER_ID);
@@ -3826,23 +3567,10 @@ void PopupWindow::CancelFileSelectionQuery()
 
 void PopupWindow::PollFileSelectionQuery()
 {
-    if (!m_selectionRequest) return;
-    Services::SelectionContext result;
-    if (!m_selectionRequest->TryGetResult(result)) return;
-
     HWND hWnd = GetHWND();
+    if (!m_fileSelection.Poll()) return;
     if (hWnd) KillTimer(hWnd, FILE_SELECTION_TIMER_ID);
-    auto completed = std::move(m_selectionRequest);
-
-    bool hasFiles = false;
-    {
-        std::lock_guard<std::mutex> lock(m_selectedFilesMutex);
-        if (m_selectedFilesCtx.sourceHwnd == result.sourceHwnd)
-        {
-            m_selectedFilesCtx = std::move(result);
-            hasFiles = !m_selectedFilesCtx.filePaths.empty();
-        }
-    }
-    if (hasFiles && hWnd && IsWindow(hWnd))
+    std::vector<std::wstring> files;
+    if (m_fileSelection.Peek(GetTimeInSeconds(), -1, files) && hWnd && IsWindow(hWnd))
         PostMessageW(hWnd, WM_USER_SELECTION_UPDATED, 0, 0);
 }

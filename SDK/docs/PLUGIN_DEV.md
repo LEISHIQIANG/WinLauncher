@@ -59,11 +59,14 @@ ABI 规则：
 | `executeSlashCommand` | 执行 `/` 命令 |
 | `onPopupShown` | 中键弹窗显示事件 |
 | `onPopupHidden` | 中键弹窗隐藏事件 |
+| `requestShutdown` | 可选：主程序请求插件取消仍在运行的异步工作 |
+| `isShutdownComplete` | 可选：仅当返回 `true` 后主程序才会调用 `onUnload`、销毁实例并卸载 DLL |
 | `search` | 动态普通搜索源，运行在后台搜索线程 |
 
 建议：
 
 - 回调中不要抛出 C++ 异常穿过 ABI 边界。
+- 如果插件自行启动线程、异步 DNS/网络请求或其他会在卸载后继续执行的工作，请同时实现 `requestShutdown` 与 `isShutdownComplete`。收到停止请求后应取消工作；只有所有回调和插件代码都已返回时才报告完成。旧插件可以把两个字段设为 `nullptr`，主程序会按原有立即卸载规则处理。
 - 搜索回调要短、确定、可取消，返回数量不要超过 `request->maxResults`。
 - 插件 UI、文件、网络、进程等能力优先使用 Host API，不要绕过权限模型。
 

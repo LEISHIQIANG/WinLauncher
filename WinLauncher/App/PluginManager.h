@@ -172,6 +172,28 @@ private:
             }
         }
 
+        bool SupportsCooperativeShutdown() const noexcept
+        {
+            return instance &&
+                instance->size >= offsetof(WLPluginInstanceV1, isShutdownComplete) + sizeof(instance->isShutdownComplete) &&
+                instance->requestShutdown != nullptr &&
+                instance->isShutdownComplete != nullptr;
+        }
+
+        void RequestCooperativeShutdown() noexcept
+        {
+            if (!SupportsCooperativeShutdown()) return;
+            try { instance->requestShutdown(instance->userData); }
+            catch (...) {}
+        }
+
+        bool IsCooperativeShutdownComplete() const noexcept
+        {
+            if (!SupportsCooperativeShutdown()) return true;
+            try { return instance->isShutdownComplete(instance->userData); }
+            catch (...) { return true; }
+        }
+
         HMODULE module = nullptr;
         WLPluginInstanceV1* instance = nullptr;
         WLDestroyPluginFn destroy = nullptr;
@@ -201,6 +223,10 @@ private:
     void ScanInstalled();
     bool LoadPlugin(const std::wstring& pluginId);
     void UnloadPlugin(const std::wstring& pluginId);
+    bool HasRetiringPlugins() const;
+    void ScheduleRetirement(const std::wstring& pluginId, const std::shared_ptr<LoadedPlugin>& loaded);
+    void FinalizeRetirement(const std::wstring& pluginId, const std::shared_ptr<LoadedPlugin>& loaded);
+    void AbandonRetiringPluginsForProcessExit() noexcept;
     void RunSearchWorker(std::wstring query, unsigned long long generation);
     bool RegisterRuntimeCommand(const std::wstring& pluginId, const WLCommandDescriptorV1* command);
     bool RegisterRuntimeSlashCommand(const std::wstring& pluginId, const WLSlashCommandDescriptorV1* command);
@@ -269,6 +295,7 @@ private:
     std::map<std::wstring, PluginState> m_states;
     std::map<std::wstring, PluginRecord> m_plugins;
     std::map<std::wstring, std::shared_ptr<LoadedPlugin>> m_loadedPlugins;
+    std::map<std::wstring, std::shared_ptr<LoadedPlugin>> m_retiringPlugins;
     std::vector<PluginCommandInfo> m_builtinSlashCommands;
     mutable std::mutex m_loadedPluginsMutex;
     mutable std::mutex m_searchMutex;

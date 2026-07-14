@@ -148,6 +148,10 @@ struct WLPluginInstanceV1
     void (WL_CALL* onPopupHidden)(void* userData);
     bool (WL_CALL* search)(void* userData, const WLSearchRequestV1* request, WLSearchResponseV1* response);
     bool (WL_CALL* executeSlashCommand)(void* userData, const WLSlashCommandContextV1* context, WLStringResultV1* outMessage);
+
+    // Optional cooperative-unload callbacks. Hosts must check size before use.
+    void (WL_CALL* requestShutdown)(void* userData);
+    bool (WL_CALL* isShutdownComplete)(void* userData);
 };
 
 typedef uint32_t (WL_CALL* WLGetAbiVersionFn)();

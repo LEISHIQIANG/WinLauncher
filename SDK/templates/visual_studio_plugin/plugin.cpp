@@ -75,6 +75,8 @@ WL_EXPORT bool WL_CALL WinLauncherPlugin_Create(const WLHostApiV1* host, WLPlugi
     instance->onPopupShown = nullptr;
     instance->onPopupHidden = nullptr;
     instance->search = nullptr;
+    instance->requestShutdown = nullptr;
+    instance->isShutdownComplete = nullptr;
 
     *outInstance = instance;
     return true;
@@ -87,4 +89,3 @@ WL_EXPORT void WL_CALL WinLauncherPlugin_Destroy(WLPluginInstanceV1* instance)
     delete static_cast<TemplatePlugin*>(instance->userData);
     delete instance;
 }
-

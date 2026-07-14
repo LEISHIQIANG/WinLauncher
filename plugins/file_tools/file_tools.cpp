@@ -520,6 +520,7 @@ WL_EXPORT bool WL_CALL WinLauncherPlugin_Create(const WLHostApiV1* host, WLPlugi
     i->onLoad = &OnLoad; i->onUnload = &OnUnload;
     i->executeCommand = &ExecuteCommand; i->executeSlashCommand = &ExecuteSlashCommand;
     i->onPopupShown = nullptr; i->onPopupHidden = nullptr; i->search = &Search;
+    i->requestShutdown = nullptr; i->isShutdownComplete = nullptr;
     *outInstance = i;
     return true;
 }

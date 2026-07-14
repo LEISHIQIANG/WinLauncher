@@ -16,3 +16,6 @@ The project defaults to `x64` and C++17. The public ABI header path can be suppl
 
 `/p:WinLauncherSdkInclude=C:\path\to\WinLauncher\WinLauncher\SDK\include`
 
+If the plugin starts asynchronous work, implement the optional `requestShutdown` and
+`isShutdownComplete` instance callbacks. The host retains the DLL until completion;
+simple synchronous plugins should explicitly set both callbacks to `nullptr`.

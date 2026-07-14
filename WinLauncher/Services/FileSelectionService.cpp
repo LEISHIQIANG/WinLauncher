@@ -204,9 +204,17 @@ namespace Services
     {
         auto request = std::make_shared<SelectionRequest>();
         auto capturedTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const auto completeEmpty = [&request, activeHwnd, capturedTime]() {
+            std::lock_guard<std::mutex> lock(request->m_mutex);
+            request->m_result.filePaths.clear();
+            request->m_result.sourceHwnd = activeHwnd;
+            request->m_result.capturedTime = capturedTime;
+            request->m_result.isPending = false;
+            request->m_completed = true;
+        };
         if (!tasks)
         {
-            request->m_completed = true;
+            completeEmpty();
             return request;
         }
 
@@ -234,7 +242,7 @@ namespace Services
             request->m_completed = true;
         });
         if (!request->m_task)
-            request->m_completed = true;
+            completeEmpty();
         return request;
     }
 }

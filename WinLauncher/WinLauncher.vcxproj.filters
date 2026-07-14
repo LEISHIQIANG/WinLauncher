@@ -60,6 +60,12 @@
     <ClCompile Include="PopupWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Popup\PopupLayout.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupSearchModel.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupFileSelectionController.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupIconRefreshController.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupCommandDispatcher.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupSearchService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="TrayMenuWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -99,6 +105,11 @@
     <ClCompile Include="Services\FolderWatcher.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Services\IniConfigRepository.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Services\IniConfigDocument.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\ConfigFileStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\UsageHistoryStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\DiagnosticService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\MigrationBackupService.cpp"><Filter>源文件</Filter></ClCompile>
@@ -433,6 +444,14 @@
     <ClInclude Include="Services\IniConfigRepository.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Services\IniConfigDocument.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Services\ConfigFileStore.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupLayout.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupSearchModel.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupFileSelectionController.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupIconRefreshController.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupCommandDispatcher.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupSearchService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\UsageHistoryStore.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\DiagnosticService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\MigrationBackupService.h"><Filter>头文件</Filter></ClInclude>

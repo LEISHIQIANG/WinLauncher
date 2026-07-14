@@ -9,6 +9,9 @@
 #include <wrl.h>
 #include "Config/TextBox.h"
 #include "Services/FileSelectionService.h"
+#include "Popup/PopupFileSelectionController.h"
+#include "Popup/PopupIconRefreshController.h"
+#include "Popup/PopupSearchService.h"
 #include <mutex>
 #include <memory>
 #include <atomic>
@@ -149,26 +152,7 @@ private:
     bool m_searchActive;
     std::wstring m_searchQuery;
 
-    struct SearchResultItem
-    {
-        enum class Kind
-        {
-            LocalShortcut,
-            PluginCommand,
-            PluginSearchResult,
-            SlashCommand
-        };
-
-        Kind kind = Kind::LocalShortcut;
-        RendShortcutInfo shortcut;
-        ID2D1Bitmap* bitmap = nullptr;
-        int originalPageIndex = -1;
-        int originalShortcutIndex = -1;
-        std::wstring pluginId;
-        std::wstring pluginCommandId;
-        std::wstring subtitle;
-        std::wstring iconPath;
-    };
+    using SearchResultItem = PopupSearchService::SearchResult;
     std::vector<SearchResultItem> m_searchResults;
     int m_selectedSearchResult;
     int m_hoveredTab;
@@ -187,30 +171,10 @@ private:
     EventBus::Token m_themeChangedToken = 0;
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
-    bool m_refreshingIcons = false;
-    bool m_iconRefreshPending = false;
-    uint64_t m_iconRefreshGeneration = 0;
     BackgroundTaskService::TaskHandle m_iconRefreshTask;
-    struct RefreshedIcon
-    {
-        bool dock = false;
-        size_t pageIndex = 0;
-        size_t shortcutIndex = 0;
-        HICON icon = nullptr;
-    };
-    struct IconRefreshState
-    {
-        ~IconRefreshState();
-        std::mutex mutex;
-        std::vector<RefreshedIcon> results;
-        std::atomic_bool cancelled{ false };
-        uint64_t generation = 0;
-    };
-    std::shared_ptr<IconRefreshState> m_iconRefreshState;
+    PopupIconRefreshController m_iconRefresh;
 
-    std::mutex m_selectedFilesMutex;
-    Services::SelectionContext m_selectedFilesCtx;
-    std::shared_ptr<Services::SelectionRequest> m_selectionRequest;
+    PopupFileSelectionController m_fileSelection;
     void StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter);
     void CancelFileSelectionQuery();
     void PollFileSelectionQuery();
