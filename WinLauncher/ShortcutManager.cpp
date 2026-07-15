@@ -543,6 +543,7 @@ std::vector<RendPopupPage> ShortcutManager::LoadConfig(const std::wstring& confi
                     currentPage->isSyncFolder = (val == L"1");
                 }
                 else if (key == L"FolderPath") currentPage->folderPath = val;
+                else if (key == L"SyncAutoPaused") currentPage->syncAutoPaused = (val == L"1");
                 else if (key == L"SceneMode") currentPage->sceneMode = Model::PageSceneModeFromKey(val);
                 else if (key.rfind(L"SceneAvailableApp", 0) == 0 && key != L"SceneAvailableAppCount")
                 {
@@ -625,6 +626,8 @@ void ShortcutManager::SaveConfig(const std::wstring& configDir, const std::vecto
         {
             content += L"IsSyncFolder=" + std::to_wstring(page.isSyncFolder ? 1 : 0) + L"\r\n";
             content += L"FolderPath=" + EscapeConfigValue(page.folderPath) + L"\r\n";
+            if (page.syncAutoPaused)
+                content += L"SyncAutoPaused=1\r\n";
         }
         if (!page.sceneApps.empty())
         {

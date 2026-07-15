@@ -14,6 +14,7 @@
 #include "../resource.h"
 #include "../Services/EnvironmentDetector.h"
 #include "../Services/IniConfigRepository.h"
+#include "../Services/FolderWatcher.h"
 #include "../Services/SystemIconService.h"
 #include "../Services/CommandExecutionService.h"
 #include "../UI/UserInteractionService.h"
@@ -424,6 +425,21 @@ void Application::Shutdown()
     if (m_appCtx && m_appCtx->backgroundTasks)
         m_appCtx->backgroundTasks->Shutdown(std::chrono::milliseconds(1500));
 
+    // FolderWatcher can post heap-owned auto-pause requests. Stop and join it
+    // before destroying the recipient HWND, then release any request already
+    // queued behind the shutdown message.
+    if (m_appCtx && m_appCtx->configService)
+        m_appCtx->configService->StopFolderWatching();
+    if (m_hMainWnd)
+    {
+        MSG pending{};
+        while (PeekMessageW(&pending, m_hMainWnd, AppMessages::FolderSyncAutoPaused,
+            AppMessages::FolderSyncAutoPaused, PM_REMOVE))
+        {
+            delete reinterpret_cast<FolderAutoPauseRequest*>(pending.lParam);
+        }
+    }
+
     if (m_hMainWnd && IsWindow(m_hMainWnd))
     {
         LOG_INFO(m_appCtx->logger, L"Application::Shutdown: destroying main window");
@@ -765,6 +781,26 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     case AppMessages::InitializePlugins:
         InitializePlugins();
         return 0;
+
+    case AppMessages::FolderSyncAutoPaused:
+    {
+        std::unique_ptr<FolderAutoPauseRequest> request(
+            reinterpret_cast<FolderAutoPauseRequest*>(lParam));
+        if (!request || !m_appCtx || !m_appCtx->configService)
+            return 0;
+
+        if (m_appCtx->configService->PauseSyncFolder(request->folderPath, request->errorCode))
+        {
+            if (m_appCtx->eventBus)
+                m_appCtx->eventBus->Publish(EventType::ConfigChanged);
+            UpdateTrayIconState();
+            ToastWindow::Show(L"同步目录不可用，已自动暂停", 2200);
+            LOG_G_WARNING_NODE(L"storage.folder_watcher", L"folder_auto_pause_applied",
+                L"error=%lu generation=%llu", request->errorCode,
+                static_cast<unsigned long long>(request->generation));
+        }
+        return 0;
+    }
 
     case AppMessages::ConfigChanged:
         if (m_appCtx && m_appCtx->eventBus)

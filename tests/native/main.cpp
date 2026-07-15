@@ -9,6 +9,7 @@
 #include "../../WinLauncher/Popup/PopupSearchModel.h"
 #include "../../WinLauncher/Services/IniConfigDocument.h"
 #include "../../WinLauncher/Services/ConfigFileStore.h"
+#include "../../WinLauncher/Services/FolderWatcher.h"
 #include "../../WinLauncher/Services/FileSelectionService.h"
 #include "../../WinLauncher/Popup/PopupIconRefreshController.h"
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
@@ -222,9 +223,16 @@ int wmain(int argc, wchar_t** argv)
 
         auto completed = refresh.Begin();
         if (!completed || !completed->completionEvent ||
-            !SetEvent(completed->completionEvent) || !refresh.WaitForCompletion(completed))
+          refresh.WaitForCompletion(completed, 0) || !refresh.IsCurrent(completed) ||
+          !SetEvent(completed->completionEvent) || !refresh.WaitForCompletion(completed, 0))
             return Fail(L"popup icon refresh completion wait regressed");
         refresh.Cancel();
+    }
+
+    {
+        if (FolderWatcher::ShouldAutoPause(FolderWatcher::AutoPauseFailureCount - 1) ||
+            !FolderWatcher::ShouldAutoPause(FolderWatcher::AutoPauseFailureCount))
+            return Fail(L"folder watcher auto-pause threshold regressed");
     }
 
     {

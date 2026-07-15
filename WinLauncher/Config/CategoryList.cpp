@@ -814,6 +814,7 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
                     {
                         // Pause: keep folderPath so the user can resume later
                         p->isSyncFolder = false;
+                        p->syncAutoPaused = false;
                     }
                     m_owner->NotifyConfigChanged();
                     InvalidateRect(hwnd, nullptr, FALSE);
@@ -822,12 +823,13 @@ void CategoryList::OnRButtonDown(POINT pt, bool& repaint)
             else if (hasFolderPath)
             {
                 // Paused sync (has folderPath but isSyncFolder=false) → offer to resume
-                menuItems.push_back({ L"开始同步", [this, hc]() {
+                menuItems.push_back({ page && page->syncAutoPaused ? L"恢复同步（路径不可用，已暂停）" : L"开始同步", [this, hc]() {
                     HWND hwnd = m_owner->GetWindowHWND();
                     RendPopupPage* p = m_owner->GetPageByIndex(hc);
                     if (p && !p->folderPath.empty())
                     {
                         p->isSyncFolder = true;
+                        p->syncAutoPaused = false;
 
                         // Reload from the already-associated folder
                         ShortcutManager::FreeShortcuts(p->shortcuts);

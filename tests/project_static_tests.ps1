@@ -130,6 +130,7 @@ $faviconFetcherSource = Read-RepoFile "WinLauncher\Services\FaviconFetcher.cpp"
 $diagnosticSource = Read-RepoFile "WinLauncher\Services\DiagnosticService.cpp"
 $migrationSource = Read-RepoFile "WinLauncher\Services\MigrationBackupService.cpp"
 $folderWatcherSource = Read-RepoFile "WinLauncher\Services\FolderWatcher.cpp"
+$folderWatcherHeader = Read-RepoFile "WinLauncher\Services\FolderWatcher.h"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
@@ -195,11 +196,13 @@ Add-TestResult `
         $folderWatcherSource -match 'if \(changed\)\s*SetEvent\(m_impl->m_wakeEvent\)'
     ) `
     -Detail "Repeated config loads must not reset missing-folder recovery backoff"
+
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $popupFileSelectionControllerSource = Read-RepoFile "WinLauncher\Popup\PopupFileSelectionController.cpp"
 $popupIconRefreshControllerSource = Read-RepoFile "WinLauncher\Popup\PopupIconRefreshController.cpp"
 $fileSelectionServiceSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $configWindowSource = Read-RepoFile "WinLauncher\Config\ConfigWindow.cpp"
+$categoryListSource = Read-RepoFile "WinLauncher\Config\CategoryList.cpp"
 $configViewModelSource = Read-RepoFile "WinLauncher\ViewModel\ConfigViewModel.h"
 $iniConfigHeader = Read-RepoFile "WinLauncher\Services\IniConfigRepository.h"
 $iniConfigSource = Read-RepoFile "WinLauncher\Services\IniConfigRepository.cpp"
@@ -223,6 +226,22 @@ $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $shortcutManagerSource = Read-RepoFile "WinLauncher\ShortcutManager.cpp"
 $updateServiceSource = Read-RepoFile "WinLauncher\Services\UpdateService.cpp"
 $fileToolsSource = Read-RepoFile "plugins\file_tools\file_tools.cpp"
+
+Add-TestResult `
+    -Name "Unavailable sync folders auto-pause without losing user data" `
+    -Passed (
+        $folderWatcherHeader -match 'AutoPauseFailureCount\s*=\s*3' -and
+        $folderWatcherSource -match 'FolderWatcher::ShouldAutoPause' -and
+        $folderWatcherSource -match 'FolderAutoPauseRequest' -and
+        $folderWatcherSource -match 'folder_auto_paused' -and
+        $iniConfigSource -match 'bool\s+PauseSyncFolder\(' -and
+        $iniConfigSource -match 'SyncAutoPaused=1' -and
+        $iniConfigSource -match 'UpdateFolderWatcher\(pages\)' -and
+        $applicationSource -match 'AppMessages::FolderSyncAutoPaused' -and
+        $applicationSource -match 'ToastWindow::Show\(L"同步目录不可用，已自动暂停"' -and
+        $categoryListSource -match 'syncAutoPaused'
+    ) `
+    -Detail "A repeatedly unavailable sync directory must pause atomically, retain its path, and offer a visible recovery path"
 
 Add-TestResult `
     -Name "Visible secondary windows retain shadows after deactivation" `
@@ -327,20 +346,31 @@ Add-TestResult `
     -Name "Popup icon work is limited to visible pages and cancelled when hidden" `
     -Passed (
         $popupSource -match 'distance\s*>\s*1\)\s*continue' -and
-        $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(\)' -and
+        $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(true\)' -and
         $popupIconRefreshControllerSource -match 'm_pending\s*=\s*false'
     ) `
     -Detail "First paint should defer off-screen bitmaps, and hidden popups must not keep refreshing icons"
 
 Add-TestResult `
-    -Name "Popup first frame uses preloaded real icons" `
+    -Name "Popup icon preload has a bounded stable fallback" `
     -Passed (
         $popupSource -match 'void\s+PopupWindow::OnConfigChanged\s*\([\s\S]{0,7000}RefreshIcons\(false\)' -and
-        $popupSource -match 'bool\s+PopupWindow::WaitForIconsBeforeFirstFrame\s*\([\s\S]{0,500}WaitForCompletion' -and
-        $popupSource -match 'if\s*\(needsShow\)\s*\{\s*const double iconReadyStart[\s\S]{0,500}WaitForIconsBeforeFirstFrame\(\)[\s\S]{0,800}EnsureIcons\(\)' -and
-        $popupIconRefreshControllerSource -match 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
+        $popupSource -match 'WaitForCompletion\(state, 0\)' -and
+        $popupSource -match 'void\s+PopupWindow::QueueShowUntilIconsReady\s*\(' -and
+        $popupSource -match 'void\s+PopupWindow::OnIconPreloadCompleted\s*\(' -and
+        $popupSource -match 'void\s+PopupWindow::OnIconPreloadTimedOut\s*\(' -and
+        $popupSource -match 'popup\.icon_preload_complete' -and
+        $popupSource -match 'popup\.icon_preload_timeout' -and
+        $popupSource -match 'POPUP_ICON_PRELOAD_MAX_WAIT_MS\s*=\s*120' -and
+        $popupWindowHeader -match 'm_iconPreloadTimeoutTask' -and
+        $popupWindowHeader -match 'm_iconFallbackGeneration' -and
+        $popupSource -match 'if\s*\(page\.shortcuts\[i\]\.hIcon\s*==\s*nullptr\)' -and
+        $popupSource -match 'if\s*\(m_dockPage\.shortcuts\[i\]\.hIcon\s*==\s*nullptr\)' -and
+        $popupSource -notmatch 'm_deferPendingIcons|DrawPendingIcon|POPUP_ICON_FIRST_FRAME_WAIT_BUDGET_MS' -and
+        $popupIconRefreshControllerSource -match 'WaitForSingleObject\(state->completionEvent, timeoutMs\)' -and
+        $popupIconRefreshControllerSource -notmatch 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
     ) `
-    -Detail "A hidden popup must wait for its background icon preload before composing its first visible frame"
+    -Detail "A cold trigger must use real icons when ready, but time out through the managed task service and keep any fallback stable for that open"
 
 Add-TestResult `
     -Name "Popup show reuses clean background caches and scene-safe page indices" `
@@ -440,7 +470,7 @@ Add-TestResult `
         $iniConfigSource -match 'ConfigFileStore::IsPathUnderDirectory' -and
         $iniConfigSource -notmatch 'static std::wstring EscapeValue' -and
         $iniConfigSource -notmatch 'static std::wstring ReadFile' -and
-        $iniConfigSource -match 'WriteConfigContent\(content, pages\.size\(\)\);' -and
+        $iniConfigSource -match 'WriteConfigContent\(content, pages\.size\(\)\)' -and
         $iniConfigSource -match 'std::lock_guard<std::mutex> writeLock\(m_configWriteMutex\)' -and
         $iniConfigSource -notmatch 'QueueConfigWrite' -and
         $iniConfigSource -notmatch 'ConfigSaveWorkerLoop' -and
@@ -624,6 +654,20 @@ Add-TestResult `
         $glassWindowSource -match 'dwm_backdrop_disable_unsupported'
     ) `
     -Detail "Transient desktop capture failures must not rebuild from stale pixels or flood warning logs"
+
+Add-TestResult `
+    -Name "Glass slow-frame diagnostics identify cached rendering phases" `
+    -Passed (
+        $glassWindowSource -match 'backgroundMs=%.2f' -and
+        $glassWindowSource -match 'contentMs=%.2f' -and
+        $glassWindowSource -match 'transitionMs=%.2f' -and
+        $glassWindowSource -match 'endDrawMs=%.2f' -and
+        $glassWindowSource -match 'L"paint_paced"' -and
+        $glassWindowSource -match 'ShouldLogPerf\(s_lastPaintLogTick, renderMs, 16\.0\)' -and
+        $glassWindowSource -match 'm_bgCaptureDirty' -and
+        $glassWindowSource -match 'm_bgCompositeDirty'
+    ) `
+    -Detail "Slow-frame records must isolate background, content, transition, and EndDraw cost while retaining dirty-cache rendering"
 
 Add-TestResult `
     -Name "All legacy popup surfaces rebuild glass only after a verified capture" `

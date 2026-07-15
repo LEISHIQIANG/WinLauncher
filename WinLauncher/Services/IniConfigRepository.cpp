@@ -3,6 +3,7 @@
 #include "IniConfigDocument.h"
 
 #include "../Contracts/IConfigService.h"
+#include "../App/AppMessages.h"
 #include "../App/Logger.h"
 #include "../AutoStartHelper.h"
 #include <Windows.h>
@@ -533,6 +534,10 @@ public:
                         try { currentPage->isSyncFolder = (std::stoi(val) != 0); } catch (...) { currentPage->isSyncFolder = false; }
                     }
                     else if (key == L"FolderPath") currentPage->folderPath = val;
+                    else if (key == L"SyncAutoPaused")
+                    {
+                        try { currentPage->syncAutoPaused = (std::stoi(val) != 0); } catch (...) { currentPage->syncAutoPaused = false; }
+                    }
                     else if (key == L"SceneMode") currentPage->sceneMode = Model::PageSceneModeFromKey(val);
                     else if (key.rfind(L"SceneAvailableApp", 0) == 0 && key != L"SceneAvailableAppCount")
                     {
@@ -599,16 +604,7 @@ public:
             }
         }
 
-        // Update folder watcher
-        std::vector<std::wstring> syncFolders;
-        for (const auto& page : pages)
-        {
-            if (page.isSyncFolder && !page.folderPath.empty())
-            {
-                syncFolders.push_back(page.folderPath);
-            }
-        }
-        m_folderWatcher.UpdateFolders(syncFolders, m_notifyHwnd, m_notifyMessage);
+        UpdateFolderWatcher(pages);
 
         bool hasDock = false;
         for (const auto& page : pages)
@@ -718,6 +714,8 @@ public:
                 // Write IsSyncFolder=1 for active sync, IsSyncFolder=0 for paused
                 content += L"IsSyncFolder=" + std::to_wstring(page.isSyncFolder ? 1 : 0) + L"\r\n";
                 content += L"FolderPath=" + IniConfigDocument::Escape(page.folderPath) + L"\r\n";
+                if (page.syncAutoPaused)
+                    content += L"SyncAutoPaused=1\r\n";
             }
             if (!page.sceneApps.empty())
             {
@@ -758,7 +756,34 @@ public:
             }
             pageIndex++;
         }
-        WriteConfigContent(content, pages.size());
+        if (WriteConfigContent(content, pages.size()))
+            UpdateFolderWatcher(pages);
+    }
+
+    virtual bool PauseSyncFolder(const std::wstring& folderPath, DWORD errorCode) override
+    {
+        if (folderPath.empty()) return false;
+        auto pages = LoadConfig();
+        bool changed = false;
+        for (auto& page : pages)
+        {
+            if (page.isSyncFolder && !page.folderPath.empty() &&
+                _wcsicmp(page.folderPath.c_str(), folderPath.c_str()) == 0)
+            {
+                page.isSyncFolder = false;
+                page.syncAutoPaused = true;
+                changed = true;
+            }
+        }
+        if (!changed) return false;
+        SaveConfig(pages);
+        LOG_G_WARNING_NODE(L"storage.folder_watcher", L"folder_auto_pause_persisted", L"error=%lu", errorCode);
+        return true;
+    }
+
+    virtual void StopFolderWatching() override
+    {
+        m_folderWatcher.Stop();
     }
 
     virtual bool FlushPendingConfig() override
@@ -1005,6 +1030,18 @@ public:
     }
 
 private:
+    void UpdateFolderWatcher(const std::vector<Model::PopupPage>& pages)
+    {
+        std::vector<std::wstring> syncFolders;
+        for (const auto& page : pages)
+        {
+            if (page.isSyncFolder && !page.folderPath.empty())
+                syncFolders.push_back(page.folderPath);
+        }
+        m_folderWatcher.UpdateFolders(syncFolders, m_notifyHwnd, m_notifyMessage,
+            AppMessages::FolderSyncAutoPaused);
+    }
+
     static std::vector<std::wstring> Split(const std::wstring& s, wchar_t delim)
     {
         std::vector<std::wstring> result;
@@ -1416,6 +1453,8 @@ IniConfigRepository::IniConfigRepository(const std::wstring& configDirectory, Lo
 IniConfigRepository::~IniConfigRepository() = default;
 std::vector<Model::PopupPage> IniConfigRepository::LoadConfig() { return m_impl->LoadConfig(); }
 void IniConfigRepository::SaveConfig(const std::vector<Model::PopupPage>& pages) { m_impl->SaveConfig(pages); }
+bool IniConfigRepository::PauseSyncFolder(const std::wstring& folderPath, DWORD errorCode) { return m_impl->PauseSyncFolder(folderPath, errorCode); }
+void IniConfigRepository::StopFolderWatching() { m_impl->StopFolderWatching(); }
 bool IniConfigRepository::FlushPendingConfig() { return m_impl->FlushPendingConfig(); }
 std::wstring IniConfigRepository::GetConfigDir() const { return m_impl->GetConfigDir(); }
 std::wstring IniConfigRepository::GetConfigFilePath() const { return m_impl->GetConfigFilePath(); }

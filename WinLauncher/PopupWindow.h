@@ -76,8 +76,12 @@ private:
     void EnsureIcons();
     void RefreshIcons(bool clearExisting = true);
     void ApplyRefreshedIcons();
-    bool WaitForIconsBeforeFirstFrame();
-    void CancelIconRefresh();
+    void QueueShowUntilIconsReady(HWND parent, POINT pt, const std::shared_ptr<PopupIconRefreshController::State>& state);
+    void OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
+    void OnIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state);
+    static void OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
+    static void OnAnyIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state);
+    void CancelIconRefresh(bool preserveCompletedFallback = false);
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
@@ -176,7 +180,17 @@ private:
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
     BackgroundTaskService::TaskHandle m_iconRefreshTask;
+    BackgroundTaskService::TaskHandle m_iconPreloadTimeoutTask;
     PopupIconRefreshController m_iconRefresh;
+    // A startup trigger is retained until the initial Shell icon preload has
+    // finished.  The popup is never shown with provisional icon art.
+    bool m_hasPendingShow = false;
+    HWND m_pendingShowParent = nullptr;
+    POINT m_pendingShowPoint{};
+    uint64_t m_pendingShowIconGeneration = 0;
+    // A timed-out preload keeps its generated fallback for the current open;
+    // completed real icons are applied only after the popup has closed.
+    uint64_t m_iconFallbackGeneration = 0;
 
     PopupFileSelectionController m_fileSelection;
     void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);

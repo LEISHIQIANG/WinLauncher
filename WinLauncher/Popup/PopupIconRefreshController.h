@@ -33,7 +33,9 @@ public:
     void Cancel();
     bool IsCurrent(const std::shared_ptr<State>& state) const;
     std::vector<Result> Take(const std::shared_ptr<State>& state);
-    bool WaitForCompletion(const std::shared_ptr<State>& state) const noexcept;
+    // Callers use a finite timeout (zero for a non-blocking readiness poll).
+    // Completion is always consumed later on the UI thread.
+    bool WaitForCompletion(const std::shared_ptr<State>& state, DWORD timeoutMs) const noexcept;
     std::shared_ptr<State> Current() const { return m_state; }
     bool IsRefreshing() const noexcept { return m_refreshing; }
     void Complete() noexcept { m_refreshing = false; }

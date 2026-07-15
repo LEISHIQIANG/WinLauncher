@@ -18,6 +18,8 @@ public:
 
     std::vector<Model::PopupPage> LoadConfig() override;
     void SaveConfig(const std::vector<Model::PopupPage>& pages) override;
+    bool PauseSyncFolder(const std::wstring& folderPath, DWORD errorCode) override;
+    void StopFolderWatching() override;
     bool FlushPendingConfig() override;
     std::wstring GetConfigDir() const override;
     std::wstring GetConfigFilePath() const override;

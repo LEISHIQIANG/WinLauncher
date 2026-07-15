@@ -1,6 +1,7 @@
 #pragma once
 #include "../Model/AppearanceSettings.h"
 #include "../Model/ShortcutInfo.h"
+#include <Windows.h>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,8 @@ public:
 
     virtual std::vector<Model::PopupPage> LoadConfig() = 0;
     virtual void SaveConfig(const std::vector<Model::PopupPage>& pages) = 0;
+    virtual bool PauseSyncFolder(const std::wstring& folderPath, DWORD errorCode) = 0;
+    virtual void StopFolderWatching() = 0;
     virtual bool FlushPendingConfig() = 0;
     virtual std::wstring GetConfigDir() const = 0;
     virtual std::wstring GetConfigFilePath() const = 0;

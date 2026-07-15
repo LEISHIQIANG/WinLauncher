@@ -1245,30 +1245,63 @@ void GlassWindow::DoPaint()
 
     if (m_compositor)
     {
+        const double compositorStartMs = PerfNowMs();
         m_compositor->Render(m_rt.Get(), scale);
+        const double compositorMs = PerfNowMs() - compositorStartMs;
+
+        const double contentStartMs = PerfNowMs();
         OnPaintContent(m_rt.Get());
+        const double contentMs = PerfNowMs() - contentStartMs;
+
+        const double transitionStartMs = PerfNowMs();
         DrawThemeTransitionOverlay(m_rt.Get(), w, h);
+        const double transitionMs = PerfNowMs() - transitionStartMs;
 
         if (transformModified)
         {
             m_rt->SetTransform(originalTransform);
         }
+        const double endDrawStartMs = PerfNowMs();
         HRESULT hr = m_rt->EndDraw();
+        const double endDrawMs = PerfNowMs() - endDrawStartMs;
         double elapsedMs = PerfNowMs() - paintStartMs;
+        const double renderMs = elapsedMs - endDrawMs;
         static ULONGLONG s_lastCompositorPaintLogTick = 0;
-        if (ShouldLogPerf(s_lastCompositorPaintLogTick, elapsedMs, 16.0))
+        if (ShouldLogPerf(s_lastCompositorPaintLogTick, renderMs, 16.0))
         {
             LOG_G_WARNING_NODE(
                 L"ui.glass",
                 L"paint_slow",
-                L"path=compositor elapsedMs=%.2f thresholdMs=16.00 size=%.0fx%.0f scale=%.2f themeTransition=%d animState=%d hwnd=%p",
+                L"path=compositor elapsedMs=%.2f thresholdMs=16.00 compositorMs=%.2f contentMs=%.2f transitionMs=%.2f endDrawMs=%.2f size=%.0fx%.0f scale=%.2f themeTransition=%d animState=%d hwnd=%p",
                 elapsedMs,
+                compositorMs,
+                contentMs,
+                transitionMs,
+                endDrawMs,
                 w,
                 h,
                 scale,
                 (int)m_themeTransitionActive,
                 (int)m_animState,
                 m_hWnd);
+        }
+        else
+        {
+            static ULONGLONG s_lastCompositorPacedLogTick = 0;
+            if (ShouldLogPerf(s_lastCompositorPacedLogTick, endDrawMs, 16.0))
+            {
+                LOG_G_DEBUG_NODE(
+                    L"ui.glass",
+                    L"paint_paced",
+                    L"path=compositor elapsedMs=%.2f renderMs=%.2f endDrawMs=%.2f size=%.0fx%.0f scale=%.2f hwnd=%p",
+                    elapsedMs,
+                    renderMs,
+                    endDrawMs,
+                    w,
+                    h,
+                    scale,
+                    m_hWnd);
+            }
         }
         if (hr == D2DERR_RECREATE_TARGET)
         {
@@ -1314,6 +1347,7 @@ void GlassWindow::DoPaint()
         windowMode = m_appCtx->configService->GetWindowMode();
     }
 
+    const double backgroundStartMs = PerfNowMs();
     if (windowMode == 1) // Acrylic
     {
         m_rt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
@@ -1363,25 +1397,38 @@ void GlassWindow::DoPaint()
             m_rt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
         }
     }
+    const double backgroundMs = PerfNowMs() - backgroundStartMs;
 
+    const double contentStartMs = PerfNowMs();
     OnPaintContent(m_rt.Get());
+    const double contentMs = PerfNowMs() - contentStartMs;
+
+    const double transitionStartMs = PerfNowMs();
     DrawThemeTransitionOverlay(m_rt.Get(), w, h);
+    const double transitionMs = PerfNowMs() - transitionStartMs;
 
     if (transformModified)
     {
         m_rt->SetTransform(originalTransform);
     }
 
+    const double endDrawStartMs = PerfNowMs();
     HRESULT hr = m_rt->EndDraw();
+    const double endDrawMs = PerfNowMs() - endDrawStartMs;
     double elapsedMs = PerfNowMs() - paintStartMs;
+    const double renderMs = elapsedMs - endDrawMs;
     static ULONGLONG s_lastPaintLogTick = 0;
-    if (ShouldLogPerf(s_lastPaintLogTick, elapsedMs, 16.0))
+    if (ShouldLogPerf(s_lastPaintLogTick, renderMs, 16.0))
     {
         LOG_G_WARNING_NODE(
             L"ui.glass",
             L"paint_slow",
-            L"path=legacy elapsedMs=%.2f thresholdMs=16.00 size=%.0fx%.0f scale=%.2f windowMode=%d(%s) captureDirty=%d compositeDirty=%d finalBitmap=%d capBitmap=%d themeTransition=%d animState=%d hwnd=%p",
+            L"path=legacy elapsedMs=%.2f thresholdMs=16.00 backgroundMs=%.2f contentMs=%.2f transitionMs=%.2f endDrawMs=%.2f size=%.0fx%.0f scale=%.2f windowMode=%d(%s) captureDirty=%d compositeDirty=%d finalBitmap=%d capBitmap=%d themeTransition=%d animState=%d hwnd=%p",
             elapsedMs,
+            backgroundMs,
+            contentMs,
+            transitionMs,
+            endDrawMs,
             w,
             h,
             scale,
@@ -1394,6 +1441,29 @@ void GlassWindow::DoPaint()
             (int)m_themeTransitionActive,
             (int)m_animState,
             m_hWnd);
+    }
+    else
+    {
+        static ULONGLONG s_lastLegacyPacedLogTick = 0;
+        if (ShouldLogPerf(s_lastLegacyPacedLogTick, endDrawMs, 16.0))
+        {
+            LOG_G_DEBUG_NODE(
+                L"ui.glass",
+                L"paint_paced",
+                L"path=legacy elapsedMs=%.2f renderMs=%.2f backgroundMs=%.2f contentMs=%.2f transitionMs=%.2f endDrawMs=%.2f size=%.0fx%.0f scale=%.2f windowMode=%d(%s) hwnd=%p",
+                elapsedMs,
+                renderMs,
+                backgroundMs,
+                contentMs,
+                transitionMs,
+                endDrawMs,
+                w,
+                h,
+                scale,
+                windowMode,
+                WindowModeName(windowMode),
+                m_hWnd);
+        }
     }
     if (hr == D2DERR_RECREATE_TARGET)
     {

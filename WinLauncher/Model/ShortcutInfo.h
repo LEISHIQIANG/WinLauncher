@@ -62,6 +62,8 @@ namespace Model
         std::vector<ShortcutInfo> shortcuts;
         bool isSyncFolder = false;
         std::wstring folderPath;
+        // Separate automatic safety pause from a user-chosen pause.
+        bool syncAutoPaused = false;
         PageSceneMode sceneMode = PageSceneMode::Whitelist;
         std::vector<std::wstring> sceneApps;
         std::vector<std::wstring> sceneAvailableApps;

@@ -339,6 +339,7 @@ void ConfigWindow::LoadConfig()
             pp.name = vp.name;
             pp.isSyncFolder = vp.isSyncFolder;
             pp.folderPath = vp.folderPath;
+            pp.syncAutoPaused = vp.syncAutoPaused;
             pp.sceneMode = vp.sceneMode;
             pp.sceneApps = vp.sceneApps;
             pp.sceneAvailableApps = vp.sceneAvailableApps;
@@ -408,6 +409,7 @@ void ConfigWindow::SaveConfig(bool publishConfigChanged, bool flushPending)
             vp.name = pp.name;
             vp.isSyncFolder = pp.isSyncFolder;
             vp.folderPath = pp.folderPath;
+            vp.syncAutoPaused = pp.syncAutoPaused;
             vp.sceneMode = pp.sceneMode;
             vp.sceneApps = pp.sceneApps;
             vp.sceneAvailableApps = pp.sceneAvailableApps;
@@ -2619,6 +2621,7 @@ void ConfigWindow::AddSyncCategory(const std::wstring& name, const std::wstring&
     newPage.name = name;
     newPage.isSyncFolder = true;
     newPage.folderPath = folderPath;
+    newPage.syncAutoPaused = false;
 
     // Load shortcuts and icons from the folder
     auto rendShortcuts = SyncFolderService::LoadRendShortcuts(folderPath);

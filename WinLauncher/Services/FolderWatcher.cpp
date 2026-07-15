@@ -45,7 +45,9 @@ namespace
     struct UnavailableFolder
     {
         unsigned int retryIndex = 0;
+        unsigned int failureCount = 0;
         ULONGLONG nextAttempt = 0;
+        bool autoPausePosted = false;
     };
 }
 
@@ -66,17 +68,39 @@ struct FolderWatcher::Impl
         return std::any_of(watches.begin(), watches.end(), [&](const DirectoryWatch& watch) { return watch.path == path; });
     }
 
-    void MarkUnavailable(const std::wstring& path, DWORD error, ULONGLONG now)
+    void MarkUnavailable(const std::wstring& path, DWORD error, ULONGLONG now,
+        HWND autoPauseHwnd, UINT autoPauseMessage, unsigned long generation)
     {
         auto [it, firstFailure] = m_unavailable.emplace(path, UnavailableFolder{});
+        ++it->second.failureCount;
         const DWORD delay = kRecoveryDelaysMs[(std::min)(it->second.retryIndex, static_cast<unsigned int>(_countof(kRecoveryDelaysMs) - 1))];
         it->second.nextAttempt = now + delay;
         if (it->second.retryIndex + 1 < _countof(kRecoveryDelaysMs)) ++it->second.retryIndex;
         if (firstFailure)
             LOG_G_WARNING_NODE(L"storage.folder_watcher", L"folder_unavailable", L"error=%lu retry_ms=%lu", error, delay);
+
+        if (FolderWatcher::ShouldAutoPause(it->second.failureCount) && !it->second.autoPausePosted)
+        {
+            auto request = std::make_unique<FolderAutoPauseRequest>();
+            request->folderPath = path;
+            request->errorCode = error;
+            request->generation = generation;
+            if (autoPauseMessage && autoPauseHwnd && IsWindow(autoPauseHwnd) &&
+                PostMessageW(autoPauseHwnd, autoPauseMessage, 0, reinterpret_cast<LPARAM>(request.get())))
+            {
+                request.release();
+                it->second.autoPausePosted = true;
+                // Stop retries immediately. The UI thread persists IsSyncFolder=0
+                // and removes this path from the next watcher generation.
+                it->second.nextAttempt = (std::numeric_limits<ULONGLONG>::max)();
+                LOG_G_WARNING_NODE(L"storage.folder_watcher", L"folder_auto_paused",
+                    L"error=%lu failures=%u", error, it->second.failureCount);
+            }
+        }
     }
 
-    bool TryOpenFolder(const std::wstring& path, std::vector<DirectoryWatch>& watches, ULONGLONG now)
+    bool TryOpenFolder(const std::wstring& path, std::vector<DirectoryWatch>& watches, ULONGLONG now,
+        HWND autoPauseHwnd, UINT autoPauseMessage, unsigned long generation)
     {
         if (IsActive(watches, path)) return false;
         const auto unavailable = m_unavailable.find(path);
@@ -89,13 +113,14 @@ struct FolderWatcher::Impl
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
         if (watch.directory == INVALID_HANDLE_VALUE)
         {
-            MarkUnavailable(path, GetLastError(), now);
+            MarkUnavailable(path, GetLastError(), now, autoPauseHwnd, autoPauseMessage, generation);
             return false;
         }
         watch.event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!watch.event || !Arm(watch))
         {
-            MarkUnavailable(path, watch.event ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY, now);
+            MarkUnavailable(path, watch.event ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY, now,
+                autoPauseHwnd, autoPauseMessage, generation);
             return false;
         }
         const bool recovered = m_unavailable.erase(path) != 0;
@@ -104,7 +129,8 @@ struct FolderWatcher::Impl
         return recovered;
     }
 
-    void SyncWatches(const std::vector<std::wstring>& folders, std::vector<DirectoryWatch>& watches, ULONGLONG now, bool resetRecovery)
+    void SyncWatches(const std::vector<std::wstring>& folders, std::vector<DirectoryWatch>& watches, ULONGLONG now,
+        bool resetRecovery, HWND autoPauseHwnd, UINT autoPauseMessage, unsigned long generation)
     {
         if (resetRecovery) m_unavailable.clear();
         watches.erase(std::remove_if(watches.begin(), watches.end(), [&](const DirectoryWatch& watch) {
@@ -120,7 +146,7 @@ struct FolderWatcher::Impl
                 LOG_G_WARNING_NODE(L"storage.folder_watcher", L"folder_limit_reached", L"count=%zu", folders.size());
                 break;
             }
-            if (TryOpenFolder(folder, watches, now)) m_refreshRequested = true;
+            if (TryOpenFolder(folder, watches, now, autoPauseHwnd, autoPauseMessage, generation)) m_refreshRequested = true;
         }
     }
 
@@ -145,13 +171,15 @@ struct FolderWatcher::Impl
             unsigned long generation = 0;
             HWND notifyHwnd = nullptr;
             UINT notifyMessage = 0;
+            UINT autoPauseMessage = 0;
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
-                folders = m_folders; generation = m_generation; notifyHwnd = m_hWndNotify; notifyMessage = m_msgNotify;
+                folders = m_folders; generation = m_generation; notifyHwnd = m_hWndNotify;
+                notifyMessage = m_msgNotify; autoPauseMessage = m_autoPauseMessage;
             }
             const ULONGLONG now = GetTickCount64();
             const bool resetRecovery = generation != observedGeneration;
-            SyncWatches(folders, watches, now, resetRecovery);
+            SyncWatches(folders, watches, now, resetRecovery, notifyHwnd, autoPauseMessage, generation);
             observedGeneration = generation;
             if (m_refreshRequested) { changePending = true; changeDue = now; m_refreshRequested = false; }
 
@@ -170,7 +198,7 @@ struct FolderWatcher::Impl
                     const std::wstring path = watches[index].path;
                     const DWORD error = GetLastError();
                     watches.erase(watches.begin() + index);
-                    MarkUnavailable(path, error, GetTickCount64());
+                    MarkUnavailable(path, error, GetTickCount64(), notifyHwnd, autoPauseMessage, generation);
                     continue;
                 }
                 changePending = true;
@@ -195,6 +223,7 @@ struct FolderWatcher::Impl
     std::unordered_map<std::wstring, UnavailableFolder> m_unavailable;
     HWND m_hWndNotify = nullptr;
     UINT m_msgNotify = 0;
+    UINT m_autoPauseMessage = 0;
     std::atomic<bool> m_running = false;
     unsigned long m_generation = 1;
     bool m_refreshRequested = false;
@@ -205,19 +234,22 @@ struct FolderWatcher::Impl
 FolderWatcher::FolderWatcher() : m_impl(std::make_unique<Impl>()) {}
 FolderWatcher::~FolderWatcher() { Stop(); }
 
-void FolderWatcher::UpdateFolders(const std::vector<std::wstring>& folders, HWND hWndNotify, UINT msgNotify)
+void FolderWatcher::UpdateFolders(const std::vector<std::wstring>& folders, HWND hWndNotify, UINT msgNotify,
+    UINT autoPauseMessage)
 {
     bool changed = false;
     {
         std::lock_guard<std::mutex> lock(m_impl->m_mutex);
         changed = m_impl->m_folders != folders ||
             m_impl->m_hWndNotify != hWndNotify ||
-            m_impl->m_msgNotify != msgNotify;
+            m_impl->m_msgNotify != msgNotify ||
+            m_impl->m_autoPauseMessage != autoPauseMessage;
         if (changed)
         {
             m_impl->m_folders = folders;
             m_impl->m_hWndNotify = hWndNotify;
             m_impl->m_msgNotify = msgNotify;
+            m_impl->m_autoPauseMessage = autoPauseMessage;
             ++m_impl->m_generation;
         }
     }

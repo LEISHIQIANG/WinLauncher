@@ -49,9 +49,9 @@ std::vector<PopupIconRefreshController::Result> PopupIconRefreshController::Take
     return result;
 }
 
-bool PopupIconRefreshController::WaitForCompletion(const std::shared_ptr<State>& state) const noexcept
+bool PopupIconRefreshController::WaitForCompletion(const std::shared_ptr<State>& state, DWORD timeoutMs) const noexcept
 {
     if (!IsCurrent(state)) return false;
     if (!state->completionEvent) return true;
-    return WaitForSingleObject(state->completionEvent, INFINITE) == WAIT_OBJECT_0 && IsCurrent(state);
+    return WaitForSingleObject(state->completionEvent, timeoutMs) == WAIT_OBJECT_0 && IsCurrent(state);
 }
