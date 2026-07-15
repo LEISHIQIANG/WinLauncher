@@ -6,6 +6,7 @@
 #include <shellapi.h>
 #include "PopupWindow.h"
 #include "Config/UIStyle.h"
+#include "App/Logger.h"
 
 TrayMenuWindow* TrayMenuWindow::s_instance    = nullptr;
 HWND            TrayMenuWindow::s_hMainWnd    = nullptr;
@@ -45,15 +46,67 @@ void TrayMenuWindow::Init(HWND hMainWnd, AppContext* ctx)
     s_ctx      = ctx;
 }
 
+void TrayMenuWindow::Prewarm()
+{
+    if (s_instance || !s_ctx)
+        return;
+
+    HMONITOR hm = s_hMainWnd
+        ? MonitorFromWindow(s_hMainWnd, MONITOR_DEFAULTTONEAREST)
+        : MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+    const float scale = DpiHelper::GetDpiScaleForMonitor(hm);
+    const int w_px = (int)(MENU_W_LG * scale);
+    const int h_px = (int)(MENU_H_LG * scale);
+
+    auto* instance = new TrayMenuWindow(s_ctx);
+    instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                     0, 0, w_px, h_px, s_hMainWnd);
+    if (!instance->GetHWND())
+    {
+        delete instance;
+        LOG_INFO(s_ctx->logger, L"TrayMenuWindow::Prewarm: unable to create hidden menu window");
+        return;
+    }
+
+    s_instance = instance;
+    SetWindowDisplayAffinitySafe(instance->GetHWND());
+    instance->ApplySystemBackdrop();
+    if (instance->EnsureD2D() && instance->m_rt)
+    {
+        instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
+        UIStyle::Typography::ApplyRenderTargetTextDefaults(instance->m_rt.Get());
+    }
+
+    LOG_INFO(s_ctx->logger, L"TrayMenuWindow::Prewarm: hidden HWND render target prepared");
+}
+
 void TrayMenuWindow::Show(POINT pt)
 {
-    if (s_instance)
+    bool reopeningVisibleWindow = false;
+    if (s_instance && (!s_instance->GetHWND() || !IsWindow(s_instance->GetHWND())))
+    {
+        delete s_instance;
+        s_instance = nullptr;
+    }
+
+    if (s_instance && IsWindowVisible(s_instance->GetHWND()) &&
+        s_instance->m_animState != AnimState::Closing)
     {
         SetForegroundWindow(s_instance->GetHWND());
         return;
     }
 
-    s_instance = new TrayMenuWindow(s_ctx);
+    if (s_instance && s_instance->m_animState == AnimState::Closing)
+    {
+        // A second tray click can arrive while the prior close animation is
+        // still active.  Cancel its completion callback before reusing the
+        // visible HWND, otherwise that stale callback hides the new menu.
+        reopeningVisibleWindow = IsWindowVisible(s_instance->GetHWND());
+        KillTimer(s_instance->GetHWND(), 0x889);
+        s_instance->m_animState = AnimState::None;
+        s_instance->m_animOnComplete = nullptr;
+        s_instance->ApplyVisibilityFrame(1.0f, 1.0f);
+    }
 
     RECT iconRect{};
     bool hasIconRect = false;
@@ -100,17 +153,29 @@ void TrayMenuWindow::Show(POINT pt)
     if (pt.x < wa.left)          pt.x = wa.left;
     if (pt.y < wa.top)           pt.y = wa.top;
 
-    s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                       pt.x, pt.y, w_px, h_px, s_hMainWnd);
-    if (!s_instance->GetHWND())
+    bool created = false;
+    if (!s_instance)
     {
-        delete s_instance;
-        s_instance = nullptr;
-        return;
+        s_instance = new TrayMenuWindow(s_ctx);
+        s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                           pt.x, pt.y, w_px, h_px, s_hMainWnd);
+        if (!s_instance->GetHWND())
+        {
+            delete s_instance;
+            s_instance = nullptr;
+            return;
+        }
+        created = true;
     }
 
-    SetWindowDisplayAffinitySafe(s_instance->GetHWND());
-    s_instance->ApplySystemBackdrop();
+    if (created)
+    {
+        SetWindowDisplayAffinitySafe(s_instance->GetHWND());
+        s_instance->ApplySystemBackdrop();
+    }
+
+    SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
+
     if (s_instance->EnsureD2D() && s_instance->m_rt)
     {
         s_instance->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
@@ -118,45 +183,62 @@ void TrayMenuWindow::Show(POINT pt)
     }
 
     s_instance->m_hovered = -1;
-
-    SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-    s_instance->PrepareOpenTransitionFrame();
+    if (!reopeningVisibleWindow)
+    {
+        s_instance->PrepareOpenTransitionFrame();
+    }
+    else
+    {
+        // The HWND is already visible, so ShowWindow will not emit
+        // WM_SHOWWINDOW and cannot restart the normal open animation.  Keep
+        // the restored opaque frame instead of resetting it to transparent.
+        s_instance->EnsureShadowForCurrentBounds(1.0f);
+        s_instance->ApplyVisibilityFrame(1.0f, 1.0f);
+    }
     s_instance->CaptureBackground();
     s_instance->CompositeBackgroundToCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
-    ShowWindow(s_instance->GetHWND(), SW_SHOW);
+    if (!IsWindowVisible(s_instance->GetHWND()))
+        ShowWindow(s_instance->GetHWND(), SW_SHOW);
     SetForegroundWindow(s_instance->GetHWND());
     s_instance->CaptureMouse();
 }
 
 void TrayMenuWindow::Hide()
 {
-    if (s_instance)
-    {
-        TrayMenuWindow* inst = s_instance;
-        s_instance = nullptr;
-        HWND h = inst->GetHWND();
-        inst->ReleaseMouseCapture();
-        if (h && UIStyle::Animation::IsEnabled())
-        {
-            inst->StartCloseTransition([h, inst]() {
-                if (IsWindow(h))
-                    DestroyWindow(h);
-                delete inst;
-            });
-        }
-        else
-        {
-            if (h) DestroyWindow(h);
-            delete inst;
-        }
-    }
+    if (!s_instance)
+        return;
+
+    TrayMenuWindow* inst = s_instance;
+    HWND h = inst->GetHWND();
+    inst->ReleaseMouseCapture();
+    if (!h || !IsWindow(h) || !IsWindowVisible(h) || inst->m_animState == AnimState::Closing)
+        return;
+
+    auto hideWindow = [inst, h]() {
+        if (s_instance == inst && h && IsWindow(h))
+            ShowWindow(h, SW_HIDE);
+    };
+
+    if (h && IsWindowVisible(h) && UIStyle::Animation::IsEnabled())
+        inst->StartCloseTransition(hideWindow);
+    else
+        hideWindow();
 }
 
 void TrayMenuWindow::Release()
 {
-    Hide();
+    TrayMenuWindow* inst = s_instance;
+    s_instance = nullptr;
+    if (!inst)
+        return;
+
+    HWND h = inst->GetHWND();
+    inst->ReleaseMouseCapture();
+    if (h && IsWindow(h))
+        DestroyWindow(h);
+    delete inst;
 }
 
 // ============================================================
@@ -334,6 +416,13 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
             if (m_hovered != -1) { m_hovered = -1; InvalidateRect(hWnd, nullptr, FALSE); }
             return 0;
         }
+
+        // The tray menu keeps mouse capture so an outside click can dismiss it.
+        // After a notification-area right click, that capture path does not
+        // reliably generate WM_SETCURSOR when the pointer re-enters this HWND;
+        // explicitly restore the client cursor from the Shell's stale wait cursor.
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+
         int h = HitTest(pt);
         if (h != m_hovered) { m_hovered = h; InvalidateRect(hWnd, nullptr, FALSE); }
         return 0;

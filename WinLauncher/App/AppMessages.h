@@ -23,6 +23,7 @@ namespace AppMessages
     constexpr UINT UpdateDownloadCompleted  = WM_APP + 0x97; // 更新下载完成
     constexpr UINT UiDispatch               = WM_APP + 0x98; // background-to-UI dispatcher
     constexpr UINT ShowTrayMenu            = WM_APP + 0x99; // 延迟显示托盘菜单
+    constexpr UINT PrewarmTrayMenu         = WM_APP + 0x9A; // 空闲时创建托盘菜单渲染目标
     constexpr UINT CommandPanelAppend       = WM_APP + 0x310;
     constexpr UINT CommandPanelRefreshDone  = WM_APP + 0x311;
 

@@ -11,6 +11,9 @@ public:
     virtual ~TrayMenuWindow() override;
 
     static void Init(HWND hMainWnd, AppContext* ctx = nullptr);
+    // Creates the real hidden HWND render target while the app is idle, so the
+    // first tray interaction never has to initialise the graphics device.
+    static void Prewarm();
     static void Show(POINT pt);
     static void Hide();
     static void Release();

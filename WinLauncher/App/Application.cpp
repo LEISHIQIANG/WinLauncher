@@ -173,6 +173,9 @@ int Application::Run()
 
     PopupWindow::Init(m_appCtx.get());
     TrayMenuWindow::Init(m_hMainWnd, m_appCtx.get());
+    // Create the real HWND render target once the message loop is idle instead
+    // of making the user's first tray right-click initialise the GPU device.
+    PostMessageW(m_hMainWnd, AppMessages::PrewarmTrayMenu, 0, 0);
 
     // Install keyboard hook and register double-Alt shortcut for TogglePopupPause
     KeyboardHook::Install();
@@ -589,10 +592,27 @@ void Application::RestartApp()
     SetTimer(m_hMainWnd, AppMessages::RestartAppTimerId, 350, [](HWND hWnd, UINT, UINT_PTR id, DWORD) {
         KillTimer(hWnd, id);
 
+        // Retrieve the Application pointer before destroying the window,
+        // because once the window is destroyed, GetWindowLongPtrW will return NULL.
+        Application* app = nullptr;
+        if (hWnd)
+        {
+            app = reinterpret_cast<Application*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        }
+
         // Destroy the hidden main window before launching the replacement.
         // This ensures FindWindowW(L"WinLauncherMain") in the new process
         // returns NULL and the single-instance guard passes.
         DestroyWindow(hWnd);
+
+        // Release and close the single-instance mutex now so the newly spawned
+        // process can successfully acquire it on startup.
+        if (app && app->m_hSingleInstanceMutex)
+        {
+            ReleaseMutex(app->m_hSingleInstanceMutex);
+            CloseHandle(app->m_hSingleInstanceMutex);
+            app->m_hSingleInstanceMutex = nullptr;
+        }
 
         wchar_t exePath[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
@@ -776,6 +796,10 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
     case AppMessages::ShowTrayMenu:
         ShowTrayMenuAtCursor();
+        return 0;
+
+    case AppMessages::PrewarmTrayMenu:
+        TrayMenuWindow::Prewarm();
         return 0;
 
     case WM_DESTROY:

@@ -32,7 +32,6 @@ private:
     void TogglePopupPause();     // 暂停/启用弹窗
     void RestartHook();          // 重启鼠标+键盘钩子
     void RestartApp();           // 重启整个应用进程
-
     LRESULT HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
     static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
