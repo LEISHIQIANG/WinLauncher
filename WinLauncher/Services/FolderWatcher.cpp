@@ -207,8 +207,26 @@ FolderWatcher::~FolderWatcher() { Stop(); }
 
 void FolderWatcher::UpdateFolders(const std::vector<std::wstring>& folders, HWND hWndNotify, UINT msgNotify)
 {
-    { std::lock_guard<std::mutex> lock(m_impl->m_mutex); m_impl->m_folders = folders; m_impl->m_hWndNotify = hWndNotify; m_impl->m_msgNotify = msgNotify; ++m_impl->m_generation; }
-    SetEvent(m_impl->m_wakeEvent);
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_impl->m_mutex);
+        changed = m_impl->m_folders != folders ||
+            m_impl->m_hWndNotify != hWndNotify ||
+            m_impl->m_msgNotify != msgNotify;
+        if (changed)
+        {
+            m_impl->m_folders = folders;
+            m_impl->m_hWndNotify = hWndNotify;
+            m_impl->m_msgNotify = msgNotify;
+            ++m_impl->m_generation;
+        }
+    }
+
+    // Loading the same configuration can happen more than once during startup.
+    // Do not reset an unavailable folder's backoff in that case: it would turn
+    // a recoverable missing path into repeated 5-second warning bursts.
+    if (changed)
+        SetEvent(m_impl->m_wakeEvent);
     if (folders.empty()) Stop();
     else if (!m_impl->m_running) Start();
 }

@@ -338,13 +338,10 @@ void GlassWindow::ApplySystemBackdrop()
             HRESULT backdropHr = DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
             if (FAILED(backdropHr))
             {
-                LOG_G_WARNING_NODE(
-                    L"ui.glass",
-                    L"dwm_backdrop_disable_failed",
-                    L"attr=%d hr=0x%08X hwnd=%p",
-                    attr,
-                    backdropHr,
-                    m_hWnd);
+                if (backdropHr == E_INVALIDARG)
+                    LOG_G_DEBUG_NODE(L"ui.glass", L"dwm_backdrop_disable_unsupported", L"attr=%d hr=0x%08X hwnd=%p", attr, backdropHr, m_hWnd);
+                else
+                    LOG_G_WARNING_NODE(L"ui.glass", L"dwm_backdrop_disable_failed", L"attr=%d hr=0x%08X hwnd=%p", attr, backdropHr, m_hWnd);
             }
         }
         SetAccent(m_hWnd, 2, 0x00000000);
@@ -638,12 +635,12 @@ void GlassWindow::UpdateBackgroundStyle()
     }
 }
 
-void GlassWindow::CaptureBackground()
+bool GlassWindow::CaptureBackground()
 {
     if (!m_rt)
     {
         LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=no_render_target hwnd=%p", m_hWnd);
-        return;
+        return false;
     }
 
     double captureStartMs = PerfNowMs();
@@ -652,28 +649,28 @@ void GlassWindow::CaptureBackground()
     if (!ClientToScreen(m_hWnd, &clientOrigin))
     {
         LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_client_to_screen_failed", L"error=%lu hwnd=%p", GetLastError(), m_hWnd);
-        return;
+        return false;
     }
     int w = (int)pixelSize.width;
     int h = (int)pixelSize.height;
     if (w <= 0 || h <= 0)
     {
         LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=invalid_size size=%dx%d hwnd=%p", w, h, m_hWnd);
-        return;
+        return false;
     }
 
     HDC sdc = GetDC(nullptr);
     if (!sdc)
     {
         LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_getdc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
-        return;
+        return false;
     }
     HDC mdc = CreateCompatibleDC(sdc);
     if (!mdc)
     {
         LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_dc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
         ReleaseDC(nullptr, sdc);
-        return;
+        return false;
     }
     HBITMAP bmp = CreateCompatibleBitmap(sdc, w, h);
     if (!bmp)
@@ -681,7 +678,7 @@ void GlassWindow::CaptureBackground()
         LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_bitmap_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
         DeleteDC(mdc);
         ReleaseDC(nullptr, sdc);
-        return;
+        return false;
     }
     HGDIOBJ oldBitmap = SelectObject(mdc, bmp);
     if (!oldBitmap)
@@ -690,25 +687,34 @@ void GlassWindow::CaptureBackground()
         DeleteObject(bmp);
         DeleteDC(mdc);
         ReleaseDC(nullptr, sdc);
-        return;
+        return false;
     }
     if (!BitBlt(mdc, 0, 0, w, h, sdc, clientOrigin.x, clientOrigin.y, SRCCOPY))
     {
-        LOG_G_ERROR_NODE(
-            L"ui.glass",
-            L"background_capture_bitblt_failed",
-            L"error=%lu size=%dx%d origin=(%d,%d) hwnd=%p",
-            GetLastError(),
-            w,
-            h,
-            clientOrigin.x,
-            clientOrigin.y,
-            m_hWnd);
+        const DWORD error = GetLastError();
+        const ULONGLONG now = GetTickCount64();
+        if (error != m_lastBackgroundCaptureError ||
+            m_lastBackgroundCaptureLogTick == 0 ||
+            now - m_lastBackgroundCaptureLogTick >= 30000)
+        {
+            LOG_G_WARNING_NODE(
+                L"ui.glass",
+                L"background_capture_bitblt_failed",
+                L"error=%lu size=%dx%d origin=(%d,%d) hwnd=%p fallback=last_valid_cache",
+                error,
+                w,
+                h,
+                clientOrigin.x,
+                clientOrigin.y,
+                m_hWnd);
+            m_lastBackgroundCaptureError = error;
+            m_lastBackgroundCaptureLogTick = now;
+        }
         SelectObject(mdc, oldBitmap);
         DeleteObject(bmp);
         DeleteDC(mdc);
         ReleaseDC(nullptr, sdc);
-        return;
+        return false;
     }
 
     BITMAPINFO bi{};
@@ -737,7 +743,7 @@ void GlassWindow::CaptureBackground()
         DeleteObject(bmp);
         DeleteDC(mdc);
         ReleaseDC(nullptr, sdc);
-        return;
+        return false;
     }
     for (int i = 0; i < w * h; i++)
         m_pixbuf[i] |= 0xFF000000;
@@ -818,7 +824,11 @@ void GlassWindow::CaptureBackground()
         }
     }
     m_pixbuf.clear();
-
+    if (m_bgCap)
+    {
+        m_lastBackgroundCaptureError = ERROR_SUCCESS;
+        m_lastBackgroundCaptureLogTick = 0;
+    }
     double elapsedMs = PerfNowMs() - captureStartMs;
     static ULONGLONG s_lastCaptureLogTick = 0;
     if (ShouldLogPerf(s_lastCaptureLogTick, elapsedMs, 12.0))
@@ -840,6 +850,7 @@ void GlassWindow::CaptureBackground()
             m_bgCap ? 1 : 0,
             m_hWnd);
     }
+    return m_bgCap != nullptr;
 }
 
 void GlassWindow::CompositeBackgroundToCache()
@@ -1310,9 +1321,11 @@ void GlassWindow::DoPaint()
     {
         if (m_bgCaptureDirty)
         {
-            CaptureBackground();
+            const bool captured = CaptureBackground();
             m_bgCaptureDirty = false;
-            m_bgCompositeDirty = true;
+            // Do not rebuild from an empty or stale capture. Preserve the last
+            // verified composite; without one, the existing clear fallback is used.
+            m_bgCompositeDirty = captured;
         }
 
         if (m_bgCompositeDirty)

@@ -167,6 +167,15 @@ Add-TestResult `
     -Name "Folder watcher has per-folder backoff and recovery" `
     -Passed ($folderWatcherSource -match 'kRecoveryDelaysMs\[\] = \{ 5000, 15000, 60000 \}' -and $folderWatcherSource -match 'folder_unavailable' -and $folderWatcherSource -match 'folder_recovered') `
     -Detail "Missing sync folders must back off independently and recover without log storms"
+
+Add-TestResult `
+    -Name "Folder watcher preserves backoff for unchanged configuration" `
+    -Passed (
+        $folderWatcherSource -match 'changed = m_impl->m_folders != folders' -and
+        $folderWatcherSource -match 'if \(changed\)\s*\{\s*m_impl->m_folders = folders' -and
+        $folderWatcherSource -match 'if \(changed\)\s*SetEvent\(m_impl->m_wakeEvent\)'
+    ) `
+    -Detail "Repeated config loads must not reset missing-folder recovery backoff"
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
 $popupFileSelectionControllerSource = Read-RepoFile "WinLauncher\Popup\PopupFileSelectionController.cpp"
 $popupIconRefreshControllerSource = Read-RepoFile "WinLauncher\Popup\PopupIconRefreshController.cpp"
@@ -558,6 +567,29 @@ Add-TestResult `
         $applicationSource -match 'shouldRecoverHooks\s*=\s*false'
     ) `
     -Detail "The UI watchdog must trigger a hook restart when the UI thread becomes responsive again"
+
+Add-TestResult `
+    -Name "Interactive startup defers plugins and begins watchdog afterward" `
+    -Passed (
+        $applicationSource -match 'PostMessageW\(m_hMainWnd, AppMessages::InitializePlugins, 0, 0\)' -and
+        $applicationSource -match 'void Application::InitializePlugins\(\)' -and
+        $applicationSource -match 'case AppMessages::InitializePlugins:' -and
+        $applicationSource -match 'void Application::StartUiWatchdog\(\)' -and
+        $applicationSource.IndexOf('PostMessageW(m_hMainWnd, AppMessages::InitializePlugins, 0, 0)') -lt $applicationSource.IndexOf('int exitCode = MessageLoop()') -and
+        $applicationSource.IndexOf('StartUiWatchdog();') -lt $applicationSource.IndexOf('int exitCode = MessageLoop()')
+    ) `
+    -Detail "Hooks and local launcher UI must be ready before plugin loading and runtime-stall monitoring"
+
+Add-TestResult `
+    -Name "Glass capture preserves valid caches after transient screen-copy failures" `
+    -Passed (
+        $glassWindowSource -match 'bool GlassWindow::CaptureBackground\(\)' -and
+        $glassWindowSource -match 'fallback=last_valid_cache' -and
+        $glassWindowSource -match 'm_bgCompositeDirty = captured' -and
+        $glassWindowSource -match 'now - m_lastBackgroundCaptureLogTick >= 30000' -and
+        $glassWindowSource -match 'dwm_backdrop_disable_unsupported'
+    ) `
+    -Detail "Transient desktop capture failures must not rebuild from stale pixels or flood warning logs"
 
 Add-TestResult `
     -Name "Direct2D device-loss recovery fallback is implemented" `

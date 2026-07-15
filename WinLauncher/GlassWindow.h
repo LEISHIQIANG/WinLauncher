@@ -55,7 +55,7 @@ protected:
     void ReleaseD2D();
     void ResetBackgroundResources(const wchar_t* reason, bool includeRenderTarget = false);
     void MarkBackgroundDirty(const wchar_t* reason, bool logEvent = false);
-    void CaptureBackground();
+    bool CaptureBackground();
     void CompositeBackgroundToCache();
     void DoPaint();
     void UpdateWindowCornerRadius();
@@ -91,6 +91,8 @@ protected:
     std::vector<DWORD>        m_pixbuf;
     bool                      m_bgCaptureDirty = true;
     bool                      m_bgCompositeDirty = true;
+    DWORD                     m_lastBackgroundCaptureError = ERROR_SUCCESS;
+    ULONGLONG                 m_lastBackgroundCaptureLogTick = 0;
 
     // Cached effects and resources for CompositeBackgroundToCache
     ComPtr<ID2D1Effect>       m_blurEffect;

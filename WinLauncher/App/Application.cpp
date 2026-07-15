@@ -92,43 +92,6 @@ int Application::Run()
         return 1;
     }
     m_appCtx->uiDispatcher->Bind(m_hMainWnd);
-    m_uiHeartbeat = std::make_shared<UiHeartbeatState>();
-    m_uiHeartbeat->lastTick = GetTickCount64();
-    SetTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID, 250, nullptr);
-    auto heartbeat = m_uiHeartbeat;
-    auto heartbeatLogger = m_appCtx->logger;
-    m_uiWatchdogTask = m_appCtx->backgroundTasks->Submit(L"ui.watchdog", BackgroundTaskService::Priority::High,
-        [hWnd = m_hMainWnd, heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            ULONGLONG lastWarning = 0;
-            bool shouldRecoverHooks = false;
-            while (!cancellation->IsCancellationRequested() && !heartbeat->stopping)
-            {
-                Sleep(250);
-                ULONGLONG now = GetTickCount64();
-                ULONGLONG last = heartbeat->lastTick.load();
-                if (last != 0)
-                {
-                    ULONGLONG elapsed = now - last;
-                    if (elapsed > 3500)
-                    {
-                        if (lastWarning == 0 || now - lastWarning >= 10000)
-                        {
-                            LOG_WARNING_NODE(heartbeatLogger, L"ui.health", L"stall", L"elapsed_ms=%llu",
-                                static_cast<unsigned long long>(elapsed));
-                            CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(elapsed) + L"ms");
-                            lastWarning = now;
-                        }
-                        shouldRecoverHooks = true;
-                    }
-                    else if (shouldRecoverHooks && elapsed <= 250)
-                    {
-                        LOG_INFO(heartbeatLogger, L"ui.health: UI thread unblocked after stall, posting hook recovery message");
-                        PostMessageW(hWnd, AppMessages::RestartHook, 0, 0);
-                        shouldRecoverHooks = false;
-                    }
-                }
-            }
-        });
 
     if (!InitializeServices())
     {
@@ -187,6 +150,10 @@ int Application::Run()
     }
 
     UpdateService::GetInstance().CheckForUpdates(m_hMainWnd, true, m_appCtx.get());
+    // The main window, hooks, and popup are ready before potentially slow DLL
+    // scanning/loading starts. The posted message is handled on the UI thread.
+    PostMessageW(m_hMainWnd, AppMessages::InitializePlugins, 0, 0);
+    StartUiWatchdog();
 
     int exitCode = MessageLoop();
     Shutdown();
@@ -284,13 +251,65 @@ bool Application::InitializeServices()
     if (m_appCtx->pluginManager)
     {
         m_appCtx->pluginManager->SetUserInteraction(m_appCtx->userInteraction);
-        m_appCtx->pluginManager->Initialize();
     }
 
     // Validate autostart configuration and self-check
     AutoStartHelper::ValidateAndSelfCheck();
 
     return true;
+}
+
+void Application::InitializePlugins()
+{
+    if (!m_appCtx || !m_appCtx->pluginManager)
+        return;
+
+    LOG_INFO(m_appCtx->logger, L"Application::InitializePlugins: loading plugins after interactive startup");
+    m_appCtx->pluginManager->Initialize();
+}
+
+void Application::StartUiWatchdog()
+{
+    if (!m_appCtx || !m_hMainWnd || !m_appCtx->backgroundTasks || m_uiHeartbeat)
+        return;
+
+    m_uiHeartbeat = std::make_shared<UiHeartbeatState>();
+    m_uiHeartbeat->lastTick = GetTickCount64();
+    SetTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID, 250, nullptr);
+    auto heartbeat = m_uiHeartbeat;
+    auto heartbeatLogger = m_appCtx->logger;
+    m_uiWatchdogTask = m_appCtx->backgroundTasks->Submit(L"ui.watchdog", BackgroundTaskService::Priority::High,
+        [hWnd = m_hMainWnd, heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            ULONGLONG lastWarning = 0;
+            bool shouldRecoverHooks = false;
+            while (!cancellation->IsCancellationRequested() && !heartbeat->stopping)
+            {
+                Sleep(250);
+                ULONGLONG now = GetTickCount64();
+                ULONGLONG last = heartbeat->lastTick.load();
+                if (last == 0)
+                    continue;
+
+                ULONGLONG elapsed = now - last;
+                if (elapsed > 3500)
+                {
+                    if (lastWarning == 0 || now - lastWarning >= 10000)
+                    {
+                        LOG_WARNING_NODE(heartbeatLogger, L"ui.health", L"stall", L"elapsed_ms=%llu",
+                            static_cast<unsigned long long>(elapsed));
+                        CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(elapsed) + L"ms");
+                        lastWarning = now;
+                    }
+                    shouldRecoverHooks = true;
+                }
+                else if (shouldRecoverHooks && elapsed <= 250)
+                {
+                    LOG_INFO(heartbeatLogger, L"ui.health: UI thread unblocked after stall, posting hook recovery message");
+                    PostMessageW(hWnd, AppMessages::RestartHook, 0, 0);
+                    shouldRecoverHooks = false;
+                }
+            }
+        });
 }
 
 bool Application::LoadRuntimeSettings()
@@ -732,6 +751,10 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
     case AppMessages::ShowPluginsWindow:
         ShowConfigWindow(); // Opens config with focus on plugins
+        return 0;
+
+    case AppMessages::InitializePlugins:
+        InitializePlugins();
         return 0;
 
     case AppMessages::ConfigChanged:

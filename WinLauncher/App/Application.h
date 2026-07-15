@@ -19,6 +19,8 @@ private:
     bool InitializeServices();
     bool LoadRuntimeSettings();
     bool InstallHooks();
+    void InitializePlugins();
+    void StartUiWatchdog();
     int MessageLoop();
     void Shutdown();
 
