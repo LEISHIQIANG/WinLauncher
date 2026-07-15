@@ -20,17 +20,20 @@ public:
 
     struct State
     {
+        State();
         ~State();
         std::mutex mutex;
         std::vector<Result> results;
         std::atomic_bool cancelled{ false };
         uint64_t generation = 0;
+        HANDLE completionEvent = nullptr;
     };
 
     std::shared_ptr<State> Begin();
     void Cancel();
     bool IsCurrent(const std::shared_ptr<State>& state) const;
     std::vector<Result> Take(const std::shared_ptr<State>& state);
+    bool WaitForCompletion(const std::shared_ptr<State>& state) const noexcept;
     std::shared_ptr<State> Current() const { return m_state; }
     bool IsRefreshing() const noexcept { return m_refreshing; }
     void Complete() noexcept { m_refreshing = false; }

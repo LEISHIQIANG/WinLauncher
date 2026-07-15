@@ -333,6 +333,16 @@ Add-TestResult `
     -Detail "First paint should defer off-screen bitmaps, and hidden popups must not keep refreshing icons"
 
 Add-TestResult `
+    -Name "Popup first frame uses preloaded real icons" `
+    -Passed (
+        $popupSource -match 'void\s+PopupWindow::OnConfigChanged\s*\([\s\S]{0,7000}RefreshIcons\(false\)' -and
+        $popupSource -match 'bool\s+PopupWindow::WaitForIconsBeforeFirstFrame\s*\([\s\S]{0,500}WaitForCompletion' -and
+        $popupSource -match 'if\s*\(needsShow\)\s*\{\s*const double iconReadyStart[\s\S]{0,500}WaitForIconsBeforeFirstFrame\(\)[\s\S]{0,800}EnsureIcons\(\)' -and
+        $popupIconRefreshControllerSource -match 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
+    ) `
+    -Detail "A hidden popup must wait for its background icon preload before composing its first visible frame"
+
+Add-TestResult `
     -Name "Popup show reuses clean background caches and scene-safe page indices" `
     -Passed (
         $popupSource -match 'backgroundRefreshNeeded\s*=\s*this->m_bgCaptureDirty' -and

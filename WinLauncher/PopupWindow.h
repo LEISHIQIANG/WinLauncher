@@ -76,6 +76,7 @@ private:
     void EnsureIcons();
     void RefreshIcons(bool clearExisting = true);
     void ApplyRefreshedIcons();
+    bool WaitForIconsBeforeFirstFrame();
     void CancelIconRefresh();
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();

@@ -611,6 +611,11 @@ void PopupWindow::OnConfigChanged()
     }
 
     if (GetHWND()) InvalidateRect(GetHWND(), nullptr, FALSE);
+
+    // Start Shell extraction while the popup remains hidden.  The first show
+    // will consume this work before painting, so transient generated icons
+    // never become a visible intermediate frame.
+    RefreshIcons(false);
 }
 
 void PopupWindow::UpdateWindowSize()
@@ -799,6 +804,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     double showStart = GetTimeInSeconds();
     double dataReadyMs = 0.0;
     double windowReadyMs = 0.0;
+    double iconReadyMs = 0.0;
     double firstFrameMs = 0.0;
 
     if (prevActive && prevActive != this->GetHWND())
@@ -961,10 +967,6 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         }
         if (geometryChanged)
             SetWindowPos(hwnd, HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-        if (this->EnsureD2D())
-        {
-            this->EnsureIcons();
-        }
         needsShow = !IsWindowVisible(hwnd);
     }
     else
@@ -981,7 +983,6 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
                     this->m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
                     UIStyle::Typography::ApplyRenderTargetTextDefaults(this->m_rt.Get());
                 }
-                this->EnsureIcons();
             }
             needsShow = true;
         }
@@ -1051,6 +1052,17 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         {
             this->m_searchTextBox.UpdateImeWindowPosition(this->GetHWND(), scale);
         }
+
+        if (needsShow)
+        {
+            const double iconReadyStart = GetTimeInSeconds();
+            this->WaitForIconsBeforeFirstFrame();
+            iconReadyMs = (GetTimeInSeconds() - iconReadyStart) * 1000.0;
+        }
+        if (this->EnsureD2D())
+        {
+            this->EnsureIcons();
+        }
  
         this->StartAutoHideTimer();
         windowReadyMs = (GetTimeInSeconds() - windowReadyStart) * 1000.0;
@@ -1104,14 +1116,14 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         double showElapsedMs = (GetTimeInSeconds() - showStart) * 1000.0;
         LOG_G_INFO_NODE(
             L"ui.popup", L"show_timing",
-            L"total_ms=%.2f data_ms=%.2f window_ms=%.2f background_ms=%.2f first_frame_ms=%.2f cold=%d",
-            showElapsedMs, dataReadyMs, windowReadyMs, bgElapsedMs, firstFrameMs, needsShow ? 1 : 0);
+            L"total_ms=%.2f data_ms=%.2f window_ms=%.2f icon_ms=%.2f background_ms=%.2f first_frame_ms=%.2f cold=%d",
+            showElapsedMs, dataReadyMs, windowReadyMs, iconReadyMs, bgElapsedMs, firstFrameMs, needsShow ? 1 : 0);
         if (showElapsedMs >= POPUP_SLOW_SHOW_MS)
         {
             LOG_G_WARNING_NODE(
                 L"ui.popup", L"show_slow",
-                L"total_ms=%.2f data_ms=%.2f window_ms=%.2f background_ms=%.2f first_frame_ms=%.2f pages=%d dock_items=%d size=%dx%d",
-                showElapsedMs, dataReadyMs, windowReadyMs, bgElapsedMs, firstFrameMs,
+                L"total_ms=%.2f data_ms=%.2f window_ms=%.2f icon_ms=%.2f background_ms=%.2f first_frame_ms=%.2f pages=%d dock_items=%d size=%dx%d",
+                showElapsedMs, dataReadyMs, windowReadyMs, iconReadyMs, bgElapsedMs, firstFrameMs,
                 (int)this->m_pages.size(),
                 (int)this->m_dockPage.shortcuts.size(),
                 w_px,
@@ -1870,7 +1882,7 @@ void PopupWindow::EnsureIcons()
 
 void PopupWindow::RefreshIcons(bool clearExisting)
 {
-    if (!m_rt || !m_appCtx || !m_appCtx->backgroundTasks) return;
+    if (!m_appCtx || !m_appCtx->backgroundTasks) return;
     auto state = m_iconRefresh.Begin();
     if (!state) return;
     HWND hwnd = GetHWND();
@@ -1954,6 +1966,10 @@ void PopupWindow::RefreshIcons(bool clearExisting)
                 state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon });
             }
             if (SUCCEEDED(comResult)) CoUninitialize();
+            // Signal before posting so a hidden popup can synchronously use
+            // the completed batch for its first visible frame.
+            if (!state->cancelled && !cancellation->IsCancellationRequested())
+                SetEvent(state->completionEvent);
             if (!state->cancelled && !cancellation->IsCancellationRequested() && IsWindow(hwnd))
                 PostMessageW(hwnd, WM_USER_REFRESH_ICONS, 0, 0);
         });
@@ -1962,6 +1978,15 @@ void PopupWindow::RefreshIcons(bool clearExisting)
         m_iconRefresh.Cancel();
         LOG_G_WORNING(L"PopupWindow perf: icon refresh was not queued");
     }
+}
+
+bool PopupWindow::WaitForIconsBeforeFirstFrame()
+{
+    auto state = m_iconRefresh.Current();
+    if (!state || !m_iconRefresh.IsRefreshing()) return false;
+    if (!m_iconRefresh.WaitForCompletion(state)) return false;
+    ApplyRefreshedIcons();
+    return true;
 }
 
 void PopupWindow::CancelIconRefresh()

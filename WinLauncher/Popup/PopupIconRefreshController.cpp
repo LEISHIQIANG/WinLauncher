@@ -1,9 +1,15 @@
 #include "PopupIconRefreshController.h"
 
+PopupIconRefreshController::State::State()
+    : completionEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr))
+{
+}
+
 PopupIconRefreshController::State::~State()
 {
     for (const auto& result : results)
         if (result.icon) DestroyIcon(result.icon);
+    if (completionEvent) CloseHandle(completionEvent);
 }
 
 std::shared_ptr<PopupIconRefreshController::State> PopupIconRefreshController::Begin()
@@ -18,7 +24,11 @@ std::shared_ptr<PopupIconRefreshController::State> PopupIconRefreshController::B
 
 void PopupIconRefreshController::Cancel()
 {
-    if (m_state) m_state->cancelled = true;
+    if (m_state)
+    {
+        m_state->cancelled = true;
+        if (m_state->completionEvent) SetEvent(m_state->completionEvent);
+    }
     m_state.reset();
     m_refreshing = false;
     m_pending = false;
@@ -37,4 +47,11 @@ std::vector<PopupIconRefreshController::Result> PopupIconRefreshController::Take
     std::vector<Result> result;
     result.swap(state->results);
     return result;
+}
+
+bool PopupIconRefreshController::WaitForCompletion(const std::shared_ptr<State>& state) const noexcept
+{
+    if (!IsCurrent(state)) return false;
+    if (!state->completionEvent) return true;
+    return WaitForSingleObject(state->completionEvent, INFINITE) == WAIT_OBJECT_0 && IsCurrent(state);
 }

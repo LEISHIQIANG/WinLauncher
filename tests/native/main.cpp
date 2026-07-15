@@ -219,6 +219,12 @@ int wmain(int argc, wchar_t** argv)
         refresh.Cancel();
         if (refresh.IsCurrent(first) || refresh.IsRefreshing())
             return Fail(L"popup icon refresh cancellation retained stale generation");
+
+        auto completed = refresh.Begin();
+        if (!completed || !completed->completionEvent ||
+            !SetEvent(completed->completionEvent) || !refresh.WaitForCompletion(completed))
+            return Fail(L"popup icon refresh completion wait regressed");
+        refresh.Cancel();
     }
 
     {
