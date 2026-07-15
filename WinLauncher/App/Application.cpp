@@ -140,9 +140,17 @@ int Application::Run()
     // of making the user's first tray right-click initialise the GPU device.
     PostMessageW(m_hMainWnd, AppMessages::PrewarmTrayMenu, 0, 0);
 
-    // Install keyboard hook and register double-Alt shortcut for TogglePopupPause
-    KeyboardHook::Install();
-    KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+    // Install keyboard hook before arming double-Alt pause/resume. If the hook
+    // is unavailable, keep the tray control usable and leave no false-active
+    // keyboard trigger state behind.
+    if (KeyboardHook::Install())
+    {
+        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+    }
+    else
+    {
+        LOG_ERROR(m_appCtx->logger, L"Application::Run: keyboard hook unavailable; double-Alt pause is disabled until hooks restart");
+    }
 
     if (justUpdated)
     {
@@ -519,10 +527,9 @@ void Application::UpdateTrayIconState()
     }
 }
 
-void Application::ShowPopupAtCursor()
+void Application::ShowPopupAtCursor(ULONG_PTR requestGeneration)
 {
-    MouseHook::AcknowledgePopupRequest();
-    if (m_popupPaused) return;
+    if (!MouseHook::AcknowledgePopupRequest(requestGeneration) || m_popupPaused) return;
 
     POINT pt;
     GetCursorPos(&pt);
@@ -550,6 +557,8 @@ void Application::TogglePopupPause()
 {
     m_popupPaused = !m_popupPaused;
     MouseHook::SetTriggerEnabled(!m_popupPaused);
+    if (m_popupPaused)
+        PopupWindow::Hide();
     TrayMenuWindow::SetPaused(m_popupPaused);
 
     // 在屏幕中央显示简短 Toast 提示
@@ -673,7 +682,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     switch (msg)
     {
     case AppMessages::ShowPopup:
-        ShowPopupAtCursor();
+        ShowPopupAtCursor(wParam);
         return 0;
 
     case AppMessages::LaunchShortcutById:

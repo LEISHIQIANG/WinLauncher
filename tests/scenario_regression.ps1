@@ -14,11 +14,13 @@ foreach ($path in $required) {
 $popup = Get-Content (Join-Path $root 'WinLauncher/PopupWindow.cpp') -Raw
 $popupSearchService = Get-Content (Join-Path $root 'WinLauncher/Popup/PopupSearchService.cpp') -Raw
 $popupSearchModel = Get-Content (Join-Path $root 'WinLauncher/Popup/PopupSearchModel.cpp') -Raw
-if ($popup -notmatch 'RecordAccepted' -or
+if ($popup -notmatch 'RecordShortcutUsage' -or
     $popupSearchService -notmatch 'PopupSearchModel::SortKey' -or
+    $popupSearchService -notmatch 'item\.shortcut\.name, queryLower,\s*\{\}' -or
+    $popupSearchService -match 'usageHistory|sortMode' -or
     $popupSearchModel -notmatch 'prefixScore' -or
-    $popupSearchModel -notmatch '-static_cast<int64_t>\(usage\.launchCount\)') {
-    throw 'Search ranking regression: local usage ordering is not wired.'
+    $popupSearchModel -notmatch 'positionScore') {
+    throw 'Search ranking regression: keyword relevance must remain independent from smart icon sorting.'
 }
 $migration = Get-Content (Join-Path $root 'WinLauncher/Services/MigrationBackupService.cpp') -Raw
 if ($migration -notmatch 'Preflight' -or $migration -notmatch 'manifest.json' -or $migration -notmatch 'pluginsIncluded') { throw 'Migration safety regression: preflight/manifest boundary missing.' }

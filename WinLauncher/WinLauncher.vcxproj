@@ -207,6 +207,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MouseHook.h" />
+    <ClInclude Include="TriggerPolicy.h" />
     <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="InputFocusGuard.h" />
     <ClInclude Include="AutoStartHelper.h" />

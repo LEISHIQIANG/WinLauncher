@@ -604,8 +604,8 @@ void ShortcutPage::OnMouseMove(POINT pt, bool& repaint)
         {
             if (HasDragExceededThreshold(pt))
             {
-                StartShortcutDrag(pt);
-                UpdateDragDeleteCursor(pt);
+                if (StartShortcutDrag(pt))
+                    UpdateDragDeleteCursor(pt);
             }
         }
         else
@@ -1889,10 +1889,30 @@ HCURSOR ShortcutPage::GetDeleteCursor()
     return m_deleteCursor ? m_deleteCursor : LoadCursorW(nullptr, IDC_ARROW);
 }
 
-void ShortcutPage::StartShortcutDrag(POINT pt)
+bool ShortcutPage::StartShortcutDrag(POINT pt)
 {
-    if (!m_pageData || m_dragIndex < 0 || m_dragIndex >= (int)m_shortcutStates.size()) return;
-    if (!m_shortcutStates[m_dragIndex].selected) return;
+    if (!m_pageData || m_dragIndex < 0 || m_dragIndex >= (int)m_shortcutStates.size()) return false;
+    if (!m_shortcutStates[m_dragIndex].selected) return false;
+
+    if (m_owner && m_owner->GetSortMode() == 1)
+    {
+        const bool switchToCustom = ConfirmWindow::Show(
+            m_owner->GetWindowHWND(),
+            L"智能排序已启用",
+            L"当前为智能排序，不能拖动图标。是否切换到自定义排序？",
+            m_owner->GetAppContext());
+        if (!switchToCustom)
+        {
+            ReleaseCapture();
+            m_dragIndex = -1;
+            m_dragCurrentInsertIndex = -1;
+            m_dragActive = false;
+            return false;
+        }
+
+        m_owner->SetSortMode(0);
+        m_owner->NotifyConfigChanged();
+    }
 
     m_dragActive = true;
     m_dragCurrentInsertIndex = m_dragIndex;
@@ -1914,6 +1934,7 @@ void ShortcutPage::StartShortcutDrag(POINT pt)
     UpdateDragAndSortState(pt);
     m_animating = true;
     m_owner->StartAnimation();
+    return true;
 }
 
 void ShortcutPage::UpdateDragAndSortState(POINT clientPt)

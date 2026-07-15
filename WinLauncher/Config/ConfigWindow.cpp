@@ -1006,7 +1006,7 @@ void ConfigWindow::ImportMigrationBackup()
 void ConfigWindow::ClearUsageHistory()
 {
     bool ok=m_appCtx && m_appCtx->usageHistory && m_appCtx->usageHistory->Clear();
-    ConfirmWindow::Show(GetHWND(), ok ? L"使用记录已清除" : L"清除失败", ok ? L"本地搜索排序记录已清除。" : L"无法清除本地使用记录。", m_appCtx, false);
+    ConfirmWindow::Show(GetHWND(), ok ? L"使用记录已清除" : L"清除失败", ok ? L"智能图标排序记录已清除。" : L"无法清除本地使用记录。", m_appCtx, false);
 }
 
 void ConfigWindow::ClearCache()

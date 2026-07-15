@@ -80,6 +80,8 @@ private:
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
+    void ApplyShortcutSortMode();
+    void RecordShortcutUsage(const RendShortcutInfo& shortcut);
     void StartAutoHideTimer();
     void StopAutoHideTimer();
     float GetFontSize() const;
@@ -176,7 +178,7 @@ private:
     PopupIconRefreshController m_iconRefresh;
 
     PopupFileSelectionController m_fileSelection;
-    void StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter);
+    void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);
     void CancelFileSelectionQuery();
     void PollFileSelectionQuery();
 

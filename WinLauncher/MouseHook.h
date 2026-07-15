@@ -12,7 +12,9 @@ public:
     static bool IsInstalled();
     static void SetTriggerType(int type);
     static void SetTriggerEnabled(bool enabled);
-    static void AcknowledgePopupRequest();
+    // Returns false when a queued request became stale because triggers were
+    // paused or reconfigured before the UI thread could handle it.
+    static bool AcknowledgePopupRequest(ULONG_PTR requestGeneration);
     static void SetTriggerBlacklist(const std::vector<std::wstring>& processNames);
 
 private:
@@ -25,6 +27,7 @@ private:
     static std::atomic<bool>   s_running;
     static std::atomic<bool>   s_triggerEnabled;
     static std::atomic<bool>   s_popupRequestPending;
+    static std::atomic<ULONG_PTR> s_triggerGeneration;
     static std::atomic<DWORD>  s_suppressButtonUpMask;
     static HMODULE             s_hModule;
 

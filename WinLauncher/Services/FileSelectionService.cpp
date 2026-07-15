@@ -61,7 +61,7 @@ namespace Services
         }
     }
 
-    std::vector<std::wstring> FileSelectionService::GetSelectedFiles(HWND hwnd, POINT clickPt, POINT popupCenter)
+    std::vector<std::wstring> FileSelectionService::GetSelectedFiles(HWND hwnd, POINT triggerPt)
     {
         std::vector<std::wstring> selectedFiles;
 
@@ -76,22 +76,11 @@ namespace Services
 
         bool isDesktop = (className == L"Progman" || className == L"WorkerW");
 
-        // Verify points and boundaries for selection
-        if (isDesktop)
+        // The trigger point is the user's actual selection context. Popup
+        // placement is configurable and must never change this decision.
+        if (!IsPointInWindow(triggerPt, rootHwnd, isDesktop))
         {
-            // Desktop file selection: check if original click point is on the desktop window
-            if (!IsPointInWindow(clickPt, rootHwnd, true))
-            {
-                return selectedFiles;
-            }
-        }
-        else
-        {
-            // Folder file selection: check if original click and clamped popup center are inside the folder window
-            if (!IsPointInWindow(clickPt, rootHwnd, false) || !IsPointInWindow(popupCenter, rootHwnd, false))
-            {
-                return selectedFiles;
-            }
+            return selectedFiles;
         }
 
         // Iterate Shell Windows to retrieve the document SelectedItems
@@ -198,8 +187,7 @@ namespace Services
 
     std::shared_ptr<SelectionRequest> FileSelectionService::CaptureSelectedFilesAsync(
         HWND activeHwnd,
-        POINT clickPt,
-        POINT popupCenter,
+        POINT triggerPt,
         const std::shared_ptr<BackgroundTaskService>& tasks)
     {
         auto request = std::make_shared<SelectionRequest>();
@@ -219,13 +207,13 @@ namespace Services
         }
 
         request->m_task = tasks->Submit(L"file.selection", BackgroundTaskService::Priority::Interactive,
-            [request, activeHwnd, clickPt, popupCenter, capturedTime](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            [request, activeHwnd, triggerPt, capturedTime](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
             bool needsUninit = (hr == S_OK || hr == S_FALSE);
 
             std::vector<std::wstring> files;
             if (!request->IsCancelled() && !cancellation->IsCancellationRequested())
-                files = GetSelectedFiles(activeHwnd, clickPt, popupCenter);
+                files = GetSelectedFiles(activeHwnd, triggerPt);
 
             if (needsUninit)
             {

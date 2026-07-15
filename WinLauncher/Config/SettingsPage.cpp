@@ -50,6 +50,9 @@ namespace
     constexpr float TRIGGER_TOP = 108.0f;
     constexpr float TRIGGER_BOTTOM = 136.0f;
     constexpr int TRIGGER_PRESET_BUTTON = 3;
+    constexpr int POPUP_ALIGN_PRESET_BUTTON = 3;
+    constexpr int POPUP_ALIGN_PRIMARY_COUNT = 3;
+    constexpr int POPUP_ALIGN_PRESET_LAST = 10;
     constexpr int FOUR_SEGMENT_COUNT = 4;
     constexpr float FOUR_SEGMENT_GAP = 10.0f;
     constexpr float FOUR_SEGMENT_WIDTH = (CONTENT_RIGHT - CONTENT_LEFT - FOUR_SEGMENT_GAP * (FOUR_SEGMENT_COUNT - 1)) / FOUR_SEGMENT_COUNT;
@@ -113,6 +116,25 @@ namespace
         case 5: return L"Alt + 中键";
         case 6: return L"Ctrl + 侧键 4";
         case 7: return L"Ctrl + 侧键 5";
+        default: return L"未知预设";
+        }
+    }
+
+    std::wstring PopupAlignPresetLabel(int mode)
+    {
+        switch (mode)
+        {
+        case 0: return L"鼠标居中";
+        case 1: return L"鼠标左上";
+        case 2: return L"屏幕居中";
+        case 3: return L"屏幕右下";
+        case 4: return L"屏幕中下";
+        case 5: return L"屏幕左下";
+        case 6: return L"屏幕左上";
+        case 7: return L"屏幕中上";
+        case 8: return L"屏幕右上";
+        case 9: return L"屏幕中左";
+        case 10: return L"屏幕中右";
         default: return L"未知预设";
         }
     }
@@ -268,6 +290,43 @@ void SettingsPage::ShowTriggerPresetMenu()
         addPreset(type);
 
     D2D1_RECT_F presetRect = TriggerButtonRect(TRIGGER_PRESET_BUTTON);
+    POINT menuPt{ (int)presetRect.left, (int)(presetRect.bottom + 6.0f) };
+    menuPt = DpiHelper::LogicalClientToScreen(hwnd, menuPt);
+    DropDownMenu::Show(hwnd, menuPt, items, m_owner->GetAppContext(), presetRect.right - presetRect.left, true, 10.5f);
+}
+
+void SettingsPage::ShowPopupAlignPresetMenu()
+{
+    if (!m_owner) return;
+
+    HWND hwnd = m_owner->GetWindowHWND();
+    if (!hwnd) return;
+
+    std::vector<DropDownMenu::Item> items;
+    const int currentMode = m_owner->GetPopupAlignMode();
+    for (int mode = POPUP_ALIGN_PRESET_BUTTON; mode <= POPUP_ALIGN_PRESET_LAST; ++mode)
+    {
+        std::wstring label = PopupAlignPresetLabel(mode);
+        if (mode == currentMode)
+            label = L"当前：" + label;
+
+        items.push_back(DropDownMenu::Item{
+            label,
+            [this, mode]()
+            {
+                if (!m_owner) return;
+                if (m_owner->GetPopupAlignMode() != mode)
+                    m_owner->SetPopupAlignMode(mode);
+                m_owner->NotifyConfigChanged();
+                HWND ownerHwnd = m_owner->GetWindowHWND();
+                if (ownerHwnd)
+                    InvalidateRect(ownerHwnd, nullptr, FALSE);
+            },
+            false
+        });
+    }
+
+    D2D1_RECT_F presetRect = PopupAlignRect(POPUP_ALIGN_PRESET_BUTTON);
     POINT menuPt{ (int)presetRect.left, (int)(presetRect.bottom + 6.0f) };
     menuPt = DpiHelper::LogicalClientToScreen(hwnd, menuPt);
     DropDownMenu::Show(hwnd, menuPt, items, m_owner->GetAppContext(), presetRect.right - presetRect.left, true, 10.5f);
@@ -1386,9 +1445,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         }
 
         int alignMode = m_owner->GetPopupAlignMode();
-        std::wstring alignLabels[] = { L"鼠标居中", L"鼠标左上", L"屏幕居中", L"右下角" };
-        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAlignSelection, PopupAlignRect(alignMode)), 6.0f);
-        for (int i = 0; i < 4; i++)
+        const int selectedPopupAlignButton =
+            (alignMode >= 0 && alignMode < POPUP_ALIGN_PRIMARY_COUNT) ? alignMode : POPUP_ALIGN_PRESET_BUTTON;
+        std::wstring alignLabels[] = { L"鼠标居中", L"鼠标左上", L"屏幕居中" };
+        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAlignSelection, PopupAlignRect(selectedPopupAlignButton)), 6.0f);
+        for (int i = 0; i < POPUP_ALIGN_PRIMARY_COUNT; i++)
         {
             drawSegmentButton(
                 PopupAlignRect(i),
@@ -1396,6 +1457,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 i == alignMode,
                 i == m_hoveredPopupAlignMode);
         }
+        drawSegmentButton(
+            PopupAlignRect(POPUP_ALIGN_PRESET_BUTTON),
+            L"其他预设",
+            alignMode >= POPUP_ALIGN_PRESET_BUTTON,
+            m_hoveredPopupAlignMode == POPUP_ALIGN_PRESET_BUTTON);
 
         if (tfDefault)
         {
@@ -2460,7 +2526,12 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
         else
         {
             int alignMode = HitTestPopupAlignMode(pt);
-            if (alignMode >= 0)
+            if (alignMode == POPUP_ALIGN_PRESET_BUTTON)
+            {
+                ShowPopupAlignPresetMenu();
+                repaint = true;
+            }
+            else if (alignMode >= 0 && alignMode < POPUP_ALIGN_PRIMARY_COUNT)
             {
                 m_owner->SetPopupAlignMode(alignMode);
                 m_owner->NotifyConfigChanged();
@@ -2929,7 +3000,7 @@ int SettingsPage::HitTestTrigger(POINT pt)
 int SettingsPage::HitTestPopupAlignMode(POINT pt)
 {
     if (m_categoryIndex != 2) return -1;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i <= POPUP_ALIGN_PRESET_BUTTON; i++)
     {
         if (PointInRect(PopupAlignRect(i), pt))
             return i;

@@ -32,6 +32,7 @@
 #include <atomic>
 #include <functional>
 #include <imm.h>
+#include <numeric>
 #include <string>
 #include <tuple>
 #pragma comment(lib, "imm32.lib")
@@ -93,6 +94,48 @@ static bool HasLaunchAction(const RendShortcutInfo& shortcut)
     default:
         return !shortcut.targetPath.empty();
     }
+}
+
+static void SortPageByUsage(RendPopupPage& page, const std::shared_ptr<UsageHistoryStore>& usageHistory)
+{
+    if (!usageHistory || page.shortcuts.size() < 2)
+        return;
+
+    // Icon bitmaps are indexed in parallel with shortcuts. Do not reorder a
+    // partially-built cache because it would associate the wrong bitmap with a
+    // shortcut while a background icon refresh is running.
+    if (!page.iconBitmaps.empty() && page.iconBitmaps.size() != page.shortcuts.size())
+        return;
+
+    std::vector<size_t> order(page.shortcuts.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t left, size_t right) {
+        const auto usageFor = [&](size_t index) {
+            const auto& id = page.shortcuts[index].id;
+            return id.empty() ? uint64_t{ 0 } : usageHistory->Get(L"shortcut:" + id).launchCount;
+        };
+        return usageFor(left) > usageFor(right);
+    });
+
+    if (std::is_sorted(order.begin(), order.end()))
+        return;
+
+    std::vector<RendShortcutInfo> sortedShortcuts;
+    sortedShortcuts.reserve(page.shortcuts.size());
+    std::vector<ID2D1Bitmap*> sortedBitmaps;
+    if (!page.iconBitmaps.empty())
+        sortedBitmaps.reserve(page.iconBitmaps.size());
+
+    for (size_t index : order)
+    {
+        sortedShortcuts.push_back(std::move(page.shortcuts[index]));
+        if (!page.iconBitmaps.empty())
+            sortedBitmaps.push_back(page.iconBitmaps[index]);
+    }
+
+    page.shortcuts.swap(sortedShortcuts);
+    if (!page.iconBitmaps.empty())
+        page.iconBitmaps.swap(sortedBitmaps);
 }
 
 static bool IsSameSceneApp(const AppScene::AppIdentity& left, const AppScene::AppIdentity& right)
@@ -491,6 +534,7 @@ void PopupWindow::OnConfigChanged()
             for (const auto& vs : vp.shortcuts)
             {
                 RendShortcutInfo si;
+                si.id = vs.id;
                 si.name = vs.name;
                 si.targetPath = vs.targetPath;
                 si.arguments = vs.arguments;
@@ -519,6 +563,7 @@ void PopupWindow::OnConfigChanged()
         for (const auto& vs : m_viewModel->GetDockPage().shortcuts)
         {
             RendShortcutInfo si;
+            si.id = vs.id;
             si.name = vs.name;
             si.targetPath = vs.targetPath;
             si.arguments = vs.arguments;
@@ -533,6 +578,8 @@ void PopupWindow::OnConfigChanged()
             si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
             m_dockPage.shortcuts.push_back(std::move(si));
         }
+
+        ApplyShortcutSortMode();
 
         int modelCurrentPage = m_viewModel->GetCurrentPage();
         m_currentPage = 0;
@@ -613,6 +660,25 @@ void PopupWindow::UpdateWindowSize()
         m_rt->SetDpi(scale * 96.0f, scale * 96.0f);
         UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
     }
+}
+
+void PopupWindow::ApplyShortcutSortMode()
+{
+    if (!m_appCtx || !m_appCtx->configService ||
+        m_appCtx->configService->GetSortMode() != 1)
+    {
+        return;
+    }
+
+    for (auto& page : m_pages)
+        SortPageByUsage(page, m_appCtx->usageHistory);
+    SortPageByUsage(m_dockPage, m_appCtx->usageHistory);
+}
+
+void PopupWindow::RecordShortcutUsage(const RendShortcutInfo& shortcut)
+{
+    if (!shortcut.id.empty() && m_appCtx && m_appCtx->usageHistory)
+        m_appCtx->usageHistory->RecordAccepted(L"shortcut:" + shortcut.id);
 }
 
 void PopupWindow::Init(AppContext* ctx)
@@ -772,6 +838,10 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         this->m_scrollVelocity = 0.0f;
     }
 
+    // Usage changes while the popup is hidden, so re-evaluate the display
+    // order for every show rather than waiting for a configuration reload.
+    ApplyShortcutSortMode();
+
     // 2. Calculate window dimensions using user settings
     int cols = this->GetColumns();
     int rows = this->GetRows();
@@ -803,21 +873,55 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         : 0;
     int targetX = pt.x - w_px / 2;
     int targetY = pt.y - h_px / 2;
-    if (alignMode == 1)
+    const int margin = (int)(16.0f * scale);
+    const int centeredX = wa.left + ((wa.right - wa.left) - w_px) / 2;
+    const int centeredY = wa.top + ((wa.bottom - wa.top) - h_px) / 2;
+    // These values are stored in the user configuration. Keep mode 3 as the
+    // original screen-right-bottom position for compatibility with old INI files.
+    switch (alignMode)
     {
+    case 1: // Mouse top-left
         targetX = pt.x;
         targetY = pt.y;
-    }
-    else if (alignMode == 2)
-    {
-        targetX = wa.left + ((wa.right - wa.left) - w_px) / 2;
-        targetY = wa.top + ((wa.bottom - wa.top) - h_px) / 2;
-    }
-    else if (alignMode == 3)
-    {
-        int margin = (int)(16.0f * scale);
+        break;
+    case 2: // Screen center
+        targetX = centeredX;
+        targetY = centeredY;
+        break;
+    case 3: // Screen right-bottom
         targetX = wa.right - w_px - margin;
         targetY = wa.bottom - h_px - margin;
+        break;
+    case 4: // Screen center-bottom
+        targetX = centeredX;
+        targetY = wa.bottom - h_px - margin;
+        break;
+    case 5: // Screen left-bottom
+        targetX = wa.left + margin;
+        targetY = wa.bottom - h_px - margin;
+        break;
+    case 6: // Screen left-top
+        targetX = wa.left + margin;
+        targetY = wa.top + margin;
+        break;
+    case 7: // Screen center-top
+        targetX = centeredX;
+        targetY = wa.top + margin;
+        break;
+    case 8: // Screen right-top
+        targetX = wa.right - w_px - margin;
+        targetY = wa.top + margin;
+        break;
+    case 9: // Screen center-left
+        targetX = wa.left + margin;
+        targetY = centeredY;
+        break;
+    case 10: // Screen center-right
+        targetX = wa.right - w_px - margin;
+        targetY = centeredY;
+        break;
+    default:
+        break;
     }
 
     if (targetX + w_px > wa.right) targetX = wa.right - w_px;
@@ -828,11 +932,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     pt.x = targetX;
     pt.y = targetY;
 
-    POINT popupCenter;
-    popupCenter.x = targetX + w_px / 2;
-    popupCenter.y = targetY + h_px / 2;
-
-    this->StartFileSelectionQuery(prevActive, clickPt, popupCenter);
+    this->StartFileSelectionQuery(prevActive, clickPt);
     dataReadyMs = (GetTimeInSeconds() - showStart) * 1000.0;
 
     // 3. Handle window (create or reposition) and ensure stable render target.
@@ -1304,11 +1404,7 @@ void PopupWindow::UpdateSearch()
         }
     }
 
-    int sortMode = (m_appCtx && m_appCtx->configService)
-        ? m_appCtx->configService->GetSortMode()
-        : 0;
-    PopupSearchService::SortByRelevance(
-        m_searchResults, queryLower, sortMode, slashMode, m_appCtx ? m_appCtx->usageHistory : nullptr);
+    PopupSearchService::SortByRelevance(m_searchResults, queryLower);
 }
 
 void PopupWindow::ExecuteSearchResult(int index)
@@ -1317,12 +1413,6 @@ void PopupWindow::ExecuteSearchResult(int index)
         return;
 
     auto& item = m_searchResults[index];
-    if (m_appCtx && m_appCtx->usageHistory) {
-        const std::wstring key = PopupCommandDispatcher::UsageKey(
-            item.kind == SearchResultItem::Kind::LocalShortcut, item.shortcut.id, item.pluginId, item.pluginCommandId);
-        // A result reached execution dispatch; failures/cancellations do not record a completion later.
-        m_appCtx->usageHistory->RecordAccepted(key);
-    }
     if (item.kind == SearchResultItem::Kind::SlashCommand)
     {
         if (!m_appCtx || !m_appCtx->pluginManager)
@@ -2936,7 +3026,10 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                        RecordShortcutUsage(sc);
                         LaunchShortcut(sc);
+                        if (m_pinned)
+                            ApplyShortcutSortMode();
                     }
                 }
             }
@@ -2955,10 +3048,13 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
+                        RecordShortcutUsage(sc);
                         LaunchShortcut(sc);
                     }
                     if (m_viewModel)
                         m_viewModel->NotifyShortcutLaunched(ToModelPageIndex(pressedPage), hit);
+                    if (m_pinned)
+                        ApplyShortcutSortMode();
                 }
             }
 
@@ -3578,7 +3674,7 @@ bool PopupWindow::ExecuteShortcut(const RendShortcutInfo& sc, HWND parent, AppCo
     }
 }
 
-void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT popupCenter)
+void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt)
 {
     HWND hWnd = GetHWND();
     if (hWnd)
@@ -3588,7 +3684,7 @@ void PopupWindow::StartFileSelectionQuery(HWND activeHwnd, POINT clickPt, POINT 
 
     CancelFileSelectionQuery();
     const auto request = Services::FileSelectionService::CaptureSelectedFilesAsync(
-        activeHwnd, clickPt, popupCenter, m_appCtx ? m_appCtx->backgroundTasks : nullptr);
+        activeHwnd, triggerPt, m_appCtx ? m_appCtx->backgroundTasks : nullptr);
     m_fileSelection.Begin(request, activeHwnd, GetTimeInSeconds());
     if (hWnd) SetTimer(hWnd, FILE_SELECTION_TIMER_ID, 30, nullptr);
 }

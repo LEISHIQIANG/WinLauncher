@@ -4,6 +4,7 @@
 #include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
+#include "TriggerPolicy.h"
 #include <algorithm>
 #include <cwctype>
 #include <memory>
@@ -19,6 +20,7 @@ HANDLE              MouseHook::s_hReadyEvent = nullptr;
 std::atomic<bool>   MouseHook::s_running(false);
 std::atomic<bool>   MouseHook::s_triggerEnabled(true);
 std::atomic<bool>   MouseHook::s_popupRequestPending(false);
+std::atomic<ULONG_PTR> MouseHook::s_triggerGeneration(1);
 std::atomic<DWORD>  MouseHook::s_suppressButtonUpMask(0);
 HMODULE             MouseHook::s_hModule     = nullptr;
 
@@ -158,28 +160,57 @@ namespace
         LOG_G_INFO(L"MouseHook::%ls: quitPosted=%d wait=%lu timedOut=%d exitCode=%lu",
             operation, result.quitPosted, result.waitResult, result.timedOut, result.exitCode);
     }
+
+    DWORD SuppressionMaskFor(TriggerPolicy::Button button)
+    {
+        switch (button)
+        {
+        case TriggerPolicy::Button::Middle: return SuppressMiddleUp;
+        case TriggerPolicy::Button::XButton1: return SuppressXButton1Up;
+        case TriggerPolicy::Button::XButton2: return SuppressXButton2Up;
+        default: return 0;
+        }
+    }
 }
 
 void MouseHook::SetTriggerType(int type)
 {
-    s_triggerType.store(type);
+    const int normalized = TriggerPolicy::NormalizeTriggerType(type);
+    const int previous = s_triggerType.exchange(normalized, std::memory_order_acq_rel);
+    if (previous != normalized)
+    {
+        // A click queued under a previous preset must never open a popup after
+        // the user has changed the trigger. Keep an already-consumed button's
+        // up event intact so the foreground app never receives an orphaned up.
+        s_popupRequestPending.store(false, std::memory_order_release);
+        s_triggerGeneration.fetch_add(1, std::memory_order_acq_rel);
+    }
 }
 
 void MouseHook::SetTriggerEnabled(bool enabled)
 {
-    s_triggerEnabled.store(enabled, std::memory_order_release);
+    const bool wasEnabled = s_triggerEnabled.exchange(enabled, std::memory_order_acq_rel);
     if (!enabled)
     {
         // A pause may occur between a consumed down event and its up event.
-        // Clear both states so the foreground app receives all later input.
-        s_suppressButtonUpMask.store(0, std::memory_order_release);
+        // Preserve the matching up suppression so foreground apps never see an
+        // unmatched button-up; all newly arriving input passes through.
         s_popupRequestPending.store(false, std::memory_order_release);
+        if (wasEnabled)
+            s_triggerGeneration.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
-void MouseHook::AcknowledgePopupRequest()
+bool MouseHook::AcknowledgePopupRequest(ULONG_PTR requestGeneration)
 {
-    s_popupRequestPending.store(false, std::memory_order_release);
+    if (!s_triggerEnabled.load(std::memory_order_acquire) ||
+        requestGeneration != s_triggerGeneration.load(std::memory_order_acquire))
+    {
+        return false;
+    }
+
+    bool expected = true;
+    return s_popupRequestPending.compare_exchange_strong(expected, false, std::memory_order_acq_rel);
 }
 
 void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
@@ -225,6 +256,7 @@ bool MouseHook::Install(HWND hTargetWnd)
 
     s_hTargetWnd = hTargetWnd;
     s_suppressButtonUpMask.store(0);
+    s_popupRequestPending.store(false);
     s_hookThreadId.store(0);
 
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -351,15 +383,14 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
     if (nCode == HC_ACTION && s_hTargetWnd && !MacroRecorder::IsRecording())
     {
         MSLLHOOKSTRUCT* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+        if (!pMsh)
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
         if (MacroPlayer::IsPlaying())
         {
             if (pMsh)
                 MacroPlayer::RequestInterruptFromMouse(*pMsh);
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
-
-        if (!s_triggerEnabled.load(std::memory_order_acquire))
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
 
         DWORD suppressMask = s_suppressButtonUpMask.load();
         if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
@@ -382,67 +413,14 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             }
         }
 
-        int trigger = s_triggerType.load();
-        bool activated = false;
-        DWORD suppressUpMask = 0;
+        if (!s_triggerEnabled.load(std::memory_order_acquire))
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
 
-        if (trigger == 0) // Middle Click
-        {
-            if (wParam == WM_MBUTTONDOWN)
-            {
-                activated = true;
-                suppressUpMask = SuppressMiddleUp;
-            }
-        }
-        else if (trigger == 1 || trigger == 2) // Side button 4 or 5
-        {
-            if (wParam == WM_XBUTTONDOWN)
-            {
-                WORD btn = HIWORD(pMsh->mouseData);
-                if (trigger == 1 && btn == XBUTTON1)
-                {
-                    activated = true;
-                    suppressUpMask = SuppressXButton1Up;
-                }
-                if (trigger == 2 && btn == XBUTTON2)
-                {
-                    activated = true;
-                    suppressUpMask = SuppressXButton2Up;
-                }
-            }
-        }
-        else if (trigger == 3 || trigger == 4 || trigger == 5) // Modifier + Middle Click
-        {
-            if (wParam == WM_MBUTTONDOWN)
-            {
-                bool modifierMatched =
-                    (trigger == 3 && IsCtrlDown()) ||
-                    (trigger == 4 && IsShiftDown()) ||
-                    (trigger == 5 && IsAltDown());
-                if (modifierMatched)
-                {
-                    activated = true;
-                    suppressUpMask = SuppressMiddleUp;
-                }
-            }
-        }
-        else if (trigger == 6 || trigger == 7) // Ctrl + Side button 4 or 5
-        {
-            if (wParam == WM_XBUTTONDOWN && IsCtrlDown())
-            {
-                WORD btn = HIWORD(pMsh->mouseData);
-                if (trigger == 6 && btn == XBUTTON1)
-                {
-                    activated = true;
-                    suppressUpMask = SuppressXButton1Up;
-                }
-                if (trigger == 7 && btn == XBUTTON2)
-                {
-                    activated = true;
-                    suppressUpMask = SuppressXButton2Up;
-                }
-            }
-        }
+        const auto match = TriggerPolicy::Match(
+            s_triggerType.load(std::memory_order_acquire), wParam, pMsh->mouseData,
+            IsCtrlDown(), IsShiftDown(), IsAltDown());
+        const bool activated = match.activated;
+        const DWORD suppressUpMask = SuppressionMaskFor(match.button);
 
         if (activated)
         {
@@ -465,10 +443,18 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             }
 
             bool expected = false;
+            const ULONG_PTR requestGeneration = s_triggerGeneration.load(std::memory_order_acquire);
             if (!s_popupRequestPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
 
-            if (!PostMessageW(target, AppMessages::ShowPopup, 0, 0))
+            // Settings changes run on the UI thread, while this callback is on
+            // the hook thread. Do not post a request that crossed that boundary.
+            if (requestGeneration != s_triggerGeneration.load(std::memory_order_acquire))
+            {
+                s_popupRequestPending.store(false, std::memory_order_release);
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
+            if (!PostMessageW(target, AppMessages::ShowPopup, requestGeneration, 0))
             {
                 s_popupRequestPending.store(false, std::memory_order_release);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);

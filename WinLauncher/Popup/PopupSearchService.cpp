@@ -1,6 +1,5 @@
 #include "PopupSearchService.h"
 #include "PopupSearchModel.h"
-#include "PopupCommandDispatcher.h"
 #include "../App/PluginManager.h"
 #include <algorithm>
 #include <cwctype>
@@ -137,12 +136,9 @@ namespace PopupSearchService
 
     void SortByRelevance(
         std::vector<SearchResult>& results,
-        const std::wstring& queryLower,
-        int sortMode,
-        bool slashMode,
-        std::shared_ptr<UsageHistoryStore> usageHistory)
+        const std::wstring& queryLower)
     {
-        if (sortMode != 1 || slashMode || results.empty())
+        if (results.empty())
             return;
 
         std::stable_sort(results.begin(), results.end(),
@@ -150,17 +146,9 @@ namespace PopupSearchService
             {
                 auto score = [&](const SearchResult& item)
                 {
-                    UsageHistoryEntry usage{};
-                    if (usageHistory)
-                    {
-                        const std::wstring key = PopupCommandDispatcher::UsageKey(
-                            item.kind == SearchResult::Kind::LocalShortcut,
-                            item.shortcut.id, item.pluginId, item.pluginCommandId);
-                        usage = usageHistory->Get(key);
-                    }
                     const auto sortKey = PopupSearchModel::SortKey(
                         item.shortcut.name, queryLower,
-                        { usage.launchCount, usage.lastUsedUtc });
+                        {});
                     return std::tuple_cat(sortKey,
                         std::make_tuple(item.originalPageIndex, item.originalShortcutIndex));
                 };

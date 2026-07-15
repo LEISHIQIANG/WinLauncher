@@ -236,6 +236,9 @@
     <ClInclude Include="MouseHook.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="TriggerPolicy.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="InputFocusGuard.h">
       <Filter>头文件</Filter>
     </ClInclude>

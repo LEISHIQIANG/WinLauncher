@@ -12,6 +12,7 @@
 #include "../../WinLauncher/Services/FileSelectionService.h"
 #include "../../WinLauncher/Popup/PopupIconRefreshController.h"
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
+#include "../../WinLauncher/TriggerPolicy.h"
 #include "../../WinLauncher/SDK/include/WinLauncher/WinLauncherPluginABI.h"
 #include <Windows.h>
 #include <shellapi.h>
@@ -110,6 +111,50 @@ int wmain(int argc, wchar_t** argv)
 
     std::wstring temp = MakeTempDirectory();
     auto logger = std::make_shared<Logger>(temp + L"\\native-tests.log");
+
+    {
+        struct TriggerCase
+        {
+            int type;
+            WPARAM message;
+            DWORD mouseData;
+            bool ctrl;
+            bool shift;
+            bool alt;
+            TriggerPolicy::Button button;
+        };
+        const TriggerCase cases[] = {
+            { 0, WM_MBUTTONDOWN, 0, false, false, false, TriggerPolicy::Button::Middle },
+            { 1, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON1) << 16, false, false, false, TriggerPolicy::Button::XButton1 },
+            { 2, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON2) << 16, false, false, false, TriggerPolicy::Button::XButton2 },
+            { 3, WM_MBUTTONDOWN, 0, true, false, false, TriggerPolicy::Button::Middle },
+            { 4, WM_MBUTTONDOWN, 0, false, true, false, TriggerPolicy::Button::Middle },
+            { 5, WM_MBUTTONDOWN, 0, false, false, true, TriggerPolicy::Button::Middle },
+            { 6, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON1) << 16, true, false, false, TriggerPolicy::Button::XButton1 },
+            { 7, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON2) << 16, true, false, false, TriggerPolicy::Button::XButton2 },
+        };
+        for (const auto& test : cases)
+        {
+            const auto result = TriggerPolicy::Match(test.type, test.message, test.mouseData,
+                test.ctrl, test.shift, test.alt);
+            if (!result.activated || result.button != test.button)
+                return Fail(L"popup trigger preset did not match its documented input");
+        }
+        if (TriggerPolicy::Match(0, WM_MBUTTONUP, 0, false, false, false).activated ||
+            TriggerPolicy::Match(1, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON2) << 16, false, false, false).activated ||
+            TriggerPolicy::Match(2, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON1) << 16, false, false, false).activated ||
+            TriggerPolicy::Match(3, WM_MBUTTONDOWN, 0, false, false, false).activated ||
+            TriggerPolicy::Match(4, WM_MBUTTONDOWN, 0, false, false, false).activated ||
+            TriggerPolicy::Match(5, WM_MBUTTONDOWN, 0, false, false, false).activated ||
+            TriggerPolicy::Match(6, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON2) << 16, true, false, false).activated ||
+            TriggerPolicy::Match(7, WM_XBUTTONDOWN, static_cast<DWORD>(XBUTTON1) << 16, true, false, false).activated ||
+            !TriggerPolicy::Match(99, WM_MBUTTONDOWN, 0, false, false, false).activated ||
+            TriggerPolicy::NormalizeTriggerType(-1) != 0 ||
+            TriggerPolicy::NormalizeTriggerType(8) != 0)
+        {
+            return Fail(L"popup trigger preset accepted an invalid or incomplete input");
+        }
+    }
 
     {
         PopupLayout::GridMetrics layout{ 3, 2, 100, 80, 10, 4, 36 };
@@ -265,7 +310,7 @@ int wmain(int argc, wchar_t** argv)
 
     {
         const HWND source = reinterpret_cast<HWND>(static_cast<uintptr_t>(1));
-        auto request = Services::FileSelectionService::CaptureSelectedFilesAsync(source, POINT{}, POINT{}, nullptr);
+        auto request = Services::FileSelectionService::CaptureSelectedFilesAsync(source, POINT{}, nullptr);
         Services::SelectionContext result;
         if (!request || !request->TryGetResult(result) || result.sourceHwnd != source ||
             result.isPending || !result.filePaths.empty())

@@ -51,7 +51,7 @@ private:
     void EnsureIcons(ID2D1HwndRenderTarget* rt);
     void EnsureShortcutStates();
     bool HasDragExceededThreshold(POINT pt) const;
-    void StartShortcutDrag(POINT pt);
+    bool StartShortcutDrag(POINT pt);
     void UpdateDragAndSortState(POINT clientPt);
     int CountVisibleShortcuts() const;
     void UpdateAddShortcutTarget(bool compactPendingDelete = false, bool snap = false);

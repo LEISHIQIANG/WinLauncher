@@ -949,7 +949,7 @@ public:
     virtual void SetPopupAlignMode(int mode) override
     {
         if (mode < 0) mode = 0;
-        if (mode > 3) mode = 3;
+        if (mode > 10) mode = 10;
         m_popupAlignMode = mode;
     }
     virtual bool GetPopupAutoClose() override { return m_popupAutoClose; }

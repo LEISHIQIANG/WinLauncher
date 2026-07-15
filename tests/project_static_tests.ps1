@@ -84,6 +84,8 @@ Add-TestResult `
     -Detail "Release metadata should follow WinLauncher/version.h"
 
 $popupSource = Read-RepoFile "WinLauncher\PopupWindow.cpp"
+$shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
+$popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
@@ -105,6 +107,23 @@ Add-TestResult `
         $popupSource -match 'ExecuteSlashCommand\(\s*L"", item\.pluginCommandId.*nullptr\)'
     ) `
     -Detail "The built-in reload slash command must refresh plugins without opening a command output panel"
+
+Add-TestResult `
+    -Name "Smart shortcut sorting tracks clicks without overwriting custom order" `
+    -Passed (
+        $popupSource -match 'static\s+void\s+SortPageByUsage' -and
+        $popupSource -match 'si\.id\s*=\s*vs\.id' -and
+        $popupSource -match 'void\s+PopupWindow::ApplyShortcutSortMode' -and
+        $popupSource -match 'm_appCtx->configService->GetSortMode\(\)\s*!=\s*1' -and
+        $popupSource -match 'void\s+PopupWindow::RecordShortcutUsage' -and
+        $popupSource -match 'RecordShortcutUsage\(sc\)' -and
+        $popupSearchServiceSource -match 'item\.shortcut\.name, queryLower,\s*\{\}' -and
+        $popupSearchServiceSource -notmatch 'usageHistory|sortMode' -and
+        $shortcutPageSource -match 'm_owner->GetSortMode\(\)\s*==\s*1' -and
+        $shortcutPageSource -match 'm_owner->SetSortMode\(0\)' -and
+        $shortcutPageSource -match 'ConfirmWindow::Show'
+    ) `
+    -Detail "Smart mode must sort popup icons by recorded clicks, preserve IDs, and require an explicit switch before configuration drag sorting"
 
 $urlEditSource = Read-RepoFile "WinLauncher\Config\UrlEditForm.cpp"
 $faviconFetcherSource = Read-RepoFile "WinLauncher\Services\FaviconFetcher.cpp"
@@ -470,16 +489,19 @@ Add-TestResult `
     -Detail "Keyboard, mouse, and macro hook threads must quit cooperatively and retain timed-out handles for safe reaping"
 
 Add-TestResult `
-    -Name "Paused popup triggers pass all input through and coalesce pending requests" `
+    -Name "Popup triggers preserve complete input pairs and reject stale requests" `
     -Passed (
         $mouseHookSource -match 'void\s+MouseHook::SetTriggerEnabled\s*\(' -and
-        $mouseHookSource -match 's_suppressButtonUpMask\.store\(0' -and
+        $mouseHookSource -match 's_triggerGeneration\.fetch_add' -and
         $mouseHookSource -match 's_popupRequestPending\.compare_exchange_strong' -and
-        $mouseHookSource -match 'void\s+MouseHook::AcknowledgePopupRequest\s*\(' -and
+        $mouseHookSource -match 'bool\s+MouseHook::AcknowledgePopupRequest\s*\(' -and
+        $mouseHookSource -match 'requestGeneration != s_triggerGeneration' -and
+        $mouseHookSource -match 'TriggerPolicy::Match' -and
         $applicationSource -match 'MouseHook::SetTriggerEnabled\(!m_popupPaused\)' -and
-        $applicationSource -match 'MouseHook::AcknowledgePopupRequest\(\)'
+        $applicationSource -match 'MouseHook::AcknowledgePopupRequest\(requestGeneration\)' -and
+        $applicationSource -match 'PopupWindow::Hide\(\)'
     ) `
-    -Detail "Paused triggers must not consume mouse input, while active high-frequency presses keep one pending UI request"
+    -Detail "Paused triggers must preserve a consumed down/up pair, reject stale popup requests, and close the visible popup"
 
 Add-TestResult `
     -Name "Macro playback interruption stays non-blocking and ignores injected input" `

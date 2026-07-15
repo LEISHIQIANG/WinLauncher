@@ -86,6 +86,7 @@ private:
 
     D2D1_RECT_F GetSelectionRect(SelectionVisual& visual, const D2D1_RECT_F& target);
     void ShowTriggerPresetMenu();
+    void ShowPopupAlignPresetMenu();
     void ShowTriggerBlacklistEditor();
     void DrawSelectionHighlight(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, float radius, float bgAlpha = 0.10f, float borderAlpha = 0.34f);
 

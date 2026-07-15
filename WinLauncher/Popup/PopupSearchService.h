@@ -1,16 +1,14 @@
 #pragma once
 
 #include "../ShortcutManager.h"
-#include "../Services/UsageHistoryStore.h"
-#include <memory>
 #include <string>
 #include <vector>
 
 class PluginManager;
 
 // UI-free search engine that collects results from local shortcuts, dock bar,
-// plugin commands, slash commands and async plugin results, then optionally
-// sorts by usage-weighted relevance.
+// plugin commands, slash commands and async plugin results, then sorts by
+// keyword match relevance.
 //
 // All functions are stateless — they take their data through parameters so
 // they can be tested without a HWND, D2D target, plugin DLL or thread pool.
@@ -61,13 +59,9 @@ namespace PopupSearchService
         PluginManager* pluginManager,
         bool& pluginSearchRunning);
 
-    // Sort results by relevance using PopupSearchModel::SortKey and
-    // UsageHistoryStore for usage-weighted ordering.  Does nothing when
-    // sortMode != 1 or slashMode is true.
+    // Sort results by keyword match relevance. Smart shortcut sorting is
+    // intentionally limited to the normal popup icon grid.
     void SortByRelevance(
         std::vector<SearchResult>& results,
-        const std::wstring& queryLower,
-        int sortMode,
-        bool slashMode,
-        std::shared_ptr<UsageHistoryStore> usageHistory);
+        const std::wstring& queryLower);
 }

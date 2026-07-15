@@ -27,7 +27,7 @@ private:
     void AddTrayIcon();
     void RemoveTrayIcon();
     void UpdateTrayIconState();
-    void ShowPopupAtCursor();
+    void ShowPopupAtCursor(ULONG_PTR requestGeneration);
     void ShowConfigWindow();
     void ShowSettingsWindow();
     void ShowTrayMenuAtCursor();

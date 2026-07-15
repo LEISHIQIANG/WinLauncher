@@ -47,11 +47,10 @@ namespace Services
         // Runs COM operations in a background thread to prevent UI thread blocking.
         static std::shared_ptr<SelectionRequest> CaptureSelectedFilesAsync(
             HWND activeHwnd,
-            POINT clickPt,
-            POINT popupCenter,
+            POINT triggerPt,
             const std::shared_ptr<BackgroundTaskService>& tasks);
 
         // Synchronously retrieves selected files from the specified window.
-        static std::vector<std::wstring> GetSelectedFiles(HWND hwnd, POINT clickPt, POINT popupCenter);
+        static std::vector<std::wstring> GetSelectedFiles(HWND hwnd, POINT triggerPt);
     };
 }
