@@ -195,8 +195,7 @@ void TrayMenuWindow::Show(POINT pt)
         s_instance->EnsureShadowForCurrentBounds(1.0f);
         s_instance->ApplyVisibilityFrame(1.0f, 1.0f);
     }
-    s_instance->CaptureBackground();
-    s_instance->CompositeBackgroundToCache();
+    s_instance->RefreshBackgroundCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
     if (!IsWindowVisible(s_instance->GetHWND()))

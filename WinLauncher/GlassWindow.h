@@ -57,6 +57,9 @@ protected:
     void MarkBackgroundDirty(const wchar_t* reason, bool logEvent = false);
     bool CaptureBackground();
     void CompositeBackgroundToCache();
+    // Rebuild only from a verified screen capture.  Callers that open a
+    // secondary window must use this instead of chaining capture/composite.
+    bool RefreshBackgroundCache();
     void DoPaint();
     void UpdateWindowCornerRadius();
     void UpdateWindowRoundRegion();

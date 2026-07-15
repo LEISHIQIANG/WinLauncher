@@ -99,8 +99,7 @@ void ToastWindow::Show(const std::wstring& message, DWORD durationMs)
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, x, y, W, H, SWP_NOACTIVATE);
     s_instance->PrepareOpenTransitionFrame();
-    s_instance->CaptureBackground();
-    s_instance->CompositeBackgroundToCache();
+    s_instance->RefreshBackgroundCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
     ShowWindow(s_instance->GetHWND(), SW_SHOWNOACTIVATE);

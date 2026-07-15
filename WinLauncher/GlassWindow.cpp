@@ -1198,6 +1198,22 @@ void GlassWindow::CompositeBackgroundToCache()
     }
 }
 
+bool GlassWindow::RefreshBackgroundCache()
+{
+    const bool captured = CaptureBackground();
+    m_bgCaptureDirty = false;
+    // A failed capture may still have an older raw bitmap, but it must never
+    // be promoted into a new composite.  DoPaint will retain the last verified
+    // final bitmap, or clear safely when no verified cache exists yet.
+    m_bgCompositeDirty = captured;
+    if (captured)
+    {
+        CompositeBackgroundToCache();
+        m_bgCompositeDirty = false;
+    }
+    return captured;
+}
+
 void GlassWindow::DoPaint()
 {
     if (!EnsureD2D()) return;

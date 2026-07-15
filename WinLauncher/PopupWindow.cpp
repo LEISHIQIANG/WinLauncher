@@ -560,8 +560,7 @@ void PopupWindow::OnConfigChanged()
         UpdateWindowSize();
         m_bgCaptureDirty = true;
         m_bgCompositeDirty = true;
-        CaptureBackground();
-        CompositeBackgroundToCache();
+        RefreshBackgroundCache();
     }
 
     if (GetHWND()) InvalidateRect(GetHWND(), nullptr, FALSE);
@@ -963,9 +962,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             double bgStart = GetTimeInSeconds();
             if (this->m_bgCaptureDirty)
             {
-                this->CaptureBackground();
-                this->m_bgCaptureDirty = false;
-                this->m_bgCompositeDirty = true;
+                this->RefreshBackgroundCache();
             }
             if (this->m_bgCompositeDirty)
             {

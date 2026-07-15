@@ -193,6 +193,7 @@ $shortcutDialogSource = Read-RepoFile "WinLauncher\Config\ShortcutDialog.cpp"
 $confirmWindowSource = Read-RepoFile "WinLauncher\Config\ConfirmWindow.cpp"
 $promptWindowSource = Read-RepoFile "WinLauncher\Config\PromptWindow.cpp"
 $trayMenuSource = Read-RepoFile "WinLauncher\TrayMenuWindow.cpp"
+$toastWindowSource = Read-RepoFile "WinLauncher\ToastWindow.cpp"
 $contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
 $dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
@@ -584,12 +585,25 @@ Add-TestResult `
     -Name "Glass capture preserves valid caches after transient screen-copy failures" `
     -Passed (
         $glassWindowSource -match 'bool GlassWindow::CaptureBackground\(\)' -and
+        $glassWindowSource -match 'bool GlassWindow::RefreshBackgroundCache\(\)' -and
         $glassWindowSource -match 'fallback=last_valid_cache' -and
         $glassWindowSource -match 'm_bgCompositeDirty = captured' -and
         $glassWindowSource -match 'now - m_lastBackgroundCaptureLogTick >= 30000' -and
         $glassWindowSource -match 'dwm_backdrop_disable_unsupported'
     ) `
     -Detail "Transient desktop capture failures must not rebuild from stale pixels or flood warning logs"
+
+Add-TestResult `
+    -Name "All legacy popup surfaces rebuild glass only after a verified capture" `
+    -Passed (
+        $popupSource -match 'RefreshBackgroundCache\(\)' -and
+        $trayMenuSource -match 'RefreshBackgroundCache\(\)' -and
+        $toastWindowSource -match 'RefreshBackgroundCache\(\)' -and
+        $contextMenuSource -match 'RefreshBackgroundCache\(\)' -and
+        $dropDownMenuSource -match 'RefreshBackgroundCache\(\)' -and
+        $popupSource -notmatch 'CaptureBackground\(\)\s*;\s*\r?\n\s*CompositeBackgroundToCache\(\)'
+    ) `
+    -Detail "Popup, menu, and toast entry points must not promote a stale capture after a transient failure"
 
 Add-TestResult `
     -Name "Direct2D device-loss recovery fallback is implemented" `

@@ -103,8 +103,7 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
     s_instance->PrepareOpenTransitionFrame();
-    s_instance->CaptureBackground();
-    s_instance->CompositeBackgroundToCache();
+    s_instance->RefreshBackgroundCache();
     InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
     ShowWindow(s_instance->GetHWND(), SW_SHOW);
