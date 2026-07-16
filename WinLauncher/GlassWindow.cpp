@@ -1666,9 +1666,12 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
             else if (!UIStyle::Animation::IsEnabled())
             {
-                EnsureShadowForCurrentBounds();
+                EnsureShadowForCurrentBounds(m_revealFirstFrameBarrier ? 0.0f : -1.0f);
                 m_animState = AnimState::None;
-                ApplyVisibilityFrame(1.0f, 1.0f);
+                if (!m_revealFirstFrameBarrier)
+                {
+                    ApplyVisibilityFrame(1.0f, 1.0f);
+                }
             }
             else
             {
@@ -1961,6 +1964,49 @@ void GlassWindow::PrepareOpenTransitionFrame(bool fromWindowCenter)
     EnsureShadowForCurrentBounds(0.0f);
     ApplyVisibilityFrame(0.0f, GetAnimationScale(0.0f, AnimState::Opening));
     m_openTransitionPrepared = true;
+}
+
+void GlassWindow::RevealAfterFirstPaint(int showCommand, bool refreshBackground)
+{
+    if (!m_hWnd || !IsWindow(m_hWnd))
+        return;
+
+    // Every GlassWindow surface, including a retained hidden instance, must
+    // rebuild the material before it can opt out of WM_SHOWWINDOW's normal
+    // invalidation via m_openTransitionPrepared.  Keeping this in the base
+    // class prevents individual dialogs from exposing a stale/empty frame.
+    EnsureD2D();
+    if (refreshBackground)
+    {
+        MarkBackgroundDirty(L"prepared_reveal", false);
+        RefreshBackgroundCache();
+    }
+
+    // Keep the entire first composition (background, material and content)
+    // off-screen. On a slow machine, drawing while hidden alone is not enough:
+    // DWM can expose the backdrop before it has consumed that draw. The
+    // visible-transparent barrier is only needed on the existing animation
+    // path; forcing WS_EX_LAYERED when animations are disabled changes the
+    // native glass material and is therefore intentionally avoided.
+    const bool animationEnabled = UIStyle::Animation::IsEnabled();
+    m_revealFirstFrameBarrier = animationEnabled;
+    if (animationEnabled)
+    {
+        PrepareOpenTransitionFrame();
+    }
+    else
+    {
+        // WM_SHOWWINDOW must not invalidate the prepared material before the
+        // first visible frame, even with animations switched off.
+        m_openTransitionPrepared = true;
+    }
+    DoPaint();
+    ShowWindow(m_hWnd, showCommand);
+    if (animationEnabled)
+    {
+        RedrawWindow(m_hWnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    }
+    m_revealFirstFrameBarrier = false;
 }
 
 void GlassWindow::StartOpenTransition(bool fromWindowCenter)

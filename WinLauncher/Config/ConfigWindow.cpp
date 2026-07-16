@@ -681,7 +681,10 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
             s_instance->m_appCtx = ctx;
         }
         s_instance->SetSettingsMode(settingsMode);
-        ShowWindow(s_instance->GetHWND(), SW_SHOW);
+        if (IsWindowVisible(s_instance->GetHWND()))
+            ShowWindow(s_instance->GetHWND(), SW_SHOW);
+        else
+            s_instance->PrepareAndReveal();
         SetActiveWindow(s_instance->GetHWND());
         SetForegroundWindow(s_instance->GetHWND());
         InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
@@ -717,11 +720,20 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
     {
         SetWindowDisplayAffinitySafe(s_instance->GetHWND());
         s_instance->ApplySystemBackdrop();
-        s_instance->EnsureD2D();
-        s_instance->EnsureIcons();
-        ShowWindow(s_instance->GetHWND(), SW_SHOW);
+        s_instance->PrepareAndReveal();
         SetForegroundWindow(s_instance->GetHWND());
     }
+}
+
+void ConfigWindow::PrepareAndReveal()
+{
+    if (!GetHWND() || !IsWindow(GetHWND()))
+        return;
+
+    // This retained window has page-specific text and icon resources. The
+    // GlassWindow base refreshes the shared material before revealing it.
+    EnsureIcons();
+    RevealAfterFirstPaint();
 }
 
 void ConfigWindow::ResizeToCurrentScale()

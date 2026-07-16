@@ -159,8 +159,7 @@ bool PromptWindow::ShowInternal(HWND parent, Mode mode, const wchar_t* title, co
     win->ApplySystemBackdrop();
     win->EnsureD2D();
 
-    ShowWindow(win->GetHWND(), SW_SHOW);
-    UpdateWindow(win->GetHWND());
+    win->RevealAfterFirstPaint();
     SetForegroundWindow(win->GetHWND());
     SetFocus(win->GetHWND());
 

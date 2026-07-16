@@ -249,8 +249,7 @@ void CommandPanelWindow::ShowLive(HWND parent, const wchar_t* title, const wchar
     win->ApplySystemBackdrop();
     win->EnsureD2D();
 
-    ShowWindow(win->GetHWND(), SW_SHOW);
-    UpdateWindow(win->GetHWND());
+    win->RevealAfterFirstPaint();
     SetWindowPos(win->GetHWND(), HWND_TOPMOST, x, y, w_px, h_px,
                  SWP_SHOWWINDOW | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     BringWindowToTop(win->GetHWND());

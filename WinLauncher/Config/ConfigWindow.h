@@ -140,6 +140,7 @@ private:
     void PersistAppearanceConfig();
     void ReloadAfterConfigFileOperation();
     static void ShowMode(HWND parent, AppContext* ctx, bool settingsMode);
+    void PrepareAndReveal();
     void SetSettingsMode(bool settingsMode);
     void ResizeToCurrentScale();
     bool HitTestCloseButton(POINT pt);

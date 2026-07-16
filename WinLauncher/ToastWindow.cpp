@@ -98,11 +98,7 @@ void ToastWindow::Show(const std::wstring& message, DWORD durationMs)
     s_instance->EnsureD2D();
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, x, y, W, H, SWP_NOACTIVATE);
-    s_instance->PrepareOpenTransitionFrame();
-    s_instance->RefreshBackgroundCache();
-    InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
-
-    ShowWindow(s_instance->GetHWND(), SW_SHOWNOACTIVATE);
+    s_instance->RevealAfterFirstPaint(SW_SHOWNOACTIVATE);
 
     // 定时自动关闭
     SetTimer(s_instance->GetHWND(), TIMER_CLOSE, durationMs, nullptr);

@@ -165,8 +165,7 @@ bool BuiltinIconDialog::Show(HWND parent, std::vector<RendShortcutInfo>& selecte
     win->ApplySystemBackdrop();
     win->EnsureD2D();
 
-    ShowWindow(win->GetHWND(), SW_SHOW);
-    UpdateWindow(win->GetHWND());
+    win->RevealAfterFirstPaint();
     SetForegroundWindow(win->GetHWND());
     SetFocus(win->GetHWND());
 

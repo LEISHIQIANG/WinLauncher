@@ -1117,9 +1117,10 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         if (needsShow)
         {
             const double firstFrameStart = GetTimeInSeconds();
-            this->PrepareOpenTransitionFrame();
-            this->DoPaint();
-            ShowWindow(this->GetHWND(), SW_SHOWNOACTIVATE);
+            // The shared reveal barrier keeps the HWND transparent until DWM
+            // has consumed a synchronous visible redraw on slower machines.
+            // Background preparation above is already current for this popup.
+            this->RevealAfterFirstPaint(SW_SHOWNOACTIVATE, false);
             firstFrameMs = (GetTimeInSeconds() - firstFrameStart) * 1000.0;
         }
         else

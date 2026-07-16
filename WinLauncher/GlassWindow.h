@@ -29,6 +29,10 @@ public:
     void StartOpenTransition(bool fromWindowCenter = false);
     void StartCloseTransition(std::function<void()> onComplete = nullptr, bool fromWindowCenter = false);
 
+    // Draw the first complete frame while the HWND is still hidden, then reveal
+    // it. This prevents DWM from briefly presenting an unpainted popup outline.
+    void RevealAfterFirstPaint(int showCommand = SW_SHOW, bool refreshBackground = true);
+
     static float GetWindowScale(HWND hwnd);
     static float GetSystemWindowScale(HWND hwnd);
     static float GetDpiScaleForMonitor(HMONITOR hMonitor);
@@ -139,6 +143,7 @@ protected:
     float m_visibilityOpacity = 1.0f;
     float m_closeStartOpacity = 1.0f;
     bool m_openTransitionPrepared = false;
+    bool m_revealFirstFrameBarrier = false;
 
     bool m_themeTransitionActive = false;
     float m_themeTransitionProgress = 0.0f;

@@ -102,11 +102,7 @@ void ContextMenu::Show(HWND parent, POINT pt, const std::vector<Item>& items, Ap
     s_instance->m_hovered = -1;
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
-    s_instance->PrepareOpenTransitionFrame();
-    s_instance->RefreshBackgroundCache();
-    InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
-
-    ShowWindow(s_instance->GetHWND(), SW_SHOW);
+    s_instance->RevealAfterFirstPaint();
     SetForegroundWindow(s_instance->GetHWND());
     s_instance->CaptureMouse();
 }

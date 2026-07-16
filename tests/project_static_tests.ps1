@@ -220,6 +220,26 @@ $contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
 $dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $shortcutPageHeader = Read-RepoFile "WinLauncher\Config\ShortcutPage.h"
+$secondaryFirstFrameSources = @(
+    $shortcutDialogSource,
+    $confirmWindowSource,
+    $promptWindowSource,
+    $commandPanelSource,
+    $configWindowSource,
+    $trayMenuSource,
+    $toastWindowSource,
+    $contextMenuSource,
+    $dropDownMenuSource,
+    (Read-RepoFile "WinLauncher\Config\BatchLaunchDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\BuiltinIconDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\CommandDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\HotkeyDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\MacroDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\SceneSettingsWindow.cpp"),
+    (Read-RepoFile "WinLauncher\Config\SystemIconDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\UrlDialog.cpp"),
+    (Read-RepoFile "WinLauncher\Config\WaitWindow.cpp")
+)
 $commandEditFormSource = Read-RepoFile "WinLauncher\Config\CommandEditForm.cpp"
 $environmentDetectorSource = Read-RepoFile "WinLauncher\Services\EnvironmentDetector.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
@@ -260,6 +280,27 @@ Add-TestResult `
         $dropDownMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage'
     ) `
     -Detail "Activation handlers must retain the shared shadow for visible dialogs whether focused or not"
+
+Add-TestResult `
+    -Name "Secondary windows prepare a complete first frame before appearing" `
+    -Passed (
+        $glassWindowSource -match 'void\s+GlassWindow::RevealAfterFirstPaint\s*\([\s\S]{0,1800}MarkBackgroundDirty\(L"prepared_reveal"[\s\S]{0,1800}RefreshBackgroundCache\(\);[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*animationEnabled[\s\S]{0,1800}DoPaint\(\);[\s\S]{0,1800}ShowWindow\(m_hWnd, showCommand\)[\s\S]{0,1800}if\s*\(animationEnabled\)[\s\S]{0,800}RedrawWindow\(m_hWnd[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*false' -and
+        $configWindowSource -match 'void\s+ConfigWindow::PrepareAndReveal\s*\([\s\S]{0,600}EnsureIcons\(\);[\s\S]{0,600}RevealAfterFirstPaint\(\)' -and
+        $popupSource -match 'if\s*\(needsShow\)\s*\{[\s\S]{0,1000}RevealAfterFirstPaint\(SW_SHOWNOACTIVATE, false\)' -and
+        @($secondaryFirstFrameSources | Where-Object { $_ -notmatch 'RevealAfterFirstPaint\(' }).Count -eq 0
+    ) `
+    -Detail "Dialog, configuration, and menu windows must paint while hidden so cold startup never exposes an empty popup outline"
+
+Add-TestResult `
+    -Name "Dropped shortcuts inherit the resolved target icon type" `
+    -Passed (
+        $shortcutPageSource -match 'sc\.targetPath\s*=\s*targetPath' -and
+        $shortcutPageSource -match 'sc\.targetKind\s*=\s*ShortcutManager::InferTargetKind\(targetPath\)' -and
+        $shortcutPageSource -match 'sc\.hIcon\s*=\s*ShortcutManager::GetShortcutIcon\(sc\)' -and
+        $shortcutPageSource -match 'HICON\s+hIcon\s*=\s*shortcut\.hIcon' -and
+        $shortcutPageSource -notmatch 'UsesGeneratedDefaultIcon\(shortcut\)'
+    ) `
+    -Detail "A dropped .lnk must retain its extracted HICON in the configuration card instead of being replaced by a generated text icon"
 
 Add-TestResult `
     -Name "Shortcut grid multi-selection has a safe batch favicon action" `
@@ -673,13 +714,12 @@ Add-TestResult `
     -Name "All legacy popup surfaces rebuild glass only after a verified capture" `
     -Passed (
         $popupSource -match 'RefreshBackgroundCache\(\)' -and
-        $trayMenuSource -match 'RefreshBackgroundCache\(\)' -and
-        $toastWindowSource -match 'RefreshBackgroundCache\(\)' -and
-        $contextMenuSource -match 'RefreshBackgroundCache\(\)' -and
-        $dropDownMenuSource -match 'RefreshBackgroundCache\(\)' -and
+        $popupSource -match 'RevealAfterFirstPaint\(SW_SHOWNOACTIVATE, false\)' -and
+        $glassWindowSource -match 'void\s+GlassWindow::RevealAfterFirstPaint\s*\([\s\S]{0,1800}MarkBackgroundDirty\(L"prepared_reveal"[\s\S]{0,1800}RefreshBackgroundCache\(\)' -and
+        @($secondaryFirstFrameSources | Where-Object { $_ -notmatch 'RevealAfterFirstPaint\(' }).Count -eq 0 -and
         $popupSource -notmatch 'CaptureBackground\(\)\s*;\s*\r?\n\s*CompositeBackgroundToCache\(\)'
     ) `
-    -Detail "Popup, menu, and toast entry points must not promote a stale capture after a transient failure"
+    -Detail "Popup, menu, toast, and dialog entry points must refresh through the verified shared capture path rather than promote a stale frame"
 
 Add-TestResult `
     -Name "Direct2D device-loss recovery fallback is implemented" `

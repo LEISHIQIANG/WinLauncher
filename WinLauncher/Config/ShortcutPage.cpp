@@ -341,10 +341,12 @@ void ShortcutPage::UpdateTheme()
 
 ID2D1Bitmap* ShortcutPage::CreateShortcutBitmap(const RendShortcutInfo& shortcut) const
 {
-    bool allowGeneratedDefault = !m_pageData || !m_pageData->isSyncFolder;
-    HICON hIcon = (allowGeneratedDefault && ShortcutManager::UsesGeneratedDefaultIcon(shortcut))
-        ? nullptr
-        : shortcut.hIcon;
+    // The popup and the config page can both resolve a real shell icon for a
+    // dropped .lnk.  The config card must not discard that HICON merely
+    // because the shortcut has automatic icon source/file-like metadata.
+    // CreateD2DBitmapFromHicon still creates the text fallback when extraction
+    // genuinely failed and hIcon is null.
+    HICON hIcon = shortcut.hIcon;
     bool invert = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light)
         ? shortcut.iconInvertLight
         : shortcut.iconInvertDark;
@@ -2114,7 +2116,10 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
     sc.targetPath = targetPath;
     sc.arguments = arguments;
     sc.type = Model::ShortcutType::File;
-    sc.targetKind = ShortcutManager::InferTargetKind(path);
+    // A .lnk is stored as the resolved target when available.  Keep its target
+    // kind in sync with that stored path so the card uses the real icon instead
+    // of treating a valid executable target as a generic link/default icon.
+    sc.targetKind = ShortcutManager::InferTargetKind(targetPath);
     sc.iconSource = Model::IconSource::Auto;
     sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
 

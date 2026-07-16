@@ -183,23 +183,19 @@ void TrayMenuWindow::Show(POINT pt)
     }
 
     s_instance->m_hovered = -1;
-    if (!reopeningVisibleWindow)
-    {
-        s_instance->PrepareOpenTransitionFrame();
-    }
-    else
+    if (reopeningVisibleWindow)
     {
         // The HWND is already visible, so ShowWindow will not emit
         // WM_SHOWWINDOW and cannot restart the normal open animation.  Keep
         // the restored opaque frame instead of resetting it to transparent.
         s_instance->EnsureShadowForCurrentBounds(1.0f);
         s_instance->ApplyVisibilityFrame(1.0f, 1.0f);
+        s_instance->RefreshBackgroundCache();
+        InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
     }
-    s_instance->RefreshBackgroundCache();
-    InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
 
     if (!IsWindowVisible(s_instance->GetHWND()))
-        ShowWindow(s_instance->GetHWND(), SW_SHOW);
+        s_instance->RevealAfterFirstPaint();
     SetForegroundWindow(s_instance->GetHWND());
     s_instance->CaptureMouse();
 }

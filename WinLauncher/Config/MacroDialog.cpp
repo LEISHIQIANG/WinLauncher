@@ -85,8 +85,7 @@ bool MacroDialog::Show(HWND parent, const wchar_t* title,
     win->ApplySystemBackdrop();
     win->EnsureD2D();
 
-    ShowWindow(win->GetHWND(), SW_SHOW);
-    UpdateWindow(win->GetHWND());
+    win->RevealAfterFirstPaint();
     SetForegroundWindow(win->GetHWND());
     SetFocus(win->GetHWND());
 
