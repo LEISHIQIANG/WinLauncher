@@ -93,6 +93,50 @@ static bool HasLaunchAction(const RendShortcutInfo& shortcut)
     }
 }
 
+// ShellExecute and some file associations may synchronously contact Explorer,
+// a network location, or an already-running application. They must never run
+// on the popup's UI thread: a slow target should delay only its own launch,
+// not freeze the popup, tray, or UI heartbeat.
+static bool IsBackgroundExternalLaunch(const RendShortcutInfo& shortcut)
+{
+    if (shortcut.type == Model::ShortcutType::File ||
+        shortcut.type == Model::ShortcutType::BuiltinIcon)
+    {
+        return true;
+    }
+
+    return shortcut.type == Model::ShortcutType::System &&
+        !shortcut.targetPath.empty() &&
+        shortcut.targetPath.front() != L':';
+}
+
+static bool LaunchExternalShortcutImmediately(
+    const RendShortcutInfo& shortcut,
+    const std::vector<std::wstring>& selectedFiles)
+{
+    std::wstring arguments = shortcut.arguments;
+    for (const auto& file : selectedFiles)
+    {
+        if (!arguments.empty()) arguments += L" ";
+        arguments += L"\"" + file + L"\"";
+    }
+
+    const ULONGLONG started = GetTickCount64();
+    const bool launched = PrivilegeLaunchService::Launch(shortcut.targetPath, arguments, shortcut.runAsAdmin);
+    const ULONGLONG elapsed = GetTickCount64() - started;
+    if (!launched)
+    {
+        LOG_G_ERRA(L"PopupWindow::LaunchExternalShortcutImmediately: failed to launch shortcut %s (Target=%s)",
+            shortcut.name.c_str(), shortcut.targetPath.c_str());
+    }
+    else if (elapsed >= 250)
+    {
+        LOG_G_WORNING(L"PopupWindow::LaunchExternalShortcutImmediately: dispatch was slower than expected shortcut=%s elapsed_ms=%llu",
+            shortcut.name.c_str(), static_cast<unsigned long long>(elapsed));
+    }
+    return launched;
+}
+
 static void SortPageByUsage(RendPopupPage& page, const std::shared_ptr<UsageHistoryStore>& usageHistory)
 {
     if (!usageHistory || page.shortcuts.size() < 2)
@@ -1169,7 +1213,7 @@ void PopupWindow::Hide()
     }
 }
 
-void PopupWindow::HideSelf()
+void PopupWindow::HideSelf(bool immediate)
 {
     HWND h = GetHWND();
     if (h)
@@ -1195,7 +1239,7 @@ void PopupWindow::HideSelf()
         return;
     }
 
-    if (h && UIStyle::Animation::IsEnabled())
+    if (h && !immediate && UIStyle::Animation::IsEnabled())
     {
         PopupWindow* inst = this;
         StartCloseTransition([h, inst]() {
@@ -1209,7 +1253,13 @@ void PopupWindow::HideSelf()
     }
     else
     {
-        if (h) ShowWindow(h, SW_HIDE);
+        if (h)
+        {
+            if (immediate)
+                HideImmediately();
+            else
+                ShowWindow(h, SW_HIDE);
+        }
         if (m_viewModel)
         {
             m_viewModel->SetCurrentPage(ToModelPageIndex(m_currentPage));
@@ -3203,7 +3253,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int hit = HitTest(pt);
                 if (hit == pressedIndex && hit >= 0 && hit < (int)m_searchResults.size())
                 {
-                    if (!m_pinned) HideSelf();
+                    if (!m_pinned) HideSelf(IsBackgroundExternalLaunch(m_searchResults[hit].shortcut));
                     ExecuteSearchResult(hit);
                 }
             }
@@ -3213,7 +3263,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 if (dockHit == pressedIndex && dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
                 {
                     auto& sc = m_dockPage.shortcuts[dockHit];
-                    if (!m_pinned) HideSelf();
+                    if (!m_pinned) HideSelf(HasLaunchAction(sc) && IsBackgroundExternalLaunch(sc));
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching dock shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -3235,7 +3285,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     hit < (int)m_pages[pressedPage].shortcuts.size())
                 {
                     auto& sc = m_pages[pressedPage].shortcuts[hit];
-                    if (!m_pinned) HideSelf();
+                    if (!m_pinned) HideSelf(HasLaunchAction(sc) && IsBackgroundExternalLaunch(sc));
                     if (HasLaunchAction(sc))
                     {
                         LOG_G_INFO(L"PopupWindow::LButtonUp: launching shortcut %s (Target=%s)", sc.name.c_str(), sc.targetPath.c_str());
@@ -3349,8 +3399,9 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             {
                 if (m_selectedSearchResult >= 0 && m_selectedSearchResult < (int)m_searchResults.size())
                 {
+                    const auto& result = m_searchResults[m_selectedSearchResult];
+                    if (!m_pinned) HideSelf(IsBackgroundExternalLaunch(result.shortcut));
                     ExecuteSearchResult(m_selectedSearchResult);
-                    if (!m_pinned) HideSelf();
                 }
             }
             else if (wParam == VK_UP)
@@ -3762,19 +3813,15 @@ void PopupWindow::LaunchShortcut(const RendShortcutInfo& sc)
          sc.targetKind == Model::ShortcutTargetKind::Link ||
          sc.targetKind == Model::ShortcutTargetKind::Unknown);
 
-    if (hasFiles && acceptsSelectedFiles)
+    if (IsBackgroundExternalLaunch(sc))
     {
-        std::wstring newArgs = sc.arguments;
-        for (const auto& file : files)
+        const std::vector<std::wstring> launchFiles = (hasFiles && acceptsSelectedFiles)
+            ? files
+            : std::vector<std::wstring>{};
+        LOG_G_INFO(L"PopupWindow::LaunchShortcut: dispatching immediate external launch shortcut=%s target=%s", sc.name.c_str(), sc.targetPath.c_str());
+        if (!LaunchExternalShortcutImmediately(sc, launchFiles))
         {
-            if (!newArgs.empty()) newArgs += L" ";
-            newArgs += L"\"" + file + L"\"";
-        }
-
-        LOG_G_INFO(L"PopupWindow::LaunchShortcut: Launching with selected files. target=%s, args=%s", sc.targetPath.c_str(), newArgs.c_str());
-        if (!PrivilegeLaunchService::Launch(sc.targetPath, newArgs, sc.runAsAdmin))
-        {
-            LOG_G_ERRA(L"PopupWindow::LaunchShortcut: failed to launch shortcut %s with files", sc.name.c_str());
+            LOG_G_ERRA(L"PopupWindow::LaunchShortcut: failed to dispatch shortcut %s", sc.name.c_str());
         }
     }
     else

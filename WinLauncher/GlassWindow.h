@@ -29,6 +29,11 @@ public:
     void StartOpenTransition(bool fromWindowCenter = false);
     void StartCloseTransition(std::function<void()> onComplete = nullptr, bool fromWindowCenter = false);
 
+    // Cancels an in-flight open/close transition and hides the window in the
+    // current message turn. Use for actions that must immediately yield the
+    // foreground to another application.
+    void HideImmediately();
+
     // Draw the first complete frame while the HWND is still hidden, then reveal
     // it. This prevents DWM from briefly presenting an unpainted popup outline.
     void RevealAfterFirstPaint(int showCommand = SW_SHOW, bool refreshBackground = true);

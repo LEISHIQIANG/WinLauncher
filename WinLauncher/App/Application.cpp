@@ -290,7 +290,7 @@ void Application::StartUiWatchdog()
     m_uiWatchdogTask = m_appCtx->backgroundTasks->Submit(L"ui.watchdog", BackgroundTaskService::Priority::High,
         [hWnd = m_hMainWnd, heartbeat, heartbeatLogger](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
             ULONGLONG lastWarning = 0;
-            bool shouldRecoverHooks = false;
+            bool stallWasObserved = false;
             while (!cancellation->IsCancellationRequested() && !heartbeat->stopping)
             {
                 Sleep(250);
@@ -309,13 +309,17 @@ void Application::StartUiWatchdog()
                         CrashReporter::RecordBreadcrumb(L"ui.stall", std::to_wstring(elapsed) + L"ms");
                         lastWarning = now;
                     }
-                    shouldRecoverHooks = true;
+                    stallWasObserved = true;
                 }
-                else if (shouldRecoverHooks && elapsed <= 250)
+                else if (stallWasObserved && elapsed <= 250)
                 {
-                    LOG_INFO(heartbeatLogger, L"ui.health: UI thread unblocked after stall, posting hook recovery message");
-                    PostMessageW(hWnd, AppMessages::RestartHook, 0, 0);
-                    shouldRecoverHooks = false;
+                    // A delayed UI heartbeat only proves that the UI thread was busy.
+                    // It does not prove that either low-level hook failed. Restarting
+                    // hooks here can interrupt a perfectly healthy trigger after a
+                    // slow ShellExecute/file association returns, which makes a
+                    // transient project-launch delay look like a hook failure.
+                    LOG_INFO(heartbeatLogger, L"ui.health: UI thread unblocked after stall; preserving installed hooks");
+                    stallWasObserved = false;
                 }
             }
         });

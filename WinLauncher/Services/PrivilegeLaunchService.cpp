@@ -5,6 +5,83 @@
 #include <shlobj.h>
 #include <exdisp.h>
 #include <comdef.h>
+#include <cwctype>
+#include <vector>
+
+namespace
+{
+    bool HasExeExtension(const std::wstring& targetPath)
+    {
+        constexpr wchar_t kExe[] = L".exe";
+        constexpr size_t kExeLength = _countof(kExe) - 1;
+        if (targetPath.size() < kExeLength)
+            return false;
+
+        const size_t start = targetPath.size() - kExeLength;
+        for (size_t index = 0; index < kExeLength; ++index)
+        {
+            if (std::towlower(targetPath[start + index]) != kExe[index])
+                return false;
+        }
+        return true;
+    }
+
+    bool LaunchExecutableDirectly(const std::wstring& targetPath, const std::wstring& arguments, const std::wstring& workingDir)
+    {
+        std::wstring commandLine = L"\"" + targetPath + L"\"";
+        if (!arguments.empty())
+            commandLine += L" " + arguments;
+        std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+        mutableCommand.push_back(L'\0');
+
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION process{};
+        const BOOL created = CreateProcessW(
+            targetPath.c_str(),
+            mutableCommand.data(),
+            nullptr,
+            nullptr,
+            FALSE,
+            0,
+            nullptr,
+            workingDir.empty() ? nullptr : workingDir.c_str(),
+            &startup,
+            &process);
+        if (!created)
+        {
+            LOG_G_WORNING(L"PrivilegeLaunchService::Launch: direct CreateProcessW failed target=%s error=%lu; falling back to ShellExecuteExW",
+                targetPath.c_str(), GetLastError());
+            return false;
+        }
+
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        return true;
+    }
+
+    bool LaunchThroughShellAsync(const wchar_t* verb, const std::wstring& targetPath, const std::wstring& arguments, const std::wstring& workingDir)
+    {
+        SHELLEXECUTEINFOW request{};
+        request.cbSize = sizeof(request);
+        // The UI thread has a live message loop. Let the Shell finish DDE or a
+        // file-association handshake asynchronously instead of making a slow
+        // project/document launch hold up the next popup action.
+        request.fMask = SEE_MASK_ASYNCOK;
+        request.lpVerb = verb;
+        request.lpFile = targetPath.c_str();
+        request.lpParameters = arguments.empty() ? nullptr : arguments.c_str();
+        request.lpDirectory = workingDir.empty() ? nullptr : workingDir.c_str();
+        request.nShow = SW_SHOWNORMAL;
+        if (!ShellExecuteExW(&request))
+        {
+            LOG_G_ERRA(L"PrivilegeLaunchService::Launch: ShellExecuteExW failed verb=%s target=%s error=%lu",
+                verb, targetPath.c_str(), GetLastError());
+            return false;
+        }
+        return true;
+    }
+}
 
 bool PrivilegeLaunchService::IsCurrentProcessElevated()
 {
@@ -26,8 +103,6 @@ bool PrivilegeLaunchService::IsCurrentProcessElevated()
 bool PrivilegeLaunchService::Launch(const std::wstring& targetPath, const std::wstring& arguments, bool runAsAdmin, const std::wstring& workingDir)
 {
     bool isElevated = IsCurrentProcessElevated();
-    LPCWSTR args = arguments.empty() ? nullptr : arguments.c_str();
-    LPCWSTR dir = workingDir.empty() ? nullptr : workingDir.c_str();
 
     LOG_G_INFO(L"PrivilegeLaunchService::Launch: target=%s args=%s runAsAdmin=%d isElevated=%d", 
                targetPath.c_str(), arguments.c_str(), runAsAdmin, isElevated);
@@ -38,24 +113,12 @@ bool PrivilegeLaunchService::Launch(const std::wstring& targetPath, const std::w
         if (isElevated)
         {
             // Already elevated, just launch normally
-            HINSTANCE hInst = ShellExecuteW(nullptr, L"open", targetPath.c_str(), args, dir, SW_SHOWNORMAL);
-            if ((INT_PTR)hInst <= 32)
-            {
-                LOG_G_ERRA(L"PrivilegeLaunchService::Launch (Elevated+Open) failed: %d", (int)(INT_PTR)hInst);
-                return false;
-            }
-            return true;
+            return LaunchThroughShellAsync(L"open", targetPath, arguments, workingDir);
         }
         else
         {
             // Current is normal, target wants elevation: use "runas" to trigger UAC
-            HINSTANCE hInst = ShellExecuteW(nullptr, L"runas", targetPath.c_str(), args, dir, SW_SHOWNORMAL);
-            if ((INT_PTR)hInst <= 32)
-            {
-                LOG_G_ERRA(L"PrivilegeLaunchService::Launch (Normal+Runas) failed: %d", (int)(INT_PTR)hInst);
-                return false;
-            }
-            return true;
+            return LaunchThroughShellAsync(L"runas", targetPath, arguments, workingDir);
         }
     }
     else
@@ -82,24 +145,20 @@ bool PrivilegeLaunchService::Launch(const std::wstring& targetPath, const std::w
 
             // Both failed, fallback to open with current elevated token as safety net
             LOG_G_WORNING(L"PrivilegeLaunchService::Launch: de-elevation failed, falling back to open");
-            HINSTANCE hInst = ShellExecuteW(nullptr, L"open", targetPath.c_str(), args, dir, SW_SHOWNORMAL);
-            if ((INT_PTR)hInst <= 32)
-            {
-                LOG_G_ERRA(L"PrivilegeLaunchService::Launch (Fallback open) failed: %d", (int)(INT_PTR)hInst);
-                return false;
-            }
-            return true;
+            return LaunchThroughShellAsync(L"open", targetPath, arguments, workingDir);
         }
         else
         {
-            // Current is normal, target wants normal: just run standard open
-            HINSTANCE hInst = ShellExecuteW(nullptr, L"open", targetPath.c_str(), args, dir, SW_SHOWNORMAL);
-            if ((INT_PTR)hInst <= 32)
-            {
-                LOG_G_ERRA(L"PrivilegeLaunchService::Launch (Normal+Open) failed: %d", (int)(INT_PTR)hInst);
-                return false;
-            }
-            return true;
+            // A known executable does not need file-association, Explorer, or
+            // DDE work. Create it directly so clicking an app icon starts the
+            // process in this message turn.
+            if (HasExeExtension(targetPath) && LaunchExecutableDirectly(targetPath, arguments, workingDir))
+                return true;
+
+            // Projects/documents still need their registered application. The
+            // asynchronous Shell path returns control promptly while the UI
+            // message loop completes any association handshake.
+            return LaunchThroughShellAsync(L"open", targetPath, arguments, workingDir);
         }
     }
 }

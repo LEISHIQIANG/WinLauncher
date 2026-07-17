@@ -98,7 +98,7 @@ private:
     void UpdateImeWindowPosition();
     void SavePopupConfig();
     void ShowAt(HWND parent, POINT pt);
-    void HideSelf();
+    void HideSelf(bool immediate = false);
     void DestroySelf();
     void DrawTopBar(ID2D1HwndRenderTarget* rt);
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);

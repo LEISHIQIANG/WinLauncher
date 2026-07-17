@@ -2052,6 +2052,23 @@ void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fr
     SetTimer(m_hWnd, 0x889, 10, nullptr);
 }
 
+void GlassWindow::HideImmediately()
+{
+    if (!m_hWnd)
+        return;
+
+    // A normal ShowWindow(SW_HIDE) while an opening transition is still
+    // active leaves its timer and opacity state alive. Stop that transition
+    // first so the next popup show always starts from a clean first frame.
+    KillTimer(m_hWnd, 0x889);
+    m_animState = AnimState::None;
+    m_animProgress = 0.0f;
+    m_animOnComplete = nullptr;
+    ApplyVisibilityFrame(0.0f, 1.0f);
+    HideShadowNow();
+    ShowWindow(m_hWnd, SW_HIDE);
+}
+
 void GlassWindow::SetAnimationCenter(bool fromWindowCenter)
 {
     RECT cr;

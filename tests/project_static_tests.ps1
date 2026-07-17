@@ -84,6 +84,7 @@ Add-TestResult `
     -Detail "Release metadata should follow WinLauncher/version.h"
 
 $popupSource = Read-RepoFile "WinLauncher\PopupWindow.cpp"
+$privilegeLaunchSource = Read-RepoFile "WinLauncher\Services\PrivilegeLaunchService.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
@@ -665,12 +666,31 @@ Add-TestResult `
     -Detail "Process startup must check named Mutex to guard against concurrent startup race conditions"
 
 Add-TestResult `
-    -Name "Hook watchdog auto-recovery is wired" `
+    -Name "Hook watchdog does not restart healthy hooks after a UI stall" `
     -Passed (
-        $applicationSource -match 'PostMessageW\(hWnd, AppMessages::RestartHook' -and
-        $applicationSource -match 'shouldRecoverHooks\s*=\s*false'
+        $applicationSource -match 'stallWasObserved\s*=\s*true' -and
+        $applicationSource -match 'preserving installed hooks' -and
+        $applicationSource -notmatch 'PostMessageW\(hWnd, AppMessages::RestartHook'
     ) `
-    -Detail "The UI watchdog must trigger a hook restart when the UI thread becomes responsive again"
+    -Detail "A recovered UI stall is diagnostic evidence, not proof that mouse or keyboard hooks failed"
+
+Add-TestResult `
+    -Name "External popup shortcuts use immediate launch dispatch" `
+    -Passed (
+        $popupSource -match 'bool\s+IsBackgroundExternalLaunch\s*\(' -and
+        $popupSource -match 'bool\s+LaunchExternalShortcutImmediately\s*\(' -and
+        $popupSource -match 'PrivilegeLaunchService::Launch\(shortcut\.targetPath, arguments, shortcut\.runAsAdmin\)' -and
+        $popupSource -notmatch 'tasks->Submit\(L"shortcut\.launch"' -and
+        $popupSource -match 'if \(IsBackgroundExternalLaunch\(sc\)\)' -and
+        $popupSource -match 'HideSelf\(HasLaunchAction\(sc\) && IsBackgroundExternalLaunch\(sc\)\)' -and
+        $popupSource -match 'void\s+PopupWindow::HideSelf\(bool immediate\)' -and
+        $glassWindowSource -match 'void\s+GlassWindow::HideImmediately\(\)' -and
+        $glassWindowSource -match 'KillTimer\(m_hWnd, 0x889\)' -and
+        $privilegeLaunchSource -match 'bool\s+LaunchExecutableDirectly\s*\(' -and
+        $privilegeLaunchSource -match 'CreateProcessW\(' -and
+        $privilegeLaunchSource -match 'SEE_MASK_ASYNCOK'
+    ) `
+    -Detail "External shortcuts must hide the popup immediately, launch EXEs directly, and dispatch file associations asynchronously"
 
 Add-TestResult `
     -Name "Interactive startup defers plugins and begins watchdog afterward" `
