@@ -304,6 +304,14 @@ Add-TestResult `
     -Detail "A dropped .lnk must retain its extracted HICON in the configuration card instead of being replaced by a generated text icon"
 
 Add-TestResult `
+    -Name "Dropped folders become folder shortcuts with the builtin icon" `
+    -Passed (
+        $shortcutPageSource -match 'if\s*\(attrs\s*!=\s*INVALID_FILE_ATTRIBUTES\s*&&\s*\(attrs\s*&\s*FILE_ATTRIBUTE_DIRECTORY\)\)\s*\{\s*AddShortcutFromSingleFile\(path\);\s*return;' -and
+        $shortcutPageSource -match 'if\s*\(sc\.targetKind\s*==\s*Model::ShortcutTargetKind::Folder\)\s*\{\s*sc\.iconSource\s*=\s*Model::IconSource::Builtin;\s*sc\.builtinIconId\s*=\s*L"folder";'
+    ) `
+    -Detail "Dropping a directory adds the directory itself and always uses the builtin folder icon"
+
+Add-TestResult `
     -Name "Shortcut grid multi-selection has a safe batch favicon action" `
     -Passed (
         $shortcutPageSource -match 'preserveMultiSelection' -and

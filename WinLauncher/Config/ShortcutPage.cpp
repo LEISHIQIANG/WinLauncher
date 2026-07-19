@@ -18,7 +18,6 @@
 #include "../ToastWindow.h"
 #include "../App/AppContext.h"
 #include "../Services/FaviconFetcher.h"
-#include "../Services/SyncFolderService.h"
 #include "../UI/Controls/IconRenderer.h"
 #include <windowsx.h>
 #include <shlobj.h>
@@ -2041,25 +2040,12 @@ void ShortcutPage::AddShortcutFromPath(const std::wstring& filePath)
         path.pop_back();
     }
 
-    // If this is a directory, expand its contents
+    // A dropped directory is itself a launch target.  Do not expand it into its
+    // child files: that makes a single folder drop unexpectedly populate the grid.
     DWORD attrs = GetFileAttributesW(path.c_str());
     if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
     {
-        std::wstring searchPath = path + L"\\*";
-        WIN32_FIND_DATAW ffd;
-        HANDLE hFind = FindFirstFileW(searchPath.c_str(), &ffd);
-        if (hFind != INVALID_HANDLE_VALUE)
-        {
-            do
-            {
-                if (SyncFolderService::ShouldIgnoreFile(ffd)) continue;
-                if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue; // skip sub-dirs
-
-                std::wstring childPath = path + L"\\" + ffd.cFileName;
-                AddShortcutFromSingleFile(childPath);
-            } while (FindNextFileW(hFind, &ffd));
-            FindClose(hFind);
-        }
+        AddShortcutFromSingleFile(path);
         return;
     }
 
@@ -2121,6 +2107,11 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
     // of treating a valid executable target as a generic link/default icon.
     sc.targetKind = ShortcutManager::InferTargetKind(targetPath);
     sc.iconSource = Model::IconSource::Auto;
+    if (sc.targetKind == Model::ShortcutTargetKind::Folder)
+    {
+        sc.iconSource = Model::IconSource::Builtin;
+        sc.builtinIconId = L"folder";
+    }
     sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
 
     m_pageData->shortcuts.push_back(sc);
