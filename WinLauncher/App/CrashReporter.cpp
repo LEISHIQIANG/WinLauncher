@@ -1,4 +1,5 @@
 #include "CrashReporter.h"
+#include "Logger.h"
 #include "../Services/ConfigPath.h"
 #include "../version.h"
 #include <DbgHelp.h>
@@ -52,6 +53,8 @@ CrashReporter::CrashReporter(const std::wstring& crashDirectory)
     m_dumpThread = std::thread(&CrashReporter::DumpThreadLoop, this);
     m_previousFilter = SetUnhandledExceptionFilter(UnhandledExceptionFilter);
     m_previousTerminate = std::set_terminate(TerminateHandler);
+    m_previousInvalidParam = _set_invalid_parameter_handler(InvalidParameterHandler);
+    m_previousPureCall = _set_purecall_handler(PureCallHandler);
     PruneOldReports();
 }
 
@@ -61,6 +64,8 @@ CrashReporter::~CrashReporter()
     {
         SetUnhandledExceptionFilter(m_previousFilter);
         std::set_terminate(m_previousTerminate);
+        _set_invalid_parameter_handler(m_previousInvalidParam);
+        _set_purecall_handler(m_previousPureCall);
         s_instance = nullptr;
     }
     if (m_stopEvent) SetEvent(m_stopEvent);
@@ -88,6 +93,11 @@ LONG WINAPI CrashReporter::UnhandledExceptionFilter(EXCEPTION_POINTERS* exceptio
     if (!reporter || !exceptionInfo || reporter->m_crashStarted.exchange(1) != 0)
         return EXCEPTION_CONTINUE_SEARCH;
 
+    if (Logger::GetDefault())
+    {
+        Logger::GetDefault()->Flush();
+    }
+
     reporter->m_exceptionRecord = *exceptionInfo->ExceptionRecord;
     reporter->m_context = *exceptionInfo->ContextRecord;
     reporter->m_crashingThreadId = GetCurrentThreadId();
@@ -99,8 +109,56 @@ LONG WINAPI CrashReporter::UnhandledExceptionFilter(EXCEPTION_POINTERS* exceptio
 
 void CrashReporter::TerminateHandler() noexcept
 {
+    if (Logger::GetDefault()) Logger::GetDefault()->Flush();
+    RecordBreadcrumb(L"crash", L"std::terminate invoked");
     RaiseException(0xE0000001, EXCEPTION_NONCONTINUABLE, 0, nullptr);
     TerminateProcess(GetCurrentProcess(), 0xE0000001);
+}
+
+void CrashReporter::InvalidParameterHandler(const wchar_t* expression, const wchar_t* function, const wchar_t* file, unsigned int line, uintptr_t) noexcept
+{
+    if (Logger::GetDefault()) Logger::GetDefault()->Flush();
+    std::wstring detail = L"CRT invalid parameter: ";
+    if (function) detail += function;
+    RecordBreadcrumb(L"crash", detail);
+    RaiseException(0xE0000002, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+    TerminateProcess(GetCurrentProcess(), 0xE0000002);
+}
+
+void CrashReporter::PureCallHandler() noexcept
+{
+    if (Logger::GetDefault()) Logger::GetDefault()->Flush();
+    RecordBreadcrumb(L"crash", L"CRT pure virtual call");
+    RaiseException(0xE0000003, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+    TerminateProcess(GetCurrentProcess(), 0xE0000003);
+}
+
+std::wstring CrashReporter::FormatStackBackTrace()
+{
+    void* stack[32]{};
+    USHORT frames = RtlCaptureStackBackTrace(0, 32, stack, nullptr);
+    std::wstring result = L"stack_backtrace:\r\n";
+    for (USHORT i = 0; i < frames; ++i)
+    {
+        HMODULE hModule = nullptr;
+        wchar_t moduleName[MAX_PATH] = L"unknown";
+        uintptr_t offset = 0;
+        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            static_cast<LPCWSTR>(stack[i]), &hModule) && hModule)
+        {
+            wchar_t path[MAX_PATH]{};
+            if (GetModuleFileNameW(hModule, path, MAX_PATH) > 0)
+            {
+                const wchar_t* slash = wcsrchr(path, L'\\');
+                wcsncpy_s(moduleName, slash ? slash + 1 : path, _TRUNCATE);
+            }
+            offset = reinterpret_cast<uintptr_t>(stack[i]) - reinterpret_cast<uintptr_t>(hModule);
+        }
+        wchar_t line[256]{};
+        swprintf_s(line, L"  [%02u] %p (%s+0x%Ix)\r\n", i, stack[i], moduleName, offset);
+        result += line;
+    }
+    return result;
 }
 
 void CrashReporter::DumpThreadLoop()
@@ -121,6 +179,11 @@ void CrashReporter::DumpThreadLoop()
 
 void CrashReporter::WriteCrashFiles()
 {
+    if (Logger::GetDefault())
+    {
+        Logger::GetDefault()->Flush();
+    }
+
     std::wstring base = m_crashDirectory + L"\\WinLauncher_" + BuildTimestamp() + L"_p" +
         std::to_wstring(GetCurrentProcessId()) + L"_t" + std::to_wstring(m_crashingThreadId);
     std::wstring dumpPath = base + L".dmp";
@@ -155,6 +218,9 @@ void CrashReporter::WriteCrashFiles()
         swprintf_s(address, L"access_address=%p\r\n", reinterpret_cast<void*>(m_exceptionRecord.ExceptionInformation[1]));
         text += address;
     }
+
+    text += FormatStackBackTrace();
+
     text += L"breadcrumbs:\r\n";
     std::vector<std::pair<unsigned long long, const Breadcrumb*>> ordered;
     for (const auto& entry : s_breadcrumbs)

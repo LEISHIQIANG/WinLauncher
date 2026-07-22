@@ -1,4 +1,5 @@
 #include "SettingsPage.h"
+#include "SettingsTabHelper.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
 #include "ConfirmWindow.h"

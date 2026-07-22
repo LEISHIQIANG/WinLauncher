@@ -1,3 +1,4 @@
+#include "../../WinLauncher/Services/CommandVariableService.h"
 #include "../../WinLauncher/App/BackgroundTaskService.h"
 #include "../../WinLauncher/App/CrashReporter.h"
 #include "../../WinLauncher/App/EventBus.h"
@@ -13,8 +14,10 @@
 #include "../../WinLauncher/Services/FileSelectionService.h"
 #include "../../WinLauncher/Popup/PopupIconRefreshController.h"
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
+#include "../../WinLauncher/Popup/PinyinHelper.h"
 #include "../../WinLauncher/TriggerPolicy.h"
 #include "../../WinLauncher/SDK/include/WinLauncher/WinLauncherPluginABI.h"
+#include "../../WinLauncher/Services/DiagnosticService.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <chrono>
@@ -50,7 +53,14 @@ static bool HasNonEmptyCrashArtifacts(const std::wstring& directory)
     {
         if (!entry.is_regular_file() || entry.file_size() == 0) continue;
         if (entry.path().extension() == L".dmp") dump = true;
-        if (entry.path().extension() == L".txt") text = true;
+        if (entry.path().extension() == L".txt")
+        {
+            text = true;
+            std::ifstream file(entry.path());
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (content.find("stack_backtrace:") == std::string::npos)
+                return false;
+        }
     }
     return dump && text;
 }
@@ -505,6 +515,61 @@ int wmain(int argc, wchar_t** argv)
             return Fail(L"archive round trip lost a file for a path containing an apostrophe");
     }
 
+    {
+        std::wstring wxInitials = PinyinHelper::GetInitials(L"微信");
+        std::wstring wxFull = PinyinHelper::GetFullPinyin(L"微信");
+        if (wxInitials != L"wx" || wxFull != L"weixin")
+            return Fail(L"PinyinHelper failed for 微信");
+
+        std::wstring jsqInitials = PinyinHelper::GetInitials(L"计算器");
+        if (jsqInitials != L"jsq")
+            return Fail(L"PinyinHelper failed for 计算器");
+
+        bool isInitials = false, isFull = false;
+        if (!PinyinHelper::Match(L"微信", L"wx", isInitials, isFull) || !isInitials)
+            return Fail(L"PinyinHelper match failed for wx -> 微信");
+    }
+
+    {
+        std::map<std::wstring, std::wstring> inputs;
+        std::vector<std::wstring> files = { L"C:\\test\\doc.txt" };
+        std::wstring expanded = Services::CommandVariableService::ResolveVariables(L"cmd /c echo {{selected_file}} {{date}} {{time}} {{timestamp}} {{clipboard_text}}", L"cmd", files, inputs);
+        if (expanded.find(L"C:\\test\\doc.txt") == std::wstring::npos)
+            return Fail(L"CommandVariableService variable expansion failed for selected_file");
+        if (expanded.find(L"{{timestamp}}") != std::wstring::npos || expanded.find(L"{{clipboard_text}}") != std::wstring::npos)
+            return Fail(L"CommandVariableService variable expansion failed for timestamp or clipboard_text");
+    }
+
+    {
+        const std::wstring testLogPath = temp + L"\\test-flush.jsonl";
+        {
+            Logger customLog(testLogPath);
+            customLog.Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, L"Test flush entry 1");
+            customLog.Log(Logger::ERRA, __FILE__, __LINE__, __FUNCTION__, L"Test flush error entry");
+            customLog.Flush();
+        }
+        std::ifstream input(testLogPath);
+        std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        if (content.find("Test flush entry 1") == std::string::npos ||
+            content.find("Test flush error entry") == std::string::npos)
+            return Fail(L"Logger flush did not write in-memory log entries to disk");
+    }
+
+    {
+        std::wstring stackTrace = CrashReporter::FormatStackBackTrace();
+        if (stackTrace.find(L"stack_backtrace:") == std::string::npos ||
+            stackTrace.find(L"WinLauncherNativeTests.exe") == std::string::npos)
+            return Fail(L"CrashReporter FormatStackBackTrace failed to capture current process stack");
+    }
+
+    {
+        DiagnosticService diag(logger.get());
+        std::wstring packagePath = temp + L"\\diag_package.zip";
+        std::wstring diagError;
+        if (!diag.CreatePackage(packagePath, diagError) || !fs::exists(packagePath))
+            return Fail(L"DiagnosticService failed to create diagnostic metadata package");
+    }
+
     std::wstring crashDir = temp + L"\\crash";
     fs::create_directories(crashDir);
     wchar_t exePath[MAX_PATH]{};
@@ -520,6 +585,6 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(process.hProcess);
     if (!HasNonEmptyCrashArtifacts(crashDir)) return Fail(L"crash reporter did not create non-empty dump and metadata");
 
-    fwprintf(stdout, L"[PASS] native async, popup layout, ABI compatibility, callback, crash, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
+    fwprintf(stdout, L"[PASS] native async, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
     return 0;
 }

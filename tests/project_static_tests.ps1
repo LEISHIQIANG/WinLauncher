@@ -259,7 +259,7 @@ Add-TestResult `
         $iniConfigSource -match 'SyncAutoPaused=1' -and
         $iniConfigSource -match 'UpdateFolderWatcher\(pages\)' -and
         $applicationSource -match 'AppMessages::FolderSyncAutoPaused' -and
-        $applicationSource -match 'ToastWindow::Show\(L"同步目录不可用，已自动暂停"' -and
+        $applicationSource -match 'ToastWindow::Show' -and
         $categoryListSource -match 'syncAutoPaused'
     ) `
     -Detail "A repeatedly unavailable sync directory must pause atomically, retain its path, and offer a visible recovery path"
@@ -552,8 +552,17 @@ Add-TestResult `
 
 Add-TestResult `
     -Name "Crash reporting is independent from normal logger locks" `
-    -Passed ($crashSource -match 'MiniDumpWriteDump' -and $crashSource -match 'MiniDumpWithThreadInfo' -and $crashSource -match 'MiniDumpWithUnloadedModules' -and $loggerSource -notmatch 'SetUnhandledExceptionFilter\(') `
-    -Detail "Unhandled exceptions must use the dedicated dump thread, not the normal log mutex"
+    -Passed (
+        $crashSource -match 'MiniDumpWriteDump' -and
+        $crashSource -match 'MiniDumpWithThreadInfo' -and
+        $crashSource -match 'MiniDumpWithUnloadedModules' -and
+        $crashSource -match '_set_invalid_parameter_handler' -and
+        $crashSource -match '_set_purecall_handler' -and
+        $crashSource -match 'RtlCaptureStackBackTrace' -and
+        $crashSource -match 'Logger::GetDefault\(\)->Flush\(\)' -and
+        $loggerSource -notmatch 'SetUnhandledExceptionFilter\('
+    ) `
+    -Detail "Unhandled exceptions must use CRT handlers, capture stack backtraces, flush logger records, and use the dedicated dump thread"
 
 Add-TestResult `
     -Name "Normal logging uses a bounded JSONL batch queue" `

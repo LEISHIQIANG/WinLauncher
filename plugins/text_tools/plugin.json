@@ -68,6 +68,26 @@
       "icon": "icons/reverse.ico",
       "keywords": ["flip", "mirror", "反转"],
       "aliases": ["rev"]
+    },
+    {
+      "id": "wl.text_tools.jsonfmt",
+      "command": "jsonfmt",
+      "title": "Format / Minify JSON",
+      "description": "Format or minify JSON text. Copies result to clipboard.",
+      "usage": "/jsonfmt [format|minify] <json_text>",
+      "icon": "icons/count.ico",
+      "keywords": ["json", "format", "beauty", "minify", "格式化"],
+      "aliases": ["json"]
+    },
+    {
+      "id": "wl.text_tools.urlencode",
+      "command": "urlencode",
+      "title": "URL Encode / Decode",
+      "description": "URL encode or decode text. Copies result to clipboard.",
+      "usage": "/urlencode [encode|decode] <text>",
+      "icon": "icons/base64.ico",
+      "keywords": ["url", "encode", "decode", "uri"],
+      "aliases": ["urldecode"]
     }
   ],
   "settings": []

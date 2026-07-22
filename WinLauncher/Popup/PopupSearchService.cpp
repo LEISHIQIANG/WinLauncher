@@ -1,5 +1,6 @@
 #include "PopupSearchService.h"
 #include "PopupSearchModel.h"
+#include "PinyinHelper.h"
 #include "../App/PluginManager.h"
 #include <algorithm>
 #include <cwctype>
@@ -14,6 +15,14 @@ namespace PopupSearchService
             std::transform(result.begin(), result.end(), result.begin(),
                 [](wchar_t ch) { return static_cast<wchar_t>(towlower(ch)); });
             return result;
+        }
+
+        bool IsMatch(const std::wstring& text, const std::wstring& queryLower)
+        {
+            if (LowerCopy(text).find(queryLower) != std::wstring::npos)
+                return true;
+            bool dummy1 = false, dummy2 = false;
+            return PinyinHelper::Match(text, queryLower, dummy1, dummy2);
         }
     }
 
@@ -31,7 +40,7 @@ namespace PopupSearchService
             for (size_t sIndex = 0; sIndex < page.shortcuts.size(); sIndex++)
             {
                 const auto& sc = page.shortcuts[sIndex];
-                if (LowerCopy(sc.name).find(queryLower) != std::wstring::npos)
+                if (IsMatch(sc.name, queryLower))
                 {
                     SearchResult item;
                     item.shortcut = sc;
@@ -49,7 +58,7 @@ namespace PopupSearchService
         for (size_t sIndex = 0; sIndex < dockPage.shortcuts.size(); sIndex++)
         {
             const auto& sc = dockPage.shortcuts[sIndex];
-            if (LowerCopy(sc.name).find(queryLower) != std::wstring::npos)
+            if (IsMatch(sc.name, queryLower))
             {
                 SearchResult item;
                 item.shortcut = sc;
@@ -63,6 +72,7 @@ namespace PopupSearchService
 
         return results;
     }
+
 
     std::vector<SearchResult> CollectSlashCommands(
         const std::wstring& query,

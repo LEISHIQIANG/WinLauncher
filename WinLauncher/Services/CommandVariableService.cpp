@@ -3,6 +3,7 @@
 #include "../Contracts/IUserInteractionService.h"
 #include "ConfigPath.h"
 #include <algorithm>
+#include <chrono>
 #include <cwctype>
 #include <wininet.h>
 #include <winsock2.h>
@@ -446,9 +447,16 @@ namespace Services
 
             std::wstring value = L"";
 
-            if (baseKey == L"clipboard")
+            if (baseKey == L"clipboard" || baseKey == L"clipboard_text")
             {
                 value = GetClipboardText();
+            }
+            else if (baseKey == L"timestamp")
+            {
+                auto now = std::chrono::system_clock::now();
+                auto duration = now.time_since_epoch();
+                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+                value = std::to_wstring(seconds);
             }
             else if (baseKey == L"selected_file")
             {

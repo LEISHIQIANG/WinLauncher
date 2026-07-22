@@ -1,4 +1,6 @@
 #include "PluginManager.h"
+#include "CrashReporter.h"
+#include "PluginDllLoader.h"
 #include "UiDispatcher.h"
 #include "PluginInstaller.h"
 #include "../Config/CommandPanelWindow.h"
@@ -806,6 +808,7 @@ bool PluginManager::IsSearchRunning(const std::wstring& query) const
 
 bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstring& commandId, const std::wstring& query, std::wstring& message, HWND outputPanelHwnd)
 {
+    CrashReporter::RecordBreadcrumb(L"plugin.exec", pluginId + L":" + commandId);
     if (m_shutdownRequested)
     {
         message = L"程序正在退出，命令已取消";

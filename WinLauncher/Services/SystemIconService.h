@@ -7,6 +7,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <unordered_map>
+#include <list>
 #include "../UI/Controls/IconRenderer.h"
 
 #pragma comment(lib, "shlwapi.lib")
@@ -31,7 +32,13 @@ public:
 
         auto it = m_hiconCache.find(targetPath);
         if (it != m_hiconCache.end())
-            return it->second;
+        {
+            // Move accessed item to front of LRU list
+            m_lruList.erase(it->second.lruIter);
+            m_lruList.push_front(targetPath);
+            it->second.lruIter = m_lruList.begin();
+            return it->second.hIcon;
+        }
 
         HICON hIcon = nullptr;
         DWORD attr = GetFileAttributesW(targetPath.c_str());
@@ -49,7 +56,7 @@ public:
             if (hIcon)
             {
                 LOG_G_DEBUG(L"GetIcon: loaded builtin folder icon for dir=%s", targetPath.c_str());
-                m_hiconCache[targetPath] = hIcon;
+                StoreInCache(targetPath, hIcon);
                 return hIcon;
             }
             LOG_G_WORNING(L"GetIcon: LoadImage folder icon failed for dir=%s, err=%d",
@@ -70,7 +77,7 @@ public:
             UINT extracted = PrivateExtractIconsW(targetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
             if (extracted > 0 && hIcon)
             {
-                m_hiconCache[targetPath] = hIcon;
+                StoreInCache(targetPath, hIcon);
                 return hIcon;
             }
         }
@@ -124,7 +131,7 @@ public:
 
         if (hIcon)
         {
-            m_hiconCache[targetPath] = hIcon;
+            StoreInCache(targetPath, hIcon);
         }
         else
         {
@@ -197,13 +204,41 @@ public:
     {
         for (auto& pair : m_hiconCache)
         {
-            if (pair.second) DestroyIcon(pair.second);
+            if (pair.second.hIcon) DestroyIcon(pair.second.hIcon);
         }
         m_hiconCache.clear();
+        m_lruList.clear();
         m_bmpCache.clear();
     }
 
 private:
-    std::unordered_map<std::wstring, HICON> m_hiconCache;
+    static constexpr size_t MAX_HICON_CACHE = 512;
+
+    struct CacheEntry
+    {
+        HICON hIcon;
+        std::list<std::wstring>::iterator lruIter;
+    };
+
+    void StoreInCache(const std::wstring& targetPath, HICON hIcon)
+    {
+        if (!hIcon) return;
+        if (m_hiconCache.size() >= MAX_HICON_CACHE)
+        {
+            const std::wstring& oldest = m_lruList.back();
+            auto it = m_hiconCache.find(oldest);
+            if (it != m_hiconCache.end())
+            {
+                if (it->second.hIcon) DestroyIcon(it->second.hIcon);
+                m_hiconCache.erase(it);
+            }
+            m_lruList.pop_back();
+        }
+        m_lruList.push_front(targetPath);
+        m_hiconCache[targetPath] = CacheEntry{ hIcon, m_lruList.begin() };
+    }
+
+    std::unordered_map<std::wstring, CacheEntry> m_hiconCache;
+    std::list<std::wstring> m_lruList;
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_bmpCache;
 };

@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "AppMessages.h"
 #include "PluginManager.h"
+#include "CrashReporter.h"
 #include "../AutoStartHelper.h"
 #include "../Config/ConfigWindow.h"
 #include "../Config/ConfirmWindow.h"
@@ -257,6 +258,7 @@ bool Application::InitializeServices()
     m_appCtx->windowCoordinator = std::make_shared<WindowCoordinator>(m_appCtx.get());
 
     LOG_INFO(m_appCtx->logger, L"WinLauncher starting...");
+    CrashReporter::RecordBreadcrumb(L"app.start", L"WinLauncher process initialized");
     if (m_appCtx->pluginManager)
     {
         m_appCtx->pluginManager->SetUserInteraction(m_appCtx->userInteraction);
@@ -384,7 +386,10 @@ void Application::Shutdown()
         return;
 
     if (m_appCtx)
+    {
         LOG_INFO(m_appCtx->logger, L"WinLauncher shutting down...");
+        CrashReporter::RecordBreadcrumb(L"app.shutdown", L"WinLauncher shutting down");
+    }
 
     if (m_uiHeartbeat) m_uiHeartbeat->stopping = true;
     m_uiWatchdogTask.Cancel();
@@ -633,6 +638,7 @@ void Application::RestartHook()
 void Application::RestartApp()
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartApp: restarting application...");
+    CrashReporter::RecordBreadcrumb(L"app.restart", L"Application restart requested");
 
     // Schedule relaunch via a timer so any pending messages drain first.
     // Destroy the main window BEFORE ShellExecuteExW so the new instance
@@ -713,6 +719,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         {
             if (logSink)
                 logSink->Log(Logger::INFO, __FILE__, __LINE__, __FUNCTION__, L"Application::LaunchShortcutById: requested id=%s", pId->c_str());
+            CrashReporter::RecordBreadcrumb(L"shortcut.launch", *pId);
             auto pages = m_appCtx->configService->LoadConfig();
             Model::ShortcutInfo foundSc;
             bool found = false;

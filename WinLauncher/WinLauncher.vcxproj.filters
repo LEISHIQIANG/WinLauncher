@@ -66,6 +66,14 @@
     <ClCompile Include="Popup\PopupIconRefreshController.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupCommandDispatcher.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupSearchService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupRenderHelper.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsTabHelper.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsGeneralView.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsPluginView.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsAppearanceView.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsBackupView.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\ShortcutGridViewHelper.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="App\PluginDllLoader.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="TrayMenuWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -196,6 +204,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ToastWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Popup\PinyinHelper.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -455,6 +466,15 @@
     <ClInclude Include="Popup\PopupIconRefreshController.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupCommandDispatcher.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupSearchService.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupRenderHelper.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsTabHelper.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsGeneralView.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsPluginView.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsAppearanceView.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsBackupView.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\ShortcutGridViewHelper.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="App\PluginDllLoader.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PinyinHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\UsageHistoryStore.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\DiagnosticService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\MigrationBackupService.h"><Filter>头文件</Filter></ClInclude>

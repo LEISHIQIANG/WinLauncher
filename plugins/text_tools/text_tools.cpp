@@ -348,6 +348,174 @@ namespace
         WriteResult(out, L"Reversed (copied):\n" + r);
     }
 
+    wstring UrlEncode(const string& input)
+    {
+        wstring result;
+        static const char hex[] = "0123456789ABCDEF";
+        for (unsigned char c : input)
+        {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~')
+            {
+                result.push_back(static_cast<wchar_t>(c));
+            }
+            else
+            {
+                result.push_back(L'%');
+                result.push_back(static_cast<wchar_t>(hex[c >> 4]));
+                result.push_back(static_cast<wchar_t>(hex[c & 15]));
+            }
+        }
+        return result;
+    }
+
+    string UrlDecode(const wstring& input)
+    {
+        string result;
+        for (size_t i = 0; i < input.size(); ++i)
+        {
+            if (input[i] == L'%' && i + 2 < input.size())
+            {
+                wchar_t h1 = input[i + 1], h2 = input[i + 2];
+                int v1 = (h1 >= L'0' && h1 <= L'9') ? (h1 - L'0') : ((h1 >= L'A' && h1 <= L'F') ? (h1 - L'A' + 10) : ((h1 >= L'a' && h1 <= L'f') ? (h1 - L'a' + 10) : -1));
+                int v2 = (h2 >= L'0' && h2 <= L'9') ? (h2 - L'0') : ((h2 >= L'A' && h2 <= L'F') ? (h2 - L'A' + 10) : ((h2 >= L'a' && h2 <= L'f') ? (h2 - L'a' + 10) : -1));
+                if (v1 != -1 && v2 != -1)
+                {
+                    result.push_back(static_cast<char>((v1 << 4) | v2));
+                    i += 2;
+                    continue;
+                }
+            }
+            else if (input[i] == L'+')
+            {
+                result.push_back(' ');
+                continue;
+            }
+            result.push_back(static_cast<char>(input[i] & 0xFF));
+        }
+        return result;
+    }
+
+    wstring JsonFormat(const wstring& input, bool minify)
+    {
+        wstring out;
+        out.reserve(input.size() * 2);
+        int indent = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        auto appendIndent = [&](int lvl) {
+            for (int i = 0; i < lvl; ++i) out += L"  ";
+        };
+
+        for (size_t i = 0; i < input.size(); ++i)
+        {
+            wchar_t c = input[i];
+            if (inString)
+            {
+                out.push_back(c);
+                if (escaped) escaped = false;
+                else if (c == L'\\') escaped = true;
+                else if (c == L'"') inString = false;
+                continue;
+            }
+
+            if (iswspace(c))
+            {
+                if (minify) continue;
+                continue;
+            }
+
+            if (c == L'"')
+            {
+                inString = true;
+                out.push_back(c);
+            }
+            else if (c == L'{' || c == L'[')
+            {
+                out.push_back(c);
+                if (!minify)
+                {
+                    out.push_back(L'\n');
+                    indent++;
+                    appendIndent(indent);
+                }
+            }
+            else if (c == L'}' || c == L']')
+            {
+                if (!minify)
+                {
+                    out.push_back(L'\n');
+                    indent--;
+                    if (indent < 0) indent = 0;
+                    appendIndent(indent);
+                }
+                out.push_back(c);
+            }
+            else if (c == L',')
+            {
+                out.push_back(c);
+                if (!minify)
+                {
+                    out.push_back(L'\n');
+                    appendIndent(indent);
+                }
+            }
+            else if (c == L':')
+            {
+                out.push_back(c);
+                if (!minify) out.push_back(L' ');
+            }
+            else
+            {
+                out.push_back(c);
+            }
+        }
+        return out;
+    }
+
+    void DoUrlEncode(const wstring& sub, Plugin* p, WLStringResultV1* out)
+    {
+        wstring mode = L"encode", data;
+        size_t sp = sub.find(L' ');
+        if (sp != wstring::npos) { mode = ToLower(Trim(sub.substr(0, sp))); data = Trim(sub.substr(sp + 1)); }
+        else data = sub;
+
+        if (data.empty()) data = GetTextInput(p->host, L"URL Encode/Decode", L"Enter text:");
+        if (data.empty()) { WriteResult(out, L"Usage: /urlencode [encode|decode] <text>"); return; }
+
+        if (mode == L"decode" || mode == L"d")
+        {
+            string dec = UrlDecode(data);
+            wstring wdec = Utf8ToWide(dec);
+            CopyToClipboard(p->host, wdec);
+            WriteResult(out, L"URL Decoded (copied):\n" + wdec);
+        }
+        else
+        {
+            string utf8 = WideToUtf8(data);
+            wstring enc = UrlEncode(utf8);
+            CopyToClipboard(p->host, enc);
+            WriteResult(out, L"URL Encoded (copied):\n" + enc);
+        }
+    }
+
+    void DoJsonFmt(const wstring& sub, Plugin* p, WLStringResultV1* out)
+    {
+        wstring mode = L"format", data;
+        size_t sp = sub.find(L' ');
+        if (sp != wstring::npos) { mode = ToLower(Trim(sub.substr(0, sp))); data = Trim(sub.substr(sp + 1)); }
+        else data = sub;
+
+        if (data.empty()) data = GetTextInput(p->host, L"Format JSON", L"Enter JSON text:");
+        if (data.empty()) { WriteResult(out, L"Usage: /jsonfmt [format|minify] <json_text>"); return; }
+
+        bool minify = (mode == L"minify" || mode == L"m" || mode == L"compress");
+        wstring res = JsonFormat(data, minify);
+        CopyToClipboard(p->host, res);
+        WriteResult(out, (minify ? L"JSON Minified (copied):\n" : L"JSON Formatted (copied):\n") + res);
+    }
+
     // Slash command dispatch
 
     bool WL_CALL ExecuteSlashCommand(void* userData, const WLSlashCommandContextV1* ctx, WLStringResultV1* out)
@@ -358,12 +526,14 @@ namespace
         wstring cmd = ctx->command ? ctx->command : L"";
         wstring args = ctx->args ? ctx->args : L"";
 
-        if (cmd == L"base64")      DoBase64(args, p, out);
-        else if (cmd == L"uuid")   DoUUID(p, out);
-        else if (cmd == L"hash")   DoHash(args, p, out);
-        else if (cmd == L"case")   DoCase(args, p, out);
-        else if (cmd == L"count")  DoCount(args, p, out);
-        else if (cmd == L"reverse")DoReverse(args, p, out);
+        if (cmd == L"base64")        DoBase64(args, p, out);
+        else if (cmd == L"uuid")     DoUUID(p, out);
+        else if (cmd == L"hash")     DoHash(args, p, out);
+        else if (cmd == L"case")     DoCase(args, p, out);
+        else if (cmd == L"count")    DoCount(args, p, out);
+        else if (cmd == L"reverse")  DoReverse(args, p, out);
+        else if (cmd == L"jsonfmt")  DoJsonFmt(args, p, out);
+        else if (cmd == L"urlencode")DoUrlEncode(args, p, out);
         else WriteResult(out, L"Unknown command: " + cmd);
 
         return true;

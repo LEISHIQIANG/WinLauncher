@@ -13,6 +13,7 @@ public:
     ~CrashReporter();
 
     static void RecordBreadcrumb(const wchar_t* category, const std::wstring& detail) noexcept;
+    static std::wstring FormatStackBackTrace();
 
 private:
     struct Breadcrumb
@@ -26,6 +27,8 @@ private:
 
     static LONG WINAPI UnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo);
     static void TerminateHandler() noexcept;
+    static void InvalidParameterHandler(const wchar_t* expression, const wchar_t* function, const wchar_t* file, unsigned int line, uintptr_t pReserved) noexcept;
+    static void PureCallHandler() noexcept;
     void DumpThreadLoop();
     void WriteCrashFiles();
     void PruneOldReports();
@@ -47,4 +50,6 @@ private:
     ULONGLONG m_processStartTick = 0;
     LPTOP_LEVEL_EXCEPTION_FILTER m_previousFilter = nullptr;
     std::terminate_handler m_previousTerminate = nullptr;
+    _invalid_parameter_handler m_previousInvalidParam = nullptr;
+    _purecall_handler m_previousPureCall = nullptr;
 };

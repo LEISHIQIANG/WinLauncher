@@ -42,11 +42,14 @@
     <ClCompile Include="..\..\WinLauncher\Services\MigrationBackupService.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupLayout.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupSearchModel.cpp" />
+    <ClCompile Include="..\..\WinLauncher\Popup\PinyinHelper.cpp" />
     <ClCompile Include="..\..\WinLauncher\Services\IniConfigDocument.cpp" />
     <ClCompile Include="..\..\WinLauncher\Services\ConfigFileStore.cpp" />
     <ClCompile Include="..\..\WinLauncher\Services\FileSelectionService.cpp" />
+    <ClCompile Include="..\..\WinLauncher\Services\CommandVariableService.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupIconRefreshController.cpp" />
     <ClCompile Include="..\..\WinLauncher\Popup\PopupCommandDispatcher.cpp" />
+    <ClCompile Include="..\..\WinLauncher\Services\DiagnosticService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\WinLauncher\App\BackgroundTaskService.h" />
@@ -58,11 +61,15 @@
     <ClInclude Include="..\..\WinLauncher\Services\MigrationBackupService.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupLayout.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupSearchModel.h" />
+    <ClInclude Include="..\..\WinLauncher\Popup\PinyinHelper.h" />
     <ClInclude Include="..\..\WinLauncher\Services\IniConfigDocument.h" />
     <ClInclude Include="..\..\WinLauncher\Services\ConfigFileStore.h" />
     <ClInclude Include="..\..\WinLauncher\Services\FileSelectionService.h" />
+    <ClInclude Include="..\..\WinLauncher\Services\CommandVariableService.h" />
+    <ClInclude Include="..\..\WinLauncher\Services\ConfigPath.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupIconRefreshController.h" />
     <ClInclude Include="..\..\WinLauncher\Popup\PopupCommandDispatcher.h" />
+    <ClInclude Include="..\..\WinLauncher\Services\DiagnosticService.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

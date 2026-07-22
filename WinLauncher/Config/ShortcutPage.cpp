@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ShortcutPage.h"
+#include "ShortcutGridViewHelper.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
 #include "ContextMenu.h"
@@ -613,6 +614,7 @@ void ShortcutPage::OnMouseMove(POINT pt, bool& repaint)
         {
             UpdateDragAndSortState(pt);
             UpdateDragDeleteCursor(pt);
+            if (m_owner) m_owner->StartAnimation();
         }
         repaint = true;
         return;
@@ -922,6 +924,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
                 }
 
                 ResetShortcutTargets(false);
+                if (m_owner) m_owner->StartAnimation();
             }
         }
 
@@ -1174,14 +1177,16 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
 
     // 4. Update visual positions of other shortcuts using smooth decay
     bool anyIconMoving = false;
+    const float decayRate = 28.0f;
+    const float alpha = 1.0f - std::exp(-decayRate * dt);
     for (auto& state : m_shortcutStates)
     {
         float dx = state.targetX - state.currentX;
         float dy = state.targetY - state.currentY;
         if (std::abs(dx) > 0.1f || std::abs(dy) > 0.1f)
         {
-            state.currentX += dx * (1.0f - std::exp(-15.0f * dt));
-            state.currentY += dy * (1.0f - std::exp(-15.0f * dt));
+            state.currentX += dx * alpha;
+            state.currentY += dy * alpha;
             anyIconMoving = true;
         }
         else
@@ -1196,8 +1201,8 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         float dy = m_addCardTargetY - m_addCardCurrentY;
         if (std::abs(dx) > 0.1f || std::abs(dy) > 0.1f)
         {
-            m_addCardCurrentX += dx * (1.0f - std::exp(-15.0f * dt));
-            m_addCardCurrentY += dy * (1.0f - std::exp(-15.0f * dt));
+            m_addCardCurrentX += dx * alpha;
+            m_addCardCurrentY += dy * alpha;
             anyIconMoving = true;
         }
         else
@@ -1728,13 +1733,13 @@ HCURSOR ShortcutPage::GetDeleteCursor()
 {
     if (m_deleteCursor) return m_deleteCursor;
 
-    constexpr int size = 32;
-    std::vector<DWORD> pixels(size * size, 0);
+    static constexpr int kCursorSize = 32;
+    std::vector<DWORD> pixels(kCursorSize * kCursorSize, 0);
 
     auto setPixel = [&pixels](int x, int y, BYTE a, BYTE r, BYTE g, BYTE b)
     {
-        if (x < 0 || x >= size || y < 0 || y >= size) return;
-        pixels[y * size + x] = ((DWORD)a << 24) | ((DWORD)r << 16) | ((DWORD)g << 8) | (DWORD)b;
+        if (x < 0 || x >= kCursorSize || y < 0 || y >= kCursorSize) return;
+        pixels[y * kCursorSize + x] = ((DWORD)a << 24) | ((DWORD)r << 16) | ((DWORD)g << 8) | (DWORD)b;
     };
 
     auto drawLine = [&setPixel](int x0, int y0, int x1, int y1, BYTE a, BYTE r, BYTE g, BYTE b)
@@ -1853,8 +1858,8 @@ HCURSOR ShortcutPage::GetDeleteCursor()
 
     BITMAPINFO bmi{};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = size;
-    bmi.bmiHeader.biHeight = -size;
+    bmi.bmiHeader.biWidth = kCursorSize;
+    bmi.bmiHeader.biHeight = -kCursorSize;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -1868,8 +1873,8 @@ HCURSOR ShortcutPage::GetDeleteCursor()
     }
     memcpy(colorBits, pixels.data(), pixels.size() * sizeof(DWORD));
 
-    std::vector<BYTE> maskBits((size * size + 7) / 8, 0);
-    HBITMAP maskBitmap = CreateBitmap(size, size, 1, 1, maskBits.data());
+    std::vector<BYTE> maskBits((kCursorSize * kCursorSize + 7) / 8, 0);
+    HBITMAP maskBitmap = CreateBitmap(kCursorSize, kCursorSize, 1, 1, maskBits.data());
     if (!maskBitmap)
     {
         DeleteObject(colorBitmap);
@@ -1984,12 +1989,24 @@ void ShortcutPage::UpdateDragAndSortState(POINT clientPt)
         m_shortcutStates[idx].targetY = m_shortcutStates[idx].currentY;
     }
 
-    // 3. Find closest slot based on leader's center
+    // 3. Find closest slot based on leader's center with hysteresis to eliminate boundary jitter
     float centerX = m_shortcutStates[m_dragIndex].currentX + 31.0f;
     float centerY = m_shortcutStates[m_dragIndex].currentY + 31.0f;
 
-    int closestSlot = m_dragCurrentInsertIndex;
-    float minDistSq = -1.0f;
+    int currentSlot = m_dragCurrentInsertIndex;
+    int closestSlot = currentSlot;
+
+    float currentDistSq = -1.0f;
+    if (currentSlot >= 0 && currentSlot < n)
+    {
+        float curX = (float)(160 + (currentSlot % 5) * 72 + 31);
+        float curY = (float)(72 + (currentSlot / 5) * 72 + 31);
+        float dx = centerX - curX;
+        float dy = centerY - curY;
+        currentDistSq = dx * dx + dy * dy;
+    }
+
+    float minDistSq = currentDistSq;
 
     for (int j = 0; j < n; j++)
     {
@@ -1999,10 +2016,14 @@ void ShortcutPage::UpdateDragAndSortState(POINT clientPt)
         float dy = centerY - slotY;
         float distSq = dx * dx + dy * dy;
 
-        if (minDistSq < 0.0f || distSq < minDistSq)
+        // Candidate slot must be noticeably closer than current slot to switch
+        if (currentDistSq < 0.0f || distSq < currentDistSq * 0.72f)
         {
-            minDistSq = distSq;
-            closestSlot = j;
+            if (minDistSq < 0.0f || distSq < minDistSq)
+            {
+                minDistSq = distSq;
+                closestSlot = j;
+            }
         }
     }
 

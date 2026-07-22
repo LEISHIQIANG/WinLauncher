@@ -13,6 +13,7 @@
 #include "Popup/PopupLayout.h"
 #include "Popup/PopupSearchModel.h"
 #include "Popup/PopupCommandDispatcher.h"
+#include "Popup/PopupRenderHelper.h"
 #include "Contracts/ICommandExecutionService.h"
 #include "Contracts/IUserInteractionService.h"
 #include "DpiHelper.h"
@@ -25,6 +26,7 @@
 #include "Config/CommandPanelWindow.h"
 #include "ToastWindow.h"
 #include "App/Logger.h"
+#include "App/CrashReporter.h"
 #include "App/AppMessages.h"
 #include "App/UiDispatcher.h"
 #include <windowsx.h>
@@ -843,6 +845,7 @@ void PopupWindow::Show(HWND parent, POINT pt)
 
 void PopupWindow::ShowAt(HWND parent, POINT pt)
 {
+    CrashReporter::RecordBreadcrumb(L"popup.show", L"");
     HWND prevActive = GetForegroundWindow();
     double showStart = GetTimeInSeconds();
     double dataReadyMs = 0.0;
@@ -1067,6 +1070,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 
     if (this->GetHWND())
     {
+        DragAcceptFiles(this->GetHWND(), TRUE);
         const double windowReadyStart = GetTimeInSeconds();
         if (this->m_rt)
         {
@@ -1215,6 +1219,7 @@ void PopupWindow::Hide()
 
 void PopupWindow::HideSelf(bool immediate)
 {
+    CrashReporter::RecordBreadcrumb(L"popup.hide", L"");
     HWND h = GetHWND();
     if (h)
     {
@@ -2412,10 +2417,9 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
     float lineAlpha = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light) ? 1.0f : 0.25f;
     auto lineBrush = GetOrCreateBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, lineAlpha));
     if (lineBrush)
-        rt->DrawLine(
-            D2D1::Point2F(0.0f, (float)lineY),
-            D2D1::Point2F(totalW, (float)lineY),
-            lineBrush.Get(), 0.3f);
+    {
+        PopupRenderHelper::RenderDockSeparator(rt, totalW, (float)lineY, lineBrush.Get());
+    }
 
     // Active file selection feedback (timeline)
     double now = GetTimeInSeconds();
@@ -2432,40 +2436,7 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
         if (progress < 0.0f) progress = 0.0f;
         if (progress > 1.0f) progress = 1.0f;
 
-        float midX = totalW / 2.0f;
-        float halfLength = (totalW / 2.0f) * progress;
-        float left = midX - halfLength;
-        float right = midX + halfLength;
-
-        if (right > left + 0.1f)
-        {
-            D2D1_POINT_2F startPt = D2D1::Point2F(left, (float)lineY);
-            D2D1_POINT_2F endPt = D2D1::Point2F(right, (float)lineY);
-
-            D2D1_GRADIENT_STOP stops[3];
-            stops[0].position = 0.0f;
-            stops[0].color = UIStyle::ThemeColor::AccentSubtle().d2d;
-            stops[1].position = 0.5f;
-            stops[1].color = UIStyle::ThemeColor::Accent().d2d;
-            stops[2].position = 1.0f;
-            stops[2].color = UIStyle::ThemeColor::AccentSubtle().d2d;
-
-            ComPtr<ID2D1GradientStopCollection> stopCollection;
-            HRESULT hr = rt->CreateGradientStopCollection(stops, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &stopCollection);
-            if (SUCCEEDED(hr) && stopCollection)
-            {
-                ComPtr<ID2D1LinearGradientBrush> gradientBrush;
-                hr = rt->CreateLinearGradientBrush(
-                    D2D1::LinearGradientBrushProperties(startPt, endPt),
-                    stopCollection.Get(),
-                    &gradientBrush
-                );
-                if (SUCCEEDED(hr) && gradientBrush)
-                {
-                    rt->DrawLine(startPt, endPt, gradientBrush.Get(), 1.5f);
-                }
-            }
-        }
+        PopupRenderHelper::RenderFileSelectionTimeline(rt, totalW, (float)lineY, progress);
     }
 
     int n = (int)m_dockPage.shortcuts.size();
@@ -2707,8 +2678,52 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 {
     switch (uMsg)
     {
+    case WM_DROPFILES:
+    {
+        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+        POINT pt_px{};
+        DragQueryPoint(hDrop, &pt_px);
+        float scale = GetWindowScale(hWnd);
+        POINT pt{ (int)(pt_px.x / scale), (int)(pt_px.y / scale) };
+
+        UINT count = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+        std::vector<std::wstring> droppedFiles;
+        droppedFiles.reserve(count);
+        for (UINT i = 0; i < count; ++i)
+        {
+            wchar_t szPath[MAX_PATH]{};
+            if (DragQueryFileW(hDrop, i, szPath, MAX_PATH))
+            {
+                droppedFiles.push_back(szPath);
+            }
+        }
+        DragFinish(hDrop);
+
+        if (!droppedFiles.empty())
+        {
+            int dockHit = HitTestDock(pt);
+            int hit = HitTest(pt);
+
+            if (dockHit >= 0 && dockHit < (int)m_dockPage.shortcuts.size())
+            {
+                auto& sc = m_dockPage.shortcuts[dockHit];
+                if (!m_pinned) HideSelf(HasLaunchAction(sc) && IsBackgroundExternalLaunch(sc));
+                ExecuteShortcut(sc, hWnd, m_appCtx, droppedFiles);
+            }
+            else if (hit >= 0 && m_currentPage >= 0 && m_currentPage < (int)m_pages.size() &&
+                     hit < (int)m_pages[m_currentPage].shortcuts.size())
+            {
+                auto& sc = m_pages[m_currentPage].shortcuts[hit];
+                if (!m_pinned) HideSelf(HasLaunchAction(sc) && IsBackgroundExternalLaunch(sc));
+                ExecuteShortcut(sc, hWnd, m_appCtx, droppedFiles);
+            }
+        }
+        return 0;
+    }
+
     case WM_DPICHANGED:
     {
+        m_bmpBrushCache.clear();
         RECT* const prcNewWindow = (RECT*)lParam;
         if (prcNewWindow)
         {
@@ -3441,6 +3456,27 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 return 0;
             }
         }
+        else if ((!m_searchActive || m_searchTextBox.IsEmpty()) && wParam >= '1' && wParam <= '9')
+        {
+            int targetIdx = static_cast<int>(wParam - '1');
+            if (m_currentPage >= 0 && m_currentPage < static_cast<int>(m_pages.size()) &&
+                targetIdx < static_cast<int>(m_pages[m_currentPage].shortcuts.size()))
+            {
+                auto& sc = m_pages[m_currentPage].shortcuts[targetIdx];
+                if (!m_pinned) HideSelf(HasLaunchAction(sc) && IsBackgroundExternalLaunch(sc));
+                if (HasLaunchAction(sc))
+                {
+                    LOG_G_INFO(L"PopupWindow::WM_KEYDOWN: quick launching shortcut %s (Index=%d)", sc.name.c_str(), targetIdx);
+                    RecordShortcutUsage(sc);
+                    LaunchShortcut(sc);
+                }
+                if (m_viewModel)
+                    m_viewModel->NotifyShortcutLaunched(ToModelPageIndex(m_currentPage), targetIdx);
+                if (m_pinned)
+                    ApplyShortcutSortMode();
+                return 0;
+            }
+        }
         else if (wParam == VK_LEFT)
         {
             if (m_pages.size() > 1)
@@ -3482,6 +3518,11 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_CHAR:
+        if (wParam >= '1' && wParam <= '9' && !m_searchActive && m_searchQuery.empty())
+        {
+            return 0;
+        }
+
         if (wParam >= 32 && !m_searchActive)
         {
             // Activate search mode temporarily and immediately repaint so the
