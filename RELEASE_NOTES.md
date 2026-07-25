@@ -25,6 +25,8 @@
 - **智能搜索与命令体验提升**：搜索结果始终按关键词匹配度排序，不受智能图标排序影响；命令类型菜单新增自动检测本机已安装的 Python 版本与 Git Bash。
 - **界面与配置页布局调整**：重新整理外观参数归类，“关于软件”页面展示功能简介，调整“插件管理”与“配置管理”的层级顺序。
 - **单体大文件解耦与图标 LRU 缓存保护**：拆分主弹窗、设置页面、快捷方式网格与插件装载模块（`PopupRenderHelper` / `SettingsTabHelper` / `ShortcutGridViewHelper` / `PluginDllLoader` / `SettingsGeneralView` / `SettingsPluginView` / `SettingsAppearanceView` / `SettingsBackupView`），全面降低核心 UI 与插件加载链路的复杂度；在 `SystemIconService` 中实现基于 512 上限的 LRU 缓存淘汰策略，自动释放长时间未访问的 `HICON` 资源；修复高 DPI 切换时 Direct2D 位图刷缓存清理隐患，提升系统稳定防泄漏能力。
+- **底层算法全面升级与性能重构**：全面重构拼音匹配引擎，覆盖 6700+ CJK 常用汉字与多音字匹配；重构使用历史持久化引擎，废除正则解析并采用高效 JSON 词法分析器；优化磁盘变动 notification 滑动窗口防抖，显著提升搜索与系统事件响应的稳定度。
+
 
 ### 修复
 

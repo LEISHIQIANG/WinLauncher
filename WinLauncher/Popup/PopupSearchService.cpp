@@ -164,11 +164,11 @@ namespace PopupSearchService
 
         for (auto& item : results)
         {
-            PopupSearchModel::Usage usage{};
-            const auto sortKey = PopupSearchModel::SortKey(item.shortcut.name, queryLower, usage);
+            const auto sortKey = PopupSearchModel::SortKey(item.shortcut.name, queryLower, {});
             FullKeyType fullKey = std::tuple_cat(sortKey, std::make_tuple(item.originalPageIndex, item.originalShortcutIndex));
             scored.push_back(ScoredItem{ std::move(item), std::move(fullKey) });
         }
+
 
         std::stable_sort(scored.begin(), scored.end(),
             [](const ScoredItem& a, const ScoredItem& b)

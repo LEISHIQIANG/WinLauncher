@@ -2,8 +2,8 @@
 #include "ConfigPath.h"
 #include <Windows.h>
 #include <fstream>
-#include <regex>
 #include <algorithm>
+#include <list>
 
 UsageHistoryStore::UsageHistoryStore(const std::wstring& filePath) : m_filePath(filePath) {}
 
@@ -23,11 +23,66 @@ void UsageHistoryStore::LoadLocked()
     if (m_loaded) return;
     m_loaded = true;
     std::wifstream in(m_filePath);
+    if (!in) return;
     std::wstring text((std::istreambuf_iterator<wchar_t>(in)), {});
-    std::wregex pattern(LR"(\{\"key\":\"([^\"]+)\",\"count\":([0-9]+),\"lastUsedUtc\":([0-9]+)\})");
-    for (std::wsregex_iterator it(text.begin(), text.end(), pattern), end; it != end; ++it)
-        m_entries[(*it)[1].str()] = { _wcstoui64((*it)[2].str().c_str(), nullptr, 10), _wcstoui64((*it)[3].str().c_str(), nullptr, 10) };
+    in.close();
+
+    size_t pos = 0;
+    while ((pos = text.find(L"\"key\":", pos)) != std::wstring::npos)
+    {
+        pos += 6;
+        while (pos < text.size() && (text[pos] == L' ' || text[pos] == L'\t' || text[pos] == L'\r' || text[pos] == L'\n'))
+            ++pos;
+        if (pos >= text.size() || text[pos] != L'"') continue;
+        ++pos;
+        std::wstring key;
+        bool escaped = false;
+        while (pos < text.size())
+        {
+            if (escaped)
+            {
+                key += text[pos];
+                escaped = false;
+            }
+            else if (text[pos] == L'\\')
+            {
+                escaped = true;
+            }
+            else if (text[pos] == L'"')
+            {
+                break;
+            }
+            else
+            {
+                key += text[pos];
+            }
+            ++pos;
+        }
+        if (pos >= text.size()) break;
+        ++pos;
+
+        size_t objEnd = text.find(L'}', pos);
+        if (objEnd == std::wstring::npos) break;
+
+        size_t countPos = text.find(L"\"count\":", pos);
+        if (countPos == std::wstring::npos || countPos > objEnd) { pos = objEnd + 1; continue; }
+        countPos += 8;
+        wchar_t* endPtr = nullptr;
+        unsigned long long count = wcstoull(text.c_str() + countPos, &endPtr, 10);
+
+        size_t timePos = text.find(L"\"lastUsedUtc\":", countPos);
+        if (timePos == std::wstring::npos || timePos > objEnd) { pos = objEnd + 1; continue; }
+        timePos += 14;
+        unsigned long long lastUsedUtc = wcstoull(text.c_str() + timePos, &endPtr, 10);
+
+        if (!key.empty())
+        {
+            m_entries[key] = { count, lastUsedUtc };
+        }
+        pos = objEnd + 1;
+    }
 }
+
 
 bool UsageHistoryStore::SaveLocked()
 {
@@ -42,7 +97,13 @@ bool UsageHistoryStore::SaveLocked()
     bool first = true;
     for (const auto& pair : m_entries) {
         if (!first) out << L","; first = false;
-        out << L"{\"key\":\"" << pair.first << L"\",\"count\":" << pair.second.launchCount << L",\"lastUsedUtc\":" << pair.second.lastUsedUtc << L"}";
+        out << L"{\"key\":\"";
+        for (wchar_t ch : pair.first)
+        {
+            if (ch == L'"' || ch == L'\\') out << L'\\';
+            out << ch;
+        }
+        out << L"\",\"count\":" << pair.second.launchCount << L",\"lastUsedUtc\":" << pair.second.lastUsedUtc << L"}";
     }
     out << L"]}";
     out.close();
@@ -107,3 +168,4 @@ void UsageHistoryStore::SaveWorkerLoop()
         SaveLocked();
     }
 }
+

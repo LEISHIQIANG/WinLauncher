@@ -164,6 +164,8 @@ struct FolderWatcher::Impl
         unsigned long observedGeneration = 0;
         bool changePending = false;
         ULONGLONG changeDue = 0;
+        ULONGLONG changeFirstSeen = 0;
+
 
         while (m_running)
         {
@@ -201,13 +203,21 @@ struct FolderWatcher::Impl
                     MarkUnavailable(path, error, GetTickCount64(), notifyHwnd, autoPauseMessage, generation);
                     continue;
                 }
-                changePending = true;
-                changeDue = GetTickCount64() + kChangeDebounceMs;
+                const ULONGLONG nowTick = GetTickCount64();
+                if (!changePending)
+                {
+                    changePending = true;
+                    changeFirstSeen = nowTick;
+                }
+                constexpr ULONGLONG kMaxDebounceWindowMs = 1500;
+                changeDue = (std::min)(nowTick + kChangeDebounceMs, changeFirstSeen + kMaxDebounceWindowMs);
                 continue;
             }
             if (changePending && GetTickCount64() >= changeDue)
             {
                 changePending = false;
+                changeFirstSeen = 0;
+
                 if (notifyHwnd && IsWindow(notifyHwnd))
                 {
                     LOG_G_INFO_NODE(L"storage.folder_watcher", L"changes_coalesced", L"folders=%zu", watches.size());

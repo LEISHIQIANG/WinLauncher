@@ -34,8 +34,10 @@ namespace fs = std::filesystem;
 static int Fail(const wchar_t* message)
 {
     fwprintf(stderr, L"[FAIL] %s\n", message);
+    fflush(stderr);
     return 1;
 }
+
 
 static std::wstring MakeTempDirectory()
 {
@@ -123,6 +125,7 @@ int wmain(int argc, wchar_t** argv)
 
     std::wstring temp = MakeTempDirectory();
     auto logger = std::make_shared<Logger>(temp + L"\\native-tests.log");
+
 
     {
         struct TriggerCase
