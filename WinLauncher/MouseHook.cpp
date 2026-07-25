@@ -4,9 +4,10 @@
 #include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
+#include "TriggerBlacklistPolicy.h"
 #include "TriggerPolicy.h"
-#include <algorithm>
-#include <cwctype>
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,8 +30,155 @@ namespace
     constexpr DWORD SuppressMiddleUp  = 0x01;
     constexpr DWORD SuppressXButton1Up = 0x02;
     constexpr DWORD SuppressXButton2Up = 0x04;
-    std::shared_ptr<const std::vector<std::wstring>> g_triggerBlacklist =
-        std::make_shared<const std::vector<std::wstring>>();
+    constexpr size_t ProcessIdentityCacheCapacity = 16;
+    constexpr size_t CommonProcessPathCapacity = 1024;
+    constexpr size_t MaximumProcessPathCapacity = 32768;
+
+    std::shared_ptr<const TriggerBlacklistPolicy::Matcher> g_triggerBlacklist =
+        std::make_shared<const TriggerBlacklistPolicy::Matcher>();
+
+    struct ProcessIdentity
+    {
+        DWORD pid = 0;
+        HANDLE process = nullptr;
+        bool lifetimeCheckAvailable = false;
+        uint64_t lastUse = 0;
+        std::wstring processName;
+        std::wstring processStem;
+    };
+
+    class ProcessIdentityCache
+    {
+    public:
+        ~ProcessIdentityCache()
+        {
+            for (auto& entry : m_entries)
+                Reset(entry);
+        }
+
+        const ProcessIdentity* Resolve(HWND hwnd)
+        {
+            DWORD pid = 0;
+            if (!hwnd || GetWindowThreadProcessId(hwnd, &pid) == 0 || pid == 0)
+                return nullptr;
+
+            const uint64_t access = ++m_accessSerial;
+            for (auto& entry : m_entries)
+            {
+                if (entry.pid != pid)
+                    continue;
+
+                // Holding a SYNCHRONIZE handle prevents PID reuse from making a
+                // stale cache entry look valid. This zero-time wait never
+                // blocks the low-level hook.
+                if (entry.process &&
+                    entry.lifetimeCheckAvailable &&
+                    WaitForSingleObject(entry.process, 0) == WAIT_TIMEOUT)
+                {
+                    entry.lastUse = access;
+                    return &entry;
+                }
+
+                Reset(entry);
+                break;
+            }
+
+            HANDLE process = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                FALSE,
+                pid);
+            bool lifetimeCheckAvailable = process != nullptr;
+            if (!process)
+            {
+                // A protected process may permit image-name queries while
+                // denying SYNCHRONIZE. Preserve correct one-shot matching in
+                // that case; only lifetime-validated handles enter the hot
+                // cache path.
+                process = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION,
+                    FALSE,
+                    pid);
+            }
+            if (!process)
+                return nullptr;
+
+            std::wstring processName;
+            if (!QueryProcessName(process, processName))
+            {
+                CloseHandle(process);
+                return nullptr;
+            }
+
+            ProcessIdentity* slot = FindReplacementSlot();
+            Reset(*slot);
+            slot->pid = pid;
+            slot->process = process;
+            slot->lifetimeCheckAvailable = lifetimeCheckAvailable;
+            slot->lastUse = access;
+            slot->processName = std::move(processName);
+            slot->processStem = TriggerBlacklistPolicy::StemOf(slot->processName);
+            return slot;
+        }
+
+    private:
+        static bool QueryProcessName(HANDLE process, std::wstring& processName)
+        {
+            wchar_t commonPath[CommonProcessPathCapacity]{};
+            DWORD length = static_cast<DWORD>(CommonProcessPathCapacity);
+            if (QueryFullProcessImageNameW(process, 0, commonPath, &length) && length > 0)
+            {
+                processName.assign(commonPath, length);
+            }
+            else
+            {
+                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+                    return false;
+
+                // Paths above 1023 characters are exceptional. Keep the common
+                // hook path stack-only and allocate the maximum buffer only for
+                // that rare case.
+                std::vector<wchar_t> extendedPath(MaximumProcessPathCapacity);
+                length = static_cast<DWORD>(extendedPath.size());
+                if (!QueryFullProcessImageNameW(process, 0, extendedPath.data(), &length) ||
+                    length == 0)
+                {
+                    return false;
+                }
+                processName.assign(extendedPath.data(), length);
+            }
+
+            TriggerBlacklistPolicy::NormalizeProcessNameInPlace(processName);
+            return !processName.empty();
+        }
+
+        ProcessIdentity* FindReplacementSlot()
+        {
+            ProcessIdentity* replacement = &m_entries[0];
+            for (auto& entry : m_entries)
+            {
+                if (entry.pid == 0)
+                    return &entry;
+                if (entry.lastUse < replacement->lastUse)
+                    replacement = &entry;
+            }
+            return replacement;
+        }
+
+        static void Reset(ProcessIdentity& entry)
+        {
+            if (entry.process)
+                CloseHandle(entry.process);
+            entry = {};
+        }
+
+        std::array<ProcessIdentity, ProcessIdentityCacheCapacity> m_entries{};
+        uint64_t m_accessSerial = 0;
+    };
+
+    // The hook callback always runs on its dedicated message-loop thread.
+    // Thread-local storage therefore needs no lock and releases cached process
+    // handles automatically whenever that hook thread exits.
+    thread_local ProcessIdentityCache g_processIdentityCache;
 
     bool IsCtrlDown()
     {
@@ -53,106 +201,30 @@ namespace
             (GetAsyncKeyState(VK_RMENU) & 0x8000);
     }
 
-    void TrimInPlace(std::wstring& value)
-    {
-        while (!value.empty() && iswspace(value.back()))
-            value.pop_back();
-        size_t start = 0;
-        while (start < value.size() && iswspace(value[start]))
-            ++start;
-        if (start > 0)
-            value.erase(0, start);
-    }
-
-    std::wstring ToLowerCopy(std::wstring value)
-    {
-        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
-            return static_cast<wchar_t>(towlower(ch));
-        });
-        return value;
-    }
-
-    std::wstring FileNameFromPath(const std::wstring& path)
-    {
-        size_t slash = path.find_last_of(L"\\/");
-        if (slash == std::wstring::npos)
-            return path;
-        return path.substr(slash + 1);
-    }
-
-    std::wstring StripExeExtension(std::wstring value)
-    {
-        const std::wstring suffix = L".exe";
-        if (value.size() >= suffix.size() &&
-            value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0)
-        {
-            value.resize(value.size() - suffix.size());
-        }
-        return value;
-    }
-
-    std::wstring GetForegroundProcessName()
-    {
-        HWND hwnd = GetForegroundWindow();
-        if (!hwnd)
-            return L"";
-
-        DWORD pid = 0;
-        GetWindowThreadProcessId(hwnd, &pid);
-        if (pid == 0)
-            return L"";
-
-        // This function is only called from the dedicated mouse-hook thread.
-        // Reuse the image name while the foreground process stays the same.
-        static DWORD cachedPid = 0;
-        static std::wstring cachedProcessName;
-        if (pid == cachedPid)
-            return cachedProcessName;
-
-        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-        if (!process)
-            return L"";
-
-        std::vector<wchar_t> path(32768);
-        DWORD len = static_cast<DWORD>(path.size());
-        std::wstring processName;
-        if (QueryFullProcessImageNameW(process, 0, path.data(), &len) && len > 0)
-            processName = FileNameFromPath(std::wstring(path.data(), len));
-        CloseHandle(process);
-        cachedPid = pid;
-        cachedProcessName = ToLowerCopy(processName);
-        return cachedProcessName;
-    }
-
-    bool IsTriggerBlacklistedForForegroundApp()
+    bool IsTriggerBlacklistedAtPoint(POINT triggerPoint)
     {
         const auto blacklist = std::atomic_load_explicit(&g_triggerBlacklist, std::memory_order_acquire);
 
         if (!blacklist || blacklist->empty())
             return false;
 
-        std::wstring processName = GetForegroundProcessName();
-        if (processName.empty())
-            return false;
-
-        std::wstring processStem = StripExeExtension(processName);
-        for (const auto& entry : *blacklist)
+        // The low-level hook provides the screen position for this exact input
+        // event. Hit-test that point instead of consulting the foreground
+        // window: focus can remain in one application while the pointer is
+        // already over another.
+        HWND windowAtPoint = WindowFromPoint(triggerPoint);
+        const ProcessIdentity* identity = g_processIdentityCache.Resolve(windowAtPoint);
+        if (!identity)
         {
-            std::wstring item = ToLowerCopy(FileNameFromPath(entry));
-            TrimInPlace(item);
-            if (item.empty())
-                continue;
-
-            std::wstring itemStem = StripExeExtension(item);
-            if (item == processName ||
-                itemStem == processStem ||
-                processName.find(item) != std::wstring::npos ||
-                processStem.find(itemStem) != std::wstring::npos)
-            {
-                return true;
-            }
+            // A window can disappear between hit testing and PID lookup.
+            // Retry only when the hit result actually changed, keeping the
+            // normal path to one WindowFromPoint call.
+            HWND retryWindow = WindowFromPoint(triggerPoint);
+            if (retryWindow && retryWindow != windowAtPoint)
+                identity = g_processIdentityCache.Resolve(retryWindow);
         }
-        return false;
+        return identity &&
+            blacklist->MatchesNormalized(identity->processName, identity->processStem);
     }
 
     void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
@@ -215,31 +287,10 @@ bool MouseHook::AcknowledgePopupRequest(ULONG_PTR requestGeneration)
 
 void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
 {
-    std::vector<std::wstring> normalized;
-    normalized.reserve(processNames.size());
-    for (auto item : processNames)
-    {
-        item = ToLowerCopy(FileNameFromPath(item));
-        TrimInPlace(item);
-        if (item.empty())
-            continue;
-
-        bool exists = false;
-        for (const auto& existing : normalized)
-        {
-            if (existing == item || StripExeExtension(existing) == StripExeExtension(item))
-            {
-                exists = true;
-                break;
-            }
-        }
-        if (!exists)
-            normalized.push_back(std::move(item));
-    }
-
     std::atomic_store_explicit(
         &g_triggerBlacklist,
-        std::make_shared<const std::vector<std::wstring>>(std::move(normalized)),
+        std::make_shared<const TriggerBlacklistPolicy::Matcher>(
+            TriggerBlacklistPolicy::Matcher::Compile(processNames)),
         std::memory_order_release);
 }
 
@@ -424,9 +475,9 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
 
         if (activated)
         {
-            if (IsTriggerBlacklistedForForegroundApp())
+            if (IsTriggerBlacklistedAtPoint(pMsh->pt))
             {
-                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger passed through because foreground process is blacklisted");
+                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger passed through because the process under the pointer is blacklisted");
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 

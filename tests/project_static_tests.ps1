@@ -139,6 +139,7 @@ $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
 $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
 $keyboardHookSource = Read-RepoFile "WinLauncher\KeyboardHook.cpp"
 $mouseHookSource = Read-RepoFile "WinLauncher\MouseHook.cpp"
+$triggerBlacklistPolicy = Read-RepoFile "WinLauncher\TriggerBlacklistPolicy.h"
 $macroServiceSource = Read-RepoFile "WinLauncher\Services\MacroService.cpp"
 $macroEditFormSource = Read-RepoFile "WinLauncher\Config\MacroEditForm.cpp"
 $batchLaunchSource = Read-RepoFile "WinLauncher\Services\BatchLaunchService.cpp"
@@ -601,6 +602,24 @@ Add-TestResult `
         $applicationSource -match 'PopupWindow::Hide\(\)'
     ) `
     -Detail "Paused triggers must preserve a consumed down/up pair, reject stale popup requests, and close the visible popup"
+
+Add-TestResult `
+    -Name "Trigger blacklist follows the window under the pointer" `
+    -Passed (
+        $mouseHookSource -match 'IsTriggerBlacklistedAtPoint\s*\(\s*POINT\s+triggerPoint\s*\)' -and
+        $mouseHookSource -match 'WindowFromPoint\s*\(\s*triggerPoint\s*\)' -and
+        $mouseHookSource -match 'IsTriggerBlacklistedAtPoint\s*\(\s*pMsh->pt\s*\)' -and
+        $mouseHookSource -notmatch 'GetForegroundProcessName' -and
+        $mouseHookSource -match 'thread_local\s+ProcessIdentityCache' -and
+        $mouseHookSource -match 'WaitForSingleObject\s*\(\s*entry\.process,\s*0\s*\)' -and
+        $mouseHookSource -match 'PROCESS_QUERY_LIMITED_INFORMATION\s*\|\s*SYNCHRONIZE' -and
+        $mouseHookSource -match 'lifetimeCheckAvailable' -and
+        $mouseHookSource -match 'CommonProcessPathCapacity\s*=\s*1024' -and
+        $mouseHookSource -match 'MatchesNormalized' -and
+        $triggerBlacklistPolicy -match 'class\s+Matcher' -and
+        $triggerBlacklistPolicy -match 'static\s+Matcher\s+Compile'
+    ) `
+    -Detail "Trigger blacklist decisions must use the exact hook-event position with precompiled rules and a non-blocking PID-safe process cache"
 
 Add-TestResult `
     -Name "Macro playback interruption stays non-blocking and ignores injected input" `

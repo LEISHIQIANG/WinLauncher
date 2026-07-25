@@ -15,6 +15,7 @@
 #include "../../WinLauncher/Popup/PopupIconRefreshController.h"
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
 #include "../../WinLauncher/Popup/PinyinHelper.h"
+#include "../../WinLauncher/TriggerBlacklistPolicy.h"
 #include "../../WinLauncher/TriggerPolicy.h"
 #include "../../WinLauncher/SDK/include/WinLauncher/WinLauncherPluginABI.h"
 #include "../../WinLauncher/Services/DiagnosticService.h"
@@ -164,6 +165,25 @@ int wmain(int argc, wchar_t** argv)
             TriggerPolicy::NormalizeTriggerType(8) != 0)
         {
             return Fail(L"popup trigger preset accepted an invalid or incomplete input");
+        }
+    }
+
+    {
+        const auto blacklist = TriggerBlacklistPolicy::Matcher::Compile({
+            L" CAD ",
+            L"C:\\Program Files\\Blender Foundation\\BLENDER.EXE",
+            L"rhino",
+            L"Rhino.exe",
+            L".exe",
+            L""
+        });
+        if (blacklist.size() != 3 ||
+            !blacklist.MatchesNormalized(L"acad.exe", L"acad") ||
+            !blacklist.MatchesNormalized(L"blender.exe", L"blender") ||
+            !blacklist.MatchesNormalized(L"rhino.exe", L"rhino") ||
+            blacklist.MatchesNormalized(L"notepad.exe", L"notepad"))
+        {
+            return Fail(L"compiled trigger blacklist normalization or fuzzy matching regressed");
         }
     }
 
