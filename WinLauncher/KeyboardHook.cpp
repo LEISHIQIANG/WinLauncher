@@ -431,6 +431,14 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
+            ULONGLONG now = GetTickCount64();
+            ULONGLONG lastAltUpTime = s_lastAltUpTime.load();
+            if (s_altDown.load() && lastAltUpTime != 0 && (now - lastAltUpTime) > 1000)
+            {
+                s_altDown.store(false);
+                s_lastAltUpTime.store(0);
+            }
+
             if (isAlt && isDown && !s_altDown.load())
             {
                 s_altDown.store(true);
@@ -438,9 +446,7 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
             else if (isAlt && isUp && s_altDown.load())
             {
                 s_altDown.store(false);
-                ULONGLONG now = GetTickCount64();
                 DWORD interval = s_doubleAltMs.load();
-                ULONGLONG lastAltUpTime = s_lastAltUpTime.load();
 
                 if (lastAltUpTime != 0 && (now - lastAltUpTime) <= interval)
                 {

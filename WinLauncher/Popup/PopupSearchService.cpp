@@ -148,21 +148,37 @@ namespace PopupSearchService
         std::vector<SearchResult>& results,
         const std::wstring& queryLower)
     {
-        if (results.empty())
+        if (results.size() <= 1)
             return;
 
-        std::stable_sort(results.begin(), results.end(),
-            [&](const SearchResult& a, const SearchResult& b)
+        // Schwartzian Transform: Precalculate SortKey for each item once to avoid O(N log N) redundant calculations & string allocations.
+        using FullKeyType = std::tuple<int, int, int64_t, int64_t, int, int>;
+        struct ScoredItem
+        {
+            SearchResult item;
+            FullKeyType key;
+        };
+
+        std::vector<ScoredItem> scored;
+        scored.reserve(results.size());
+
+        for (auto& item : results)
+        {
+            PopupSearchModel::Usage usage{};
+            const auto sortKey = PopupSearchModel::SortKey(item.shortcut.name, queryLower, usage);
+            FullKeyType fullKey = std::tuple_cat(sortKey, std::make_tuple(item.originalPageIndex, item.originalShortcutIndex));
+            scored.push_back(ScoredItem{ std::move(item), std::move(fullKey) });
+        }
+
+        std::stable_sort(scored.begin(), scored.end(),
+            [](const ScoredItem& a, const ScoredItem& b)
             {
-                auto score = [&](const SearchResult& item)
-                {
-                    const auto sortKey = PopupSearchModel::SortKey(
-                        item.shortcut.name, queryLower,
-                        {});
-                    return std::tuple_cat(sortKey,
-                        std::make_tuple(item.originalPageIndex, item.originalShortcutIndex));
-                };
-                return score(a) < score(b);
+                return a.key < b.key;
             });
+
+        for (size_t i = 0; i < scored.size(); ++i)
+        {
+            results[i] = std::move(scored[i].item);
+        }
     }
 }

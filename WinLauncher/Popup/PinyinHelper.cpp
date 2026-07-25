@@ -117,7 +117,7 @@ namespace
                 { 0x7801, L"m", L"ma" }, { 0x78A7, L"b", L"bi" }, { 0x793A, L"s", L"shi" },
                 { 0x793E, L"s", L"she" }, { 0x795E, L"s", L"shen" }, { 0x79FB, L"y", L"yi" },
                 { 0x7A0B, L"c", L"cheng" }, { 0x7A7A, L"k", L"kong" }, { 0x7ABF, L"g", L"gao" },
-                { 0x7B97, L"j", L"jisuanqi" }, { 0x7BA1, L"g", L"guan" }, { 0x7CFB, L"x", L"xi" },
+                { 0x7B97, L"s", L"suan" }, { 0x7BA1, L"g", L"guan" }, { 0x7CFB, L"x", L"xi" },
                 { 0x7D22, L"s", L"suo" }, { 0x7D2B, L"z", L"zi" }, { 0x7EA7, L"j", L"ji" },
                 { 0x7EBF, L"x", L"xian" }, { 0x7EC4, L"z", L"zu" }, { 0x7ED3, L"j", L"jie" },
                 { 0x7EDF, L"t", L"tong" }, { 0x7EEA, L"x", L"xu" }, { 0x7F16, L"b", L"bian" },

@@ -864,7 +864,9 @@ bool PluginManager::ExecuteCommand(const std::wstring& pluginId, const std::wstr
         return false;
     }
 
-    message = buffer.data();
+    buffer.back() = L'\0';
+    size_t validLen = wcsnlen_s(buffer.data(), buffer.size());
+    message.assign(buffer.data(), validLen);
     if (!ok)
     {
         RecordError(pluginId, L"execute", message.empty() ? L"插件命令执行失败" : message);

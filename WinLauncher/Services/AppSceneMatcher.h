@@ -106,14 +106,16 @@ namespace AppScene
 
     inline std::wstring GetWindowTextValue(HWND hwnd)
     {
-        int len = GetWindowTextLengthW(hwnd);
-        if (len <= 0)
+        if (!hwnd || !IsWindow(hwnd))
             return L"";
 
-        std::wstring text((size_t)len + 1, L'\0');
-        GetWindowTextW(hwnd, text.data(), len + 1);
-        text.resize((size_t)len);
-        return text;
+        wchar_t buffer[512]{};
+        DWORD_PTR result = 0;
+        if (SendMessageTimeoutW(hwnd, WM_GETTEXT, static_cast<WPARAM>(sizeof(buffer) / sizeof(buffer[0])), reinterpret_cast<LPARAM>(buffer), SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &result) && result > 0)
+        {
+            return std::wstring(buffer, (std::min)(static_cast<size_t>(result), sizeof(buffer) / sizeof(buffer[0]) - 1));
+        }
+        return L"";
     }
 
     inline std::wstring QueryProcessImagePath(DWORD pid)

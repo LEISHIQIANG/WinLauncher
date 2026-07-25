@@ -875,6 +875,15 @@ void MacroPlayer::MicroSleep(uint64_t microseconds)
     {
         if (!s_playing.load() || s_interruptRequested.load()) return;
         QueryPerformanceCounter(&pc);
+        int64_t remainingTicks = targetTick - pc.QuadPart;
+        if (remainingTicks > (int64_t)(500 * ticksPerMicro))
+        {
+            Sleep(0);
+        }
+        else if (remainingTicks > (int64_t)(50 * ticksPerMicro))
+        {
+            YieldProcessor();
+        }
     } while (pc.QuadPart < targetTick);
 }
 
@@ -909,6 +918,9 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
     int screenX = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int screenY = GetSystemMetrics(SM_YVIRTUALSCREEN);
 
+    long denomW = (screenW > 1) ? (screenW - 1) : 1;
+    long denomH = (screenH > 1) ? (screenH - 1) : 1;
+
     // Arm input interruption only after the click that launched the macro has
     // been released.  This keeps immediate playback responsive without
     // cancelling itself on the opening click's WM_*BUTTONUP.
@@ -922,13 +934,21 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
             Sleep(2);
     }
 
+    const uint64_t playbackStartUs = GetCurrentTimeUs();
+    uint64_t cumulativeRecordedUs = 0;
+
     std::vector<INPUT> releaseInputs;
     for (const auto& ev : params->events)
     {
         if (!s_playing.load() || s_interruptRequested.load()) break;
 
-        uint64_t scaledDelay = (uint64_t)(ev.delayUs / speedMultiplier);
-        MicroSleep(scaledDelay);
+        cumulativeRecordedUs += ev.delayUs;
+        uint64_t targetUs = playbackStartUs + (uint64_t)(cumulativeRecordedUs / speedMultiplier);
+        uint64_t nowUs = GetCurrentTimeUs();
+        if (targetUs > nowUs)
+        {
+            MicroSleep(targetUs - nowUs);
+        }
 
         if (!s_playing.load() || s_interruptRequested.load()) break;
 
@@ -953,8 +973,8 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
         else if (ev.type == 1 || ev.type == 2 || ev.type == 3 || ev.type == 4) // mouse events
         {
             input.type = INPUT_MOUSE;
-            input.mi.dx = (long)((ev.x - screenX) * 65535LL / (screenW > 0 ? screenW : 1));
-            input.mi.dy = (long)((ev.y - screenY) * 65535LL / (screenH > 0 ? screenH : 1));
+            input.mi.dx = (long)(((ev.x - screenX) * 65535LL + denomW / 2) / denomW);
+            input.mi.dy = (long)(((ev.y - screenY) * 65535LL + denomH / 2) / denomH);
             input.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESKTOP;
 
             if (ev.type == 1) // mouse_move

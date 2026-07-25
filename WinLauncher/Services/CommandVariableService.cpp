@@ -262,11 +262,15 @@ namespace Services
             if (specLower == L"input" || specLower.rfind(L"input:", 0) == 0)
             {
                 std::wstring baseKey = spec;
-                if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
+                std::wstring baseKeyLower = specLower;
+                if (baseKeyLower.size() >= 2 && baseKeyLower.substr(baseKeyLower.size() - 2) == L":q")
+                {
                     baseKey = baseKey.substr(0, baseKey.size() - 2);
+                    baseKeyLower = baseKeyLower.substr(0, baseKeyLower.size() - 2);
+                }
 
                 std::wstring promptText = L"";
-                if (baseKey.size() > 6 && baseKey.substr(0, 6) == L"input:")
+                if (baseKeyLower.size() > 6 && baseKeyLower.substr(0, 6) == L"input:")
                     promptText = baseKey.substr(6);
 
                 while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());
@@ -285,11 +289,15 @@ namespace Services
             else if (specLower == L"password" || specLower.rfind(L"password:", 0) == 0)
             {
                 std::wstring baseKey = spec;
-                if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
+                std::wstring baseKeyLower = specLower;
+                if (baseKeyLower.size() >= 2 && baseKeyLower.substr(baseKeyLower.size() - 2) == L":q")
+                {
                     baseKey = baseKey.substr(0, baseKey.size() - 2);
+                    baseKeyLower = baseKeyLower.substr(0, baseKeyLower.size() - 2);
+                }
 
                 std::wstring promptText = L"";
-                if (baseKey.size() > 9 && baseKey.substr(0, 9) == L"password:")
+                if (baseKeyLower.size() > 9 && baseKeyLower.substr(0, 9) == L"password:")
                     promptText = baseKey.substr(9);
 
                 while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());
@@ -328,11 +336,15 @@ namespace Services
             else if (specLower == L"confirm" || specLower.rfind(L"confirm:", 0) == 0)
             {
                 std::wstring baseKey = spec;
-                if (baseKey.size() >= 2 && baseKey.substr(baseKey.size() - 2) == L":q")
+                std::wstring baseKeyLower = specLower;
+                if (baseKeyLower.size() >= 2 && baseKeyLower.substr(baseKeyLower.size() - 2) == L":q")
+                {
                     baseKey = baseKey.substr(0, baseKey.size() - 2);
+                    baseKeyLower = baseKeyLower.substr(0, baseKeyLower.size() - 2);
+                }
 
                 std::wstring promptText = L"";
-                if (baseKey.size() > 8 && baseKey.substr(0, 8) == L"confirm:")
+                if (baseKeyLower.size() > 8 && baseKeyLower.substr(0, 8) == L"confirm:")
                     promptText = baseKey.substr(8);
 
                 while (!promptText.empty() && promptText.front() == L' ') promptText.erase(promptText.begin());

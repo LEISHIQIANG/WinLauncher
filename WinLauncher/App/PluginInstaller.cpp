@@ -408,14 +408,16 @@ bool PluginInstaller::RemoveDirectoryTree(const std::wstring& path, std::wstring
 
 std::wstring PluginInstaller::UniqueCachePath(const std::wstring& prefix)
 {
+    static std::atomic<uint32_t> s_sequence{ 0 };
     std::wstring cacheDir = ConfigPath::PrepareUserPluginCacheDirectory();
     SYSTEMTIME st{};
     GetLocalTime(&st);
     wchar_t buf[128]{};
-    swprintf_s(buf, L"%s_%04u%02u%02u_%02u%02u%02u_%lu",
+    swprintf_s(buf, L"%s_%04u%02u%02u_%02u%02u%02u_%03u_%lu_%u",
         prefix.c_str(),
         st.wYear, st.wMonth, st.wDay,
-        st.wHour, st.wMinute, st.wSecond,
-        GetCurrentProcessId());
+        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+        GetCurrentProcessId(),
+        s_sequence.fetch_add(1));
     return JoinPath(cacheDir, buf);
 }
