@@ -120,5 +120,7 @@ private:
     static std::atomic<HWND>   s_hDoubleAltWnd;    // target window (nullptr = disabled)
     static std::atomic<DWORD>  s_doubleAltMs;      // max interval in ms
     static std::atomic<ULONGLONG> s_lastAltUpTime; // tick of last Alt key-up
+    static std::atomic<ULONGLONG> s_altDownTime;   // tick of current Alt key-down
+    static std::atomic<ULONGLONG> s_lastDoubleAltTriggerTime;
     static std::atomic<bool>   s_altDown;          // is Alt currently pressed
 };

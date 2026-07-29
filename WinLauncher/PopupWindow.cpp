@@ -191,6 +191,26 @@ static bool IsSameSceneApp(const AppScene::AppIdentity& left, const AppScene::Ap
            _wcsicmp(left.exeName.c_str(), right.exeName.c_str()) == 0;
 }
 
+static std::wstring PopupIconCacheKey(const RendShortcutInfo& shortcut)
+{
+    constexpr wchar_t Separator = L'\x1f';
+    std::wstring key;
+    key.reserve(shortcut.id.size() + shortcut.targetPath.size() +
+        shortcut.iconPath.size() + shortcut.builtinIconId.size() + 32);
+    key.append(shortcut.id);
+    key.push_back(Separator);
+    key.append(shortcut.targetPath);
+    key.push_back(Separator);
+    key.append(shortcut.iconPath);
+    key.push_back(Separator);
+    key.append(shortcut.builtinIconId);
+    key.push_back(Separator);
+    key.append(std::to_wstring(static_cast<int>(shortcut.type)));
+    key.push_back(Separator);
+    key.append(std::to_wstring(static_cast<int>(shortcut.iconSource)));
+    return key;
+}
+
 static double GetTimeInSeconds()
 {
     static double freq = 0.0;
@@ -519,6 +539,61 @@ PopupWindow::~PopupWindow()
             m_appCtx->eventBus->Unsubscribe(EventType::UiScaleChanged, m_uiScaleChangedToken);
     }
     ClearPages();
+    ClearLoadedIconCache();
+}
+
+void PopupWindow::PreserveLoadedIcons()
+{
+    for (const auto& page : m_pages)
+        for (const auto& shortcut : page.shortcuts)
+            RememberLoadedIcon(shortcut);
+    for (const auto& shortcut : m_dockPage.shortcuts)
+        RememberLoadedIcon(shortcut);
+}
+
+HICON PopupWindow::CopyCachedIcon(const RendShortcutInfo& shortcut) const
+{
+    const auto found = m_loadedIconCache.find(PopupIconCacheKey(shortcut));
+    return found != m_loadedIconCache.end() && found->second
+        ? CopyIcon(found->second)
+        : nullptr;
+}
+
+void PopupWindow::RememberLoadedIcon(const RendShortcutInfo& shortcut)
+{
+    if (!shortcut.hIcon)
+        return;
+
+    HICON copy = CopyIcon(shortcut.hIcon);
+    if (!copy)
+        return;
+
+    const std::wstring key = PopupIconCacheKey(shortcut);
+    auto found = m_loadedIconCache.find(key);
+    if (found != m_loadedIconCache.end())
+    {
+        if (found->second)
+            DestroyIcon(found->second);
+        found->second = copy;
+        return;
+    }
+
+    constexpr size_t MaximumRememberedIcons = 512;
+    if (m_loadedIconCache.size() >= MaximumRememberedIcons)
+    {
+        auto oldest = m_loadedIconCache.begin();
+        if (oldest->second)
+            DestroyIcon(oldest->second);
+        m_loadedIconCache.erase(oldest);
+    }
+    m_loadedIconCache.emplace(key, copy);
+}
+
+void PopupWindow::ClearLoadedIconCache()
+{
+    for (auto& entry : m_loadedIconCache)
+        if (entry.second) DestroyIcon(entry.second);
+    m_loadedIconCache.clear();
 }
 
 void PopupWindow::ClearPages()
@@ -553,6 +628,16 @@ void PopupWindow::OnConfigChanged()
     {
         m_viewModel->ReloadPages();
     }
+
+    // A slow Shell target may still keep one preload worker busy when a scene
+    // change rebuilds the render pages. Harvest every result already produced
+    // by the other workers before cancelling that generation.
+    ApplyRefreshedIcons(false);
+
+    // Preserve real device-independent icons before scene/config filtering
+    // destroys the current render pages. A foreground-app scene switch must
+    // never regress an unchanged shortcut to generated text artwork.
+    PreserveLoadedIcons();
 
     // Rebuild legacy render data
     ClearPages();
@@ -591,7 +676,9 @@ void PopupWindow::OnConfigChanged()
                 si.builtinIconId = vs.builtinIconId;
                 si.iconInvertLight = vs.iconInvertLight;
                 si.iconInvertDark = vs.iconInvertDark;
-                si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
+                si.hIcon = CopyCachedIcon(si);
+                if (!si.hIcon)
+                    si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
                 pp.shortcuts.push_back(std::move(si));
             }
             m_pages.push_back(std::move(pp));
@@ -620,7 +707,9 @@ void PopupWindow::OnConfigChanged()
             si.builtinIconId = vs.builtinIconId;
             si.iconInvertLight = vs.iconInvertLight;
             si.iconInvertDark = vs.iconInvertDark;
-            si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
+            si.hIcon = CopyCachedIcon(si);
+            if (!si.hIcon)
+                si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
             m_dockPage.shortcuts.push_back(std::move(si));
         }
 
@@ -904,8 +993,8 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             m_iconRefresh.WaitForCompletion(state, 0))
         {
             ApplyRefreshedIcons();
+            m_iconFallbackGeneration = 0;
         }
-        m_iconFallbackGeneration = 0;
     }
 
     // A cold trigger is retained until the initial Shell icon batch finishes,
@@ -914,13 +1003,13 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     if (!IsWindowVisible(GetHWND()) && m_iconRefresh.IsRefreshing())
     {
         auto state = m_iconRefresh.Current();
-        if (state && m_iconFallbackGeneration != state->generation &&
-            !m_iconRefresh.WaitForCompletion(state, 0))
+        const bool iconsReady = state && m_iconRefresh.WaitForCompletion(state, 0);
+        if (state && !iconsReady && m_iconFallbackGeneration != state->generation)
         {
             QueueShowUntilIconsReady(parent, clickPt, state);
             return;
         }
-        if (state && m_iconRefresh.IsCurrent(state))
+        if (state && iconsReady && m_iconRefresh.IsCurrent(state))
         {
             const double iconReadyStart = GetTimeInSeconds();
             ApplyRefreshedIcons();
@@ -1184,7 +1273,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         if (this->m_viewModel)
             this->m_viewModel->NotifyPopupShown();
 
-        if (needsShow || sceneAppChanged)
+        if ((needsShow || sceneAppChanged) && !this->m_iconRefresh.IsRefreshing())
         {
             this->RefreshIcons(false);
         }
@@ -1967,6 +2056,8 @@ void PopupWindow::EnsureIcons()
 void PopupWindow::RefreshIcons(bool clearExisting)
 {
     if (!m_appCtx || !m_appCtx->backgroundTasks) return;
+    if (clearExisting)
+        m_applyIconRefreshWhileVisible = true;
     auto state = m_iconRefresh.Begin();
     if (!state) return;
     HWND hwnd = GetHWND();
@@ -2033,15 +2124,58 @@ void PopupWindow::RefreshIcons(bool clearExisting)
     if (jobs.empty())
     {
         m_iconRefresh.Complete();
+        m_applyIconRefreshWhileVisible = false;
         return;
     }
 
-    m_iconRefreshTask = m_appCtx->backgroundTasks->Submit(L"popup.icon_refresh", BackgroundTaskService::Priority::Normal,
-        [state, hwnd, dispatcher, jobs = std::move(jobs)](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) mutable {
+    // Automatic icon preparation starts with the application and should run
+    // ahead of ordinary background work so the first popup can reuse it.
+    // Explicit visible refreshes remain normal-priority user maintenance.
+    const auto refreshPriority = clearExisting
+        ? BackgroundTaskService::Priority::Normal
+        : BackgroundTaskService::Priority::High;
+    constexpr size_t MaximumIconWorkers = 4;
+    const size_t workerCount = (std::min)(MaximumIconWorkers, jobs.size());
+    auto sharedJobs = std::make_shared<
+        std::vector<std::tuple<bool, size_t, size_t, RendShortcutInfo>>>(std::move(jobs));
+    auto nextJob = std::make_shared<std::atomic_size_t>(0);
+
+    state->pendingWorkers.store(workerCount);
+    m_iconRefreshTasks.clear();
+    m_iconRefreshTasks.reserve(workerCount);
+    auto finishWorker = [state, hwnd, dispatcher]() {
+        if (state->pendingWorkers.fetch_sub(1) != 1)
+            return;
+        if (state->cancelled)
+            return;
+        SetEvent(state->completionEvent);
+        // A first trigger can arrive before a popup HWND exists. Route
+        // completion through the app UI dispatcher so it can safely resume
+        // that trigger after all available real icons are ready.
+        if (dispatcher && dispatcher->Post(L"popup.icon_preload_complete", [state]() {
+            PopupWindow::OnAnyIconPreloadCompleted(state);
+        }))
+        {
+            return;
+        }
+        if (IsWindow(hwnd))
+            PostMessageW(hwnd, WM_USER_REFRESH_ICONS, 0, 0);
+    };
+
+    for (size_t workerIndex = 0; workerIndex < workerCount; ++workerIndex)
+    {
+        auto handle = m_appCtx->backgroundTasks->Submit(
+            L"popup.icon_refresh." + std::to_wstring(workerIndex),
+            refreshPriority,
+            [state, sharedJobs, nextJob, finishWorker](
+                const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) mutable {
             const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            for (auto& job : jobs)
+            while (!state->cancelled && !cancellation->IsCancellationRequested())
             {
-                if (state->cancelled || cancellation->IsCancellationRequested()) break;
+                const size_t jobIndex = nextJob->fetch_add(1);
+                if (jobIndex >= sharedJobs->size())
+                    break;
+                auto& job = (*sharedJobs)[jobIndex];
                 auto& shortcut = std::get<3>(job);
                 HICON icon = ShortcutManager::GetShortcutIcon(shortcut);
                 if (state->cancelled || cancellation->IsCancellationRequested())
@@ -2053,26 +2187,17 @@ void PopupWindow::RefreshIcons(bool clearExisting)
                 state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon });
             }
             if (SUCCEEDED(comResult)) CoUninitialize();
-            if (!state->cancelled && !cancellation->IsCancellationRequested())
-            {
-                SetEvent(state->completionEvent);
-                // A first trigger can arrive before a popup HWND exists. Route
-                // completion through the app UI dispatcher so it can safely
-                // resume that trigger after all real icons are available.
-                if (dispatcher && dispatcher->Post(L"popup.icon_preload_complete", [state]() {
-                    PopupWindow::OnAnyIconPreloadCompleted(state);
-                }))
-                {
-                    return;
-                }
-                if (IsWindow(hwnd))
-                    PostMessageW(hwnd, WM_USER_REFRESH_ICONS, 0, 0);
-            }
+            finishWorker();
         });
-    if (!m_iconRefreshTask)
-    {
-        m_iconRefresh.Cancel();
-        LOG_G_WORNING(L"PopupWindow perf: icon refresh was not queued");
+        if (handle)
+        {
+            m_iconRefreshTasks.push_back(handle);
+        }
+        else
+        {
+            finishWorker();
+            LOG_G_WORNING(L"PopupWindow perf: icon refresh worker was not queued");
+        }
     }
 }
 
@@ -2114,11 +2239,14 @@ void PopupWindow::OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshC
 
     m_iconPreloadTimeoutTask.Cancel();
     m_iconPreloadTimeoutTask = {};
-    if (m_iconFallbackGeneration == state->generation && IsWindowVisible(GetHWND()))
+    if (IsWindowVisible(GetHWND()) && !m_applyIconRefreshWhileVisible)
     {
-        // Keep the timeout fallback visually fixed. Results remain in State
-        // and are consumed on the next hidden-to-visible transition.
+        // Freeze the icon snapshot for the whole visible session. Whether the
+        // batch merely ran slowly or completed just after reveal, retain its
+        // results and apply them atomically before the next open.
+        m_iconFallbackGeneration = state->generation;
         m_iconRefresh.Complete();
+        m_applyIconRefreshWhileVisible = false;
         return;
     }
 
@@ -2158,6 +2286,10 @@ void PopupWindow::OnIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshCo
         return;
     }
 
+    // Consume every icon that finished within the bounded wait. The remaining
+    // workers continue in the background, so one sleeping drive or stale Shell
+    // target cannot force the whole first popup to use generated text icons.
+    ApplyRefreshedIcons(false);
     m_iconFallbackGeneration = state->generation;
     const HWND parent = m_pendingShowParent;
     const POINT pt = m_pendingShowPoint;
@@ -2202,22 +2334,35 @@ void PopupWindow::CancelIconRefresh(bool preserveCompletedFallback)
     m_iconPreloadTimeoutTask = {};
     auto state = m_iconRefresh.Current();
     if (preserveCompletedFallback && m_iconFallbackGeneration != 0 && state &&
-        state->generation == m_iconFallbackGeneration && m_iconRefresh.WaitForCompletion(state, 0))
+        state->generation == m_iconFallbackGeneration)
     {
-        m_iconRefreshTask = {};
-        m_iconRefresh.Complete();
+        // Closing a popup that used the bounded fallback must not cancel the
+        // startup preload. Let the one existing Shell batch finish in the
+        // background; its UI callback applies the complete icon set while
+        // hidden, or the next ShowAt consumes it atomically.
+        if (m_iconRefresh.WaitForCompletion(state, 0))
+        {
+            m_iconRefreshTasks.clear();
+            m_iconRefresh.Complete();
+        }
+        m_hasPendingShow = false;
+        m_pendingShowParent = nullptr;
+        m_pendingShowIconGeneration = 0;
+        m_applyIconRefreshWhileVisible = false;
         return;
     }
-    m_iconRefreshTask.Cancel();
-    m_iconRefreshTask = {};
+    for (const auto& task : m_iconRefreshTasks)
+        task.Cancel();
+    m_iconRefreshTasks.clear();
     m_iconRefresh.Cancel();
     m_iconFallbackGeneration = 0;
     m_hasPendingShow = false;
     m_pendingShowParent = nullptr;
     m_pendingShowIconGeneration = 0;
+    m_applyIconRefreshWhileVisible = false;
 }
 
-void PopupWindow::ApplyRefreshedIcons()
+void PopupWindow::ApplyRefreshedIcons(bool refreshCompleted)
 {
     auto state = m_iconRefresh.Current();
     if (!m_iconRefresh.IsCurrent(state)) return;
@@ -2231,6 +2376,7 @@ void PopupWindow::ApplyRefreshedIcons()
         auto& shortcut = page->shortcuts[result.shortcutIndex];
         if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
         shortcut.hIcon = result.icon;
+        RememberLoadedIcon(shortcut);
         if (result.shortcutIndex < page->iconBitmaps.size() && page->iconBitmaps[result.shortcutIndex])
         {
             page->iconBitmaps[result.shortcutIndex]->Release();
@@ -2239,16 +2385,26 @@ void PopupWindow::ApplyRefreshedIcons()
         ++applied;
     }
     m_bmpBrushCache.clear();
-    m_iconRefresh.Complete();
-    m_iconRefreshTask = {};
-    EnsureIcons();
-    InvalidateRect(GetHWND(), nullptr, FALSE);
+    if (refreshCompleted)
+    {
+        m_iconRefresh.Complete();
+        m_applyIconRefreshWhileVisible = false;
+        m_iconRefreshTasks.clear();
+    }
+    if (GetHWND())
+    {
+        EnsureIcons();
+        InvalidateRect(GetHWND(), nullptr, FALSE);
+    }
     LOG_G_DEBUG(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
                applied, results.size(), (GetTimeInSeconds() - started) * 1000.0,
                static_cast<unsigned long long>(m_iconRefresh.Generation()));
-    if (m_iconRefresh.TakePending())
+    if (refreshCompleted && m_iconRefresh.TakePending())
     {
-        RefreshIcons();
+        // Coalesced automatic/config requests must only fill missing entries.
+        // Restarting as an explicit refresh would clear icons that were just
+        // applied and visibly regress the next popup to text placeholders.
+        RefreshIcons(false);
     }
 }
 
@@ -2965,7 +3121,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_USER_REFRESH_ICONS:
     {
         if (!m_iconRefresh.IsRefreshing()) return 0;
-        ApplyRefreshedIcons();
+        OnIconPreloadCompleted(m_iconRefresh.Current());
         return 0;
     }
 

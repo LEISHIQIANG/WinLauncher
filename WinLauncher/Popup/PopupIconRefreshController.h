@@ -25,6 +25,7 @@ public:
         std::mutex mutex;
         std::vector<Result> results;
         std::atomic_bool cancelled{ false };
+        std::atomic_size_t pendingWorkers{ 0 };
         uint64_t generation = 0;
         HANDLE completionEvent = nullptr;
     };

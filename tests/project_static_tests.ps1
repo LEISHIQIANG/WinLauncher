@@ -385,8 +385,8 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup icon refresh leaves Shell extraction off the UI message path" `
     -Passed (
-        $popupWindowHeader -match 'BackgroundTaskService::TaskHandle\s+m_iconRefreshTask' -and
-        $popupSource -match 'Submit\(L"popup\.icon_refresh"' -and
+        $popupWindowHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_iconRefreshTasks' -and
+        $popupSource -match 'Submit\(\s*L"popup\.icon_refresh\.' -and
         $popupSource -match 'void\s+PopupWindow::CancelIconRefresh\s*\(' -and
         $popupSource -match 'void\s+PopupWindow::ApplyRefreshedIcons\s*\(' -and
         $popupSource -notmatch 'case\s+WM_USER_REFRESH_ICONS:[\s\S]{0,1800}ShortcutManager::RefreshShortcutIcon'
@@ -709,6 +709,49 @@ Add-TestResult `
         $applicationSource -notmatch 'PostMessageW\(hWnd, AppMessages::RestartHook'
     ) `
     -Detail "A recovered UI stall is diagnostic evidence, not proof that mouse or keyboard hooks failed"
+
+Add-TestResult `
+    -Name "Input hooks recover after power and session resume" `
+    -Passed (
+        $applicationSource -match 'WTSRegisterSessionNotification' -and
+        $applicationSource -match 'case WM_POWERBROADCAST:' -and
+        $applicationSource -match 'case WM_WTSSESSION_CHANGE:' -and
+        $applicationSource -match 'ScheduleHookRecovery\(L"power_resume"\)' -and
+        $applicationSource -match 'ScheduleHookRecovery\(L"session_resume"\)' -and
+        $applicationSource -match 'RestartHook\(false\)'
+    ) `
+    -Detail "Sleep, unlock, and desktop reconnection must coalesce a delayed mouse and keyboard hook reinstall"
+
+Add-TestResult `
+    -Name "Double-Alt recovers a first lost KeyUp and avoids rapid retoggles" `
+    -Passed (
+        $keyboardHookSource -match 's_altDownTime' -and
+        $keyboardHookSource -match 'AltDownRecoveryTimeoutMs' -and
+        $keyboardHookSource -match 's_lastDoubleAltTriggerTime' -and
+        $keyboardHookSource -match 'DoubleAltTriggerCooldownMs' -and
+        $keyboardHookSource -notmatch 'InputFocusGuard::IsTextInputContextActive'
+    ) `
+    -Detail "Double-Alt must self-heal from a missing first release, work over text controls, and debounce repeated toggles"
+
+Add-TestResult `
+    -Name "Popup icon timeout falls back once without visible refresh churn" `
+    -Passed (
+        $popupSource -match 'const bool iconsReady = state && m_iconRefresh.WaitForCompletion\(state, 0\)' -and
+        $popupSource -match '!iconsReady && m_iconFallbackGeneration != state->generation' -and
+        $popupSource -match 'iconsReady && m_iconRefresh.IsCurrent\(state\)' -and
+        $popupSource -match '\(needsShow \|\| sceneAppChanged\) && !this->m_iconRefresh.IsRefreshing\(\)' -and
+        $popupSource -match 'IsWindowVisible\(GetHWND\(\)\) && !m_applyIconRefreshWhileVisible' -and
+        $popupSource -match 'OnIconPreloadCompleted\(m_iconRefresh.Current\(\)\)' -and
+        $popupSource -match 'BackgroundTaskService::Priority::High' -and
+        $popupSource -match 'PreserveLoadedIcons\(\)' -and
+        $popupSource -match 'CopyCachedIcon\(si\)' -and
+        $popupSource -match 'ApplyRefreshedIcons\(false\)' -and
+        $popupSource -match 'MaximumIconWorkers = 4' -and
+        $popupSource -match 'TakePending\(\)[\s\S]{0,400}RefreshIcons\(false\)' -and
+        $popupSource -match 'preserveCompletedFallback && m_iconFallbackGeneration != 0 && state' -and
+        $popupSource -match 'Closing a popup that used the bounded fallback must not cancel'
+    ) `
+    -Detail "Startup icon preparation must survive popup closes, show one stable fallback at most, and be reused instead of restarting"
 
 Add-TestResult `
     -Name "External popup shortcuts use immediate launch dispatch" `

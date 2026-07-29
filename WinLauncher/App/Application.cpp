@@ -26,14 +26,17 @@
 #include <CommCtrl.h>
 #include <ole2.h>
 #include <shellapi.h>
+#include <wtsapi32.h>
 #include <timeapi.h>
 #include <chrono>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "Wtsapi32.lib")
 
 static UINT g_uShellRestart = 0;
 static constexpr UINT_PTR UI_HEARTBEAT_TIMER_ID = 0xA11;
+static constexpr UINT_PTR HOOK_RECOVERY_TIMER_ID = 0xA12;
 
 Application::Application(HINSTANCE hInstance)
     : m_hInstance(hInstance)
@@ -93,6 +96,14 @@ int Application::Run()
         LOG_ERROR(m_appCtx->logger, L"Application::Run: CreateMainWindow failed! GetLastError()=%d", GetLastError());
         return 1;
     }
+    m_sessionNotificationsRegistered =
+        WTSRegisterSessionNotification(m_hMainWnd, NOTIFY_FOR_THIS_SESSION) != FALSE;
+    if (!m_sessionNotificationsRegistered)
+    {
+        LOG_WORNING(m_appCtx->logger,
+            L"Application::Run: session notifications unavailable, error=%lu",
+            GetLastError());
+    }
     m_appCtx->uiDispatcher->Bind(m_hMainWnd);
 
     if (!InitializeServices())
@@ -147,7 +158,7 @@ int Application::Run()
     // keyboard trigger state behind.
     if (KeyboardHook::Install())
     {
-        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, GetDoubleClickTime());
     }
     else
     {
@@ -384,6 +395,7 @@ void Application::Shutdown()
 {
     if (!m_appCtx && !m_timerResolutionRaised && !m_comInitialized)
         return;
+    m_shutdownStarted = true;
 
     if (m_appCtx)
     {
@@ -394,6 +406,12 @@ void Application::Shutdown()
     if (m_uiHeartbeat) m_uiHeartbeat->stopping = true;
     m_uiWatchdogTask.Cancel();
     if (m_hMainWnd) KillTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID);
+    if (m_hMainWnd) KillTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID);
+    if (m_sessionNotificationsRegistered && m_hMainWnd)
+    {
+        WTSUnRegisterSessionNotification(m_hMainWnd);
+        m_sessionNotificationsRegistered = false;
+    }
 
     // Batch workers synchronously request shortcut launches from the main window.
     // Stop them before starting UI teardown so they cannot target a closing window.
@@ -593,7 +611,7 @@ void Application::TogglePopupPause()
     LOG_INFO(m_appCtx->logger, L"Application::TogglePopupPause: paused=%d", (int)m_popupPaused);
 }
 
-void Application::RestartHook()
+void Application::RestartHook(bool showFeedback)
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartHook: restarting mouse hook...");
 
@@ -621,18 +639,34 @@ void Application::RestartHook()
     KeyboardHook::Uninstall();
     const bool keyboardInstalled = KeyboardHook::Install();
     if (keyboardInstalled)
-        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, 400);
+        KeyboardHook::SetDoubleAltTarget(m_hMainWnd, GetDoubleClickTime());
 
     if (mouseInstalled && keyboardInstalled)
     {
-        ToastWindow::Show(L"鼠标与键盘钩子已重启", 1200);
+        if (showFeedback)
+            ToastWindow::Show(L"鼠标与键盘钩子已重启", 1200);
         LOG_INFO(m_appCtx->logger, L"Application::RestartHook: mouse and keyboard hooks restarted");
     }
     else
     {
-        ToastWindow::Show(L"钩子重启未完成，请重试或重启 WinLauncher", 2200);
+        if (showFeedback)
+            ToastWindow::Show(L"钩子重启未完成，请重试或重启 WinLauncher", 2200);
         LOG_ERROR(m_appCtx->logger, L"Application::RestartHook: mouse=%d keyboard=%d", mouseInstalled ? 1 : 0, keyboardInstalled ? 1 : 0);
     }
+}
+
+void Application::ScheduleHookRecovery(const wchar_t* reason)
+{
+    if (m_shutdownStarted || !m_hMainWnd || !IsWindow(m_hMainWnd))
+        return;
+
+    // Resume/unlock notifications can arrive in a burst while the desktop is
+    // still being reconstructed. Coalesce them and reinstall once user32 has
+    // settled, preserving the current paused/enabled state.
+    KillTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID);
+    SetTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID, 1000, nullptr);
+    LOG_INFO(m_appCtx->logger, L"Application::ScheduleHookRecovery: reason=%s",
+        reason ? reason : L"unknown");
 }
 
 void Application::RestartApp()
@@ -692,6 +726,12 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         if (m_uiHeartbeat) m_uiHeartbeat->lastTick = GetTickCount64();
         return 0;
     }
+    if (msg == WM_TIMER && wParam == HOOK_RECOVERY_TIMER_ID)
+    {
+        KillTimer(hWnd, HOOK_RECOVERY_TIMER_ID);
+        RestartHook(false);
+        return 0;
+    }
     if (msg == AppMessages::UiDispatch)
     {
         if (m_appCtx && m_appCtx->uiDispatcher)
@@ -707,6 +747,24 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
     switch (msg)
     {
+    case WM_POWERBROADCAST:
+        if (wParam == PBT_APMRESUMEAUTOMATIC ||
+            wParam == PBT_APMRESUMESUSPEND ||
+            wParam == PBT_APMRESUMECRITICAL)
+        {
+            ScheduleHookRecovery(L"power_resume");
+        }
+        return TRUE;
+
+    case WM_WTSSESSION_CHANGE:
+        if (wParam == WTS_SESSION_UNLOCK ||
+            wParam == WTS_CONSOLE_CONNECT ||
+            wParam == WTS_REMOTE_CONNECT)
+        {
+            ScheduleHookRecovery(L"session_resume");
+        }
+        return 0;
+
     case AppMessages::ShowPopup:
         ShowPopupAtCursor(wParam);
         return 0;
@@ -824,7 +882,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         return 0;
 
     case AppMessages::RestartHook:
-        RestartHook();
+        RestartHook(true);
         return 0;
 
     case AppMessages::RestartApp:

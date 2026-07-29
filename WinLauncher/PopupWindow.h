@@ -75,7 +75,11 @@ private:
     int HitTestDock(POINT pt);
     void EnsureIcons();
     void RefreshIcons(bool clearExisting = true);
-    void ApplyRefreshedIcons();
+    void ApplyRefreshedIcons(bool refreshCompleted = true);
+    void PreserveLoadedIcons();
+    HICON CopyCachedIcon(const RendShortcutInfo& shortcut) const;
+    void RememberLoadedIcon(const RendShortcutInfo& shortcut);
+    void ClearLoadedIconCache();
     void QueueShowUntilIconsReady(HWND parent, POINT pt, const std::shared_ptr<PopupIconRefreshController::State>& state);
     void OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
     void OnIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state);
@@ -179,9 +183,11 @@ private:
     EventBus::Token m_themeChangedToken = 0;
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
-    BackgroundTaskService::TaskHandle m_iconRefreshTask;
+    std::vector<BackgroundTaskService::TaskHandle> m_iconRefreshTasks;
     BackgroundTaskService::TaskHandle m_iconPreloadTimeoutTask;
     PopupIconRefreshController m_iconRefresh;
+    // Device-independent HICON copies survive scene/config render-page rebuilds.
+    std::unordered_map<std::wstring, HICON> m_loadedIconCache;
     // A startup trigger is retained until the initial Shell icon preload has
     // finished.  The popup is never shown with provisional icon art.
     bool m_hasPendingShow = false;
@@ -191,6 +197,9 @@ private:
     // A timed-out preload keeps its generated fallback for the current open;
     // completed real icons are applied only after the popup has closed.
     uint64_t m_iconFallbackGeneration = 0;
+    // Only an explicit blank-area double click may refresh icons while the
+    // popup is visible. Automatic/config preload keeps one stable snapshot.
+    bool m_applyIconRefreshWhileVisible = false;
 
     PopupFileSelectionController m_fileSelection;
     void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);

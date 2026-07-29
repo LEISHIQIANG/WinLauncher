@@ -8,7 +8,6 @@
 #include "KeyboardHook.h"
 #include "App/Logger.h"
 #include "App/InputHookThreadStop.h"
-#include "InputFocusGuard.h"
 #include "Services/MacroService.h"
 
 // ============================================================
@@ -36,7 +35,15 @@ int                 KeyboardHook::s_pressedCount    = 0;
 std::atomic<HWND>   KeyboardHook::s_hDoubleAltWnd   = nullptr;
 std::atomic<DWORD>  KeyboardHook::s_doubleAltMs(400);
 std::atomic<ULONGLONG> KeyboardHook::s_lastAltUpTime = 0;
+std::atomic<ULONGLONG> KeyboardHook::s_altDownTime = 0;
+std::atomic<ULONGLONG> KeyboardHook::s_lastDoubleAltTriggerTime = 0;
 std::atomic<bool>   KeyboardHook::s_altDown         = false;
+
+namespace
+{
+    constexpr ULONGLONG AltDownRecoveryTimeoutMs = 1000;
+    constexpr ULONGLONG DoubleAltTriggerCooldownMs = 750;
+}
 
 // ============================================================
 // Helpers
@@ -224,6 +231,8 @@ void KeyboardHook::SetDoubleAltTarget(HWND hTargetWnd, DWORD doubleClickMs)
     s_hDoubleAltWnd.store(hTargetWnd);
     s_doubleAltMs.store(doubleClickMs);
     s_lastAltUpTime.store(0);
+    s_altDownTime.store(0);
+    s_lastDoubleAltTriggerTime.store(0);
     s_altDown.store(false);
     LOG_G_INFO(L"KeyboardHook::SetDoubleAltTarget: hWnd=%p, interval=%dms", hTargetWnd, doubleClickMs);
 }
@@ -232,6 +241,8 @@ void KeyboardHook::ClearDoubleAltTarget()
 {
     s_hDoubleAltWnd.store(nullptr);
     s_lastAltUpTime.store(0);
+    s_altDownTime.store(0);
+    s_lastDoubleAltTriggerTime.store(0);
     s_altDown.store(false);
     LOG_G_INFO(L"KeyboardHook::ClearDoubleAltTarget");
 }
@@ -424,36 +435,44 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
             bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
             bool isUp   = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
 
-            if (isAlt && (isDown || isUp) && InputFocusGuard::IsTextInputContextActive())
-            {
-                s_altDown.store(false);
-                s_lastAltUpTime.store(0);
-                return CallNextHookEx(nullptr, nCode, wParam, lParam);
-            }
-
             ULONGLONG now = GetTickCount64();
             ULONGLONG lastAltUpTime = s_lastAltUpTime.load();
-            if (s_altDown.load() && lastAltUpTime != 0 && (now - lastAltUpTime) > 1000)
+            ULONGLONG altDownTime = s_altDownTime.load();
+            if (s_altDown.load() && altDownTime != 0 &&
+                (now - altDownTime) > AltDownRecoveryTimeoutMs)
             {
+                // Windows may discard an Alt KeyUp around sleep, secure-desktop
+                // transitions, or a temporarily overloaded low-level hook.
+                // Track the down event itself so even the first lost KeyUp can
+                // recover; the previous implementation depended on an earlier
+                // completed tap and could remain stuck indefinitely.
                 s_altDown.store(false);
+                s_altDownTime.store(0);
                 s_lastAltUpTime.store(0);
+                lastAltUpTime = 0;
             }
 
             if (isAlt && isDown && !s_altDown.load())
             {
                 s_altDown.store(true);
+                s_altDownTime.store(now);
             }
             else if (isAlt && isUp && s_altDown.load())
             {
                 s_altDown.store(false);
+                s_altDownTime.store(0);
                 DWORD interval = s_doubleAltMs.load();
 
                 if (lastAltUpTime != 0 && (now - lastAltUpTime) <= interval)
                 {
-                    // Double-Alt triggered
                     s_lastAltUpTime.store(0);
-                    PostMessageW(hDoubleAltWnd, AppMessages::DoubleAltPressed, 0, 0);
-                    LOG_G_INFO(L"KeyboardHook: double-Alt detected, posting DoubleAltPressed");
+                    const ULONGLONG lastTrigger = s_lastDoubleAltTriggerTime.load();
+                    if (lastTrigger == 0 || (now - lastTrigger) >= DoubleAltTriggerCooldownMs)
+                    {
+                        s_lastDoubleAltTriggerTime.store(now);
+                        PostMessageW(hDoubleAltWnd, AppMessages::DoubleAltPressed, 0, 0);
+                        LOG_G_INFO(L"KeyboardHook: double-Alt detected, posting DoubleAltPressed");
+                    }
                 }
                 else
                 {
@@ -464,6 +483,7 @@ LRESULT CALLBACK KeyboardHook::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
             {
                 // Another key pressed while Alt is down – cancel the double-Alt sequence
                 s_altDown.store(false);
+                s_altDownTime.store(0);
                 s_lastAltUpTime.store(0);
             }
         }

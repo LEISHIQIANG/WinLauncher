@@ -32,7 +32,8 @@ private:
     void ShowSettingsWindow();
     void ShowTrayMenuAtCursor();
     void TogglePopupPause();     // 暂停/启用弹窗
-    void RestartHook();          // 重启鼠标+键盘钩子
+    void RestartHook(bool showFeedback = true); // 重启鼠标+键盘钩子
+    void ScheduleHookRecovery(const wchar_t* reason);
     void RestartApp();           // 重启整个应用进程
     LRESULT HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -45,6 +46,8 @@ private:
     bool m_timerResolutionRaised = false;
     bool m_trayIconAdded = false;
     bool m_mouseHookInstalled = false;
+    bool m_sessionNotificationsRegistered = false;
+    bool m_shutdownStarted = false;
     bool m_popupPaused = false;  // 当前弹窗暂停状态
     struct UiHeartbeatState
     {
