@@ -4,6 +4,7 @@
 #include "App/Logger.h"
 #include "Config/UIStyle.h"
 #include "Services/ConfigPath.h"
+#include "UI/MouseCaptureController.h"
 #include <windowsx.h>
 #include <dwmapi.h>
 #include <d2d1helper.h>
@@ -1501,6 +1502,21 @@ void GlassWindow::DoPaint()
 
 LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    if (uMsg == WM_CAPTURECHANGED)
+    {
+        MouseCaptureController::OnCaptureChanged(hWnd, reinterpret_cast<HWND>(lParam));
+    }
+    else if (uMsg == WM_CANCELMODE)
+    {
+        if (MouseCaptureController::CurrentOwner() == hWnd)
+            MouseCaptureController::Release(hWnd, L"cancel_mode");
+    }
+    else if ((uMsg == WM_SHOWWINDOW && !wParam) || uMsg == WM_NCDESTROY)
+    {
+        if (MouseCaptureController::CurrentOwner() == hWnd)
+            MouseCaptureController::Release(hWnd, uMsg == WM_NCDESTROY ? L"window_destroyed" : L"window_hidden");
+    }
+
     switch (uMsg)
     {
     case WM_NCCALCSIZE:

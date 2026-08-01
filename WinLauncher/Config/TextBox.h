@@ -69,6 +69,8 @@ public:
     bool IsPasswordMode() const { return m_passwordMode; }
 
 private:
+    static void CancelPointerInteractionThunk(void* context);
+    void CancelPointerInteraction();
     void RecreateTextLayout();
     void UpdateScrollRange();
     void DrawScrollbar(ID2D1HwndRenderTarget* rt, float scale);

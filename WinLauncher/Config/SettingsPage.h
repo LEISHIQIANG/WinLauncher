@@ -26,6 +26,8 @@ public:
     std::function<void()> OnImportJsonClicked;
 
 private:
+    static void CancelPointerInteractionThunk(void* context);
+    void CancelPointerInteraction();
     bool HitTestAutoStart(POINT pt);
     int HitTestTrigger(POINT pt);
     int HitTestPopupAlignMode(POINT pt);

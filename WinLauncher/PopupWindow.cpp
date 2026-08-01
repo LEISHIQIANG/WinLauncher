@@ -40,6 +40,7 @@
 #include <tuple>
 #pragma comment(lib, "imm32.lib")
 #include "Services/MacroService.h"
+#include "UI/MouseCaptureController.h"
 #include "Services/BatchLaunchService.h"
 #include "Services/CommandVariableService.h"
 #include "Services/EnvironmentDetector.h"
@@ -1314,7 +1315,7 @@ void PopupWindow::HideSelf(bool immediate)
     {
         if (GetCapture() == h)
         {
-            ReleaseCapture();
+            MouseCaptureController::Release(h, L"popup_hidden");
         }
         ResetPressedShortcut();
         StopAutoHideTimer();
@@ -1370,7 +1371,7 @@ void PopupWindow::DestroySelf()
     {
         if (GetCapture() == h)
         {
-            ReleaseCapture();
+            MouseCaptureController::Release(h, L"popup_destroyed");
         }
         ResetPressedShortcut();
         StopAutoHideTimer();
@@ -3321,13 +3322,13 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 m_pressedShortcutKind = PressedShortcutKind::SearchResult;
                 m_pressedShortcutIndex = hit;
                 m_pressedShortcutPage = -1;
-                SetCapture(hWnd);
+                MouseCaptureController::CaptureGesture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
             }
             else if (m_pinned)
             {
                 ResetPressedShortcut();
-                ReleaseCapture();
+                MouseCaptureController::ReleaseCurrent(L"popup_window_move");
                 SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
         }
@@ -3340,7 +3341,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 m_pressedShortcutKind = PressedShortcutKind::Dock;
                 m_pressedShortcutIndex = dockHit;
                 m_pressedShortcutPage = -1;
-                SetCapture(hWnd);
+                MouseCaptureController::CaptureGesture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
@@ -3350,13 +3351,13 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 m_pressedShortcutKind = PressedShortcutKind::Page;
                 m_pressedShortcutIndex = hit;
                 m_pressedShortcutPage = m_currentPage;
-                SetCapture(hWnd);
+                MouseCaptureController::CaptureGesture(hWnd);
                 InvalidateRect(hWnd, nullptr, FALSE);
             }
             else if (m_pinned)
             {
                 ResetPressedShortcut();
-                ReleaseCapture();
+                MouseCaptureController::ReleaseCurrent(L"popup_window_move");
                 SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             }
         }
@@ -3415,7 +3416,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             int pressedPage = m_pressedShortcutPage;
             if (GetCapture() == hWnd)
             {
-                ReleaseCapture();
+                MouseCaptureController::Complete(hWnd);
             }
             ResetPressedShortcut();
 
@@ -3497,6 +3498,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_CAPTURECHANGED:
+        MouseCaptureController::OnCaptureChanged(hWnd, reinterpret_cast<HWND>(lParam));
         m_trackMouse = false;
         m_hovered = -1;
         if (!m_pinned && m_pressedShortcutKind == PressedShortcutKind::None)

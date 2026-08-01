@@ -48,6 +48,9 @@ public:
 private:
     struct BatchFaviconState;
 
+    static void CancelPointerInteractionThunk(void* context);
+    void CancelPointerInteraction();
+
     void EnsureIcons(ID2D1HwndRenderTarget* rt);
     void EnsureShortcutStates();
     bool HasDragExceededThreshold(POINT pt) const;

@@ -2,6 +2,7 @@
 #include "BuiltinIconDialog.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
+#include "../UI/MouseCaptureController.h"
 #include "../UI/Controls/IconRenderer.h"
 #include <windowsx.h>
 #include <algorithm>
@@ -238,7 +239,7 @@ LRESULT BuiltinIconDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LP
         if (pt.y < Y_TABS && !HitTestCloseButton(pt))
         {
             SetFocus(hWnd);
-            ReleaseCapture();
+            MouseCaptureController::ReleaseCurrent(L"window_move");
             SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             return 0;
         }

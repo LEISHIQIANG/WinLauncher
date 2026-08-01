@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "TrayMenuWindow.h"
+#include "UI/MouseCaptureController.h"
 #include "App/AppMessages.h"
 #include "DpiHelper.h"
 #include <windowsx.h>
@@ -280,7 +281,7 @@ void TrayMenuWindow::CaptureMouse()
     if (!h || !IsWindow(h))
         return;
 
-    SetCapture(h);
+    MouseCaptureController::CapturePersistent(h);
     m_mouseCaptured = (GetCapture() == h);
 }
 
@@ -290,7 +291,7 @@ void TrayMenuWindow::ReleaseMouseCapture()
     if (m_mouseCaptured && h && GetCapture() == h)
     {
         m_mouseCaptured = false;
-        ReleaseCapture();
+        MouseCaptureController::Complete(h);
         return;
     }
     m_mouseCaptured = false;
@@ -395,6 +396,7 @@ LRESULT TrayMenuWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
         return 0;
 
     case WM_CAPTURECHANGED:
+        MouseCaptureController::OnCaptureChanged(hWnd, reinterpret_cast<HWND>(lParam));
         if (m_mouseCaptured && reinterpret_cast<HWND>(lParam) != hWnd)
         {
             m_mouseCaptured = false;

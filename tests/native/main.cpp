@@ -17,6 +17,7 @@
 #include "../../WinLauncher/Popup/PinyinHelper.h"
 #include "../../WinLauncher/TriggerBlacklistPolicy.h"
 #include "../../WinLauncher/TriggerPolicy.h"
+#include "../../WinLauncher/UI/MouseCaptureController.h"
 #include "../../WinLauncher/SDK/include/WinLauncher/WinLauncherPluginABI.h"
 #include "../../WinLauncher/Services/DiagnosticService.h"
 #include <Windows.h>
@@ -168,6 +169,17 @@ int wmain(int argc, wchar_t** argv)
             TriggerPolicy::NormalizeTriggerType(8) != 0)
         {
             return Fail(L"popup trigger preset accepted an invalid or incomplete input");
+        }
+    }
+
+    {
+        using MouseCaptureController::ShouldRecoverGesture;
+        if (ShouldRecoverGesture(true, true, true) ||
+            !ShouldRecoverGesture(false, true, true) ||
+            !ShouldRecoverGesture(true, false, true) ||
+            !ShouldRecoverGesture(true, true, false))
+        {
+            return Fail(L"gesture capture recovery policy regressed");
         }
     }
 
@@ -608,6 +620,6 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(process.hProcess);
     if (!HasNonEmptyCrashArtifacts(crashDir)) return Fail(L"crash reporter did not create non-empty dump and metadata");
 
-    fwprintf(stdout, L"[PASS] native async, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
+    fwprintf(stdout, L"[PASS] native async, mouse capture recovery, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
     return 0;
 }

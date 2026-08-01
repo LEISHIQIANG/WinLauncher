@@ -125,6 +125,7 @@
     <ClCompile Include="Services\CommandExecutionService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="UI\WindowCoordinator.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="UI\UserInteractionService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="UI\MouseCaptureController.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\FaviconFetcher.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -456,6 +457,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="UI\UserInteractionService.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\MouseCaptureController.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Services\IniConfigRepository.h">

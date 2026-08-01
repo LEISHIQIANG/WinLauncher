@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ShortcutPage.h"
+#include "../UI/MouseCaptureController.h"
 #include "ShortcutGridViewHelper.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
@@ -74,6 +75,7 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
 
 ShortcutPage::~ShortcutPage()
 {
+    MouseCaptureController::ReleaseForContext(this, L"shortcut_page_destroyed");
     CancelBatchFaviconFetches();
     if (m_batchFaviconState)
     {
@@ -86,6 +88,28 @@ ShortcutPage::~ShortcutPage()
     {
         DestroyCursor(m_deleteCursor);
         m_deleteCursor = nullptr;
+    }
+}
+
+void ShortcutPage::CancelPointerInteractionThunk(void* context)
+{
+    if (context)
+        static_cast<ShortcutPage*>(context)->CancelPointerInteraction();
+}
+
+void ShortcutPage::CancelPointerInteraction()
+{
+    const bool changed = m_dragIndex >= 0 || m_dragActive;
+    UpdateDragDeleteCursor(POINT{ 0, 0 });
+    m_dragIndex = -1;
+    m_dragCurrentInsertIndex = -1;
+    m_dragActive = false;
+    ResetShortcutTargets(false);
+    if (changed && m_owner)
+    {
+        m_owner->StartAnimation();
+        HWND hwnd = m_owner->GetWindowHWND();
+        if (hwnd) InvalidateRect(hwnd, nullptr, FALSE);
     }
 }
 
@@ -701,7 +725,12 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
             m_dragCurrentInsertIndex = hs;
             m_dragActive = false;
             m_dragStartPt = pt;
-            SetCapture(hWnd);
+            if (!MouseCaptureController::CaptureGesture(
+                    hWnd, VK_LBUTTON, this, &ShortcutPage::CancelPointerInteractionThunk))
+            {
+                m_dragIndex = -1;
+                m_dragCurrentInsertIndex = -1;
+            }
         }
 
         repaint = true;
@@ -737,7 +766,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 {
     if (m_dragIndex >= 0)
     {
-        ReleaseCapture();
+        MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
         UpdateDragDeleteCursor(POINT{ 0, 0 });
 
         POINT mousePt = pt;
@@ -1909,7 +1938,7 @@ bool ShortcutPage::StartShortcutDrag(POINT pt)
             m_owner->GetAppContext());
         if (!switchToCustom)
         {
-            ReleaseCapture();
+            MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
             m_dragIndex = -1;
             m_dragCurrentInsertIndex = -1;
             m_dragActive = false;

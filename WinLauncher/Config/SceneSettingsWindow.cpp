@@ -3,6 +3,7 @@
 #include "DropDownMenu.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
+#include "../UI/MouseCaptureController.h"
 #include <windowsx.h>
 #include <algorithm>
 
@@ -525,7 +526,7 @@ LRESULT SceneSettingsWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, 
         if (pt.y < 36.0f)
         {
             SetFocus(hWnd);
-            ReleaseCapture();
+            MouseCaptureController::ReleaseCurrent(L"window_move");
             SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
             return 0;
         }

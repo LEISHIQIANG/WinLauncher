@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ConfigWindow.h"
+#include "../UI/MouseCaptureController.h"
 #include "PromptWindow.h"
 #include "ConfirmWindow.h"
 #include "../Services/MigrationBackupService.h"
@@ -2438,7 +2439,7 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
         if (pt.y < 38 && pt.x < 490 && pt.x > 150)
         {
-            ReleaseCapture();
+            MouseCaptureController::ReleaseCurrent(L"window_move");
             SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         }
 

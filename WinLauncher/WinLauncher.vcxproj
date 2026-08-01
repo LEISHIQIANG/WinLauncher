@@ -209,6 +209,7 @@
     <ClCompile Include="Services\ArchiveUtility.cpp" />
     <ClCompile Include="UI\WindowCoordinator.cpp" />
     <ClCompile Include="UI\UserInteractionService.cpp" />
+    <ClCompile Include="UI\MouseCaptureController.cpp" />
     <ClCompile Include="Config\MacroDialog.cpp" />
     <ClCompile Include="Config\MacroEditForm.cpp" />
     <ClCompile Include="Config\BatchLaunchDialog.cpp" />
@@ -296,6 +297,7 @@
     <!-- UI Layer -->
     <ClInclude Include="UI\WindowCoordinator.h" />
     <ClInclude Include="UI\UserInteractionService.h" />
+    <ClInclude Include="UI\MouseCaptureController.h" />
     <!-- UI Controls -->
     <ClInclude Include="UI\Controls\IControl.h" />
     <ClInclude Include="UI\Controls\Button.h" />

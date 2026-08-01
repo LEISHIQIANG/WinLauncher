@@ -23,6 +23,7 @@
 #include "../TrayMenuWindow.h"
 #include "../Services/BatchLaunchService.h"
 #include "../Services/MacroService.h"
+#include "../UI/MouseCaptureController.h"
 #include <CommCtrl.h>
 #include <ole2.h>
 #include <shellapi.h>
@@ -407,6 +408,7 @@ void Application::Shutdown()
     m_uiWatchdogTask.Cancel();
     if (m_hMainWnd) KillTimer(m_hMainWnd, UI_HEARTBEAT_TIMER_ID);
     if (m_hMainWnd) KillTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID);
+    MouseCaptureController::ForceReleaseGestureCapture(L"application_shutdown");
     if (m_sessionNotificationsRegistered && m_hMainWnd)
     {
         WTSUnRegisterSessionNotification(m_hMainWnd);
@@ -615,6 +617,11 @@ void Application::RestartHook(bool showFeedback)
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartHook: restarting mouse hook...");
 
+    // Capture belongs to the UI thread, not the low-level hook thread. Clear a
+    // gesture whose physical button was already released before rebuilding the
+    // hooks after sleep, unlock, or an explicit recovery request.
+    MouseCaptureController::RecoverStaleGestureCapture(L"hook_restart");
+
     // Uninstall then reinstall the mouse hook
     if (m_mouseHookInstalled)
     {
@@ -724,6 +731,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     if (msg == WM_TIMER && wParam == UI_HEARTBEAT_TIMER_ID)
     {
         if (m_uiHeartbeat) m_uiHeartbeat->lastTick = GetTickCount64();
+        MouseCaptureController::RecoverStaleGestureCapture(L"ui_heartbeat");
         return 0;
     }
     if (msg == WM_TIMER && wParam == HOOK_RECOVERY_TIMER_ID)

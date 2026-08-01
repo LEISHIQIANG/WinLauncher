@@ -65,6 +65,8 @@ public:
     bool Validate(HWND hWnd);
 
 private:
+    static void CancelPointerInteractionThunk(void* context);
+    void CancelPointerInteraction();
     struct SimpleShortcutItem
     {
         std::wstring id;

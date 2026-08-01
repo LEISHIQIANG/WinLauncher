@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "DropDownMenu.h"
+#include "../UI/MouseCaptureController.h"
 #include "../App/CallbackGuard.h"
 #include "../DpiHelper.h"
 #include <windowsx.h>
@@ -211,7 +212,7 @@ void DropDownMenu::CaptureMouse()
     if (!h || !IsWindow(h))
         return;
 
-    SetCapture(h);
+    MouseCaptureController::CapturePersistent(h);
     m_mouseCaptured = (GetCapture() == h);
 }
 
@@ -221,7 +222,7 @@ void DropDownMenu::ReleaseMouseCapture()
     if (m_mouseCaptured && h && GetCapture() == h)
     {
         m_mouseCaptured = false;
-        ReleaseCapture();
+        MouseCaptureController::Complete(h);
         return;
     }
     m_mouseCaptured = false;
@@ -297,6 +298,7 @@ LRESULT DropDownMenu::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         return 0;
 
     case WM_CAPTURECHANGED:
+        MouseCaptureController::OnCaptureChanged(hWnd, reinterpret_cast<HWND>(lParam));
         if (m_mouseCaptured && reinterpret_cast<HWND>(lParam) != hWnd)
         {
             m_mouseCaptured = false;

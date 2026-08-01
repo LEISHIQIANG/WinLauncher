@@ -2,6 +2,7 @@
 #include "ShortcutDialog.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
+#include "../UI/MouseCaptureController.h"
 #include <windowsx.h>
 #include <commctrl.h>
 #include <algorithm>
@@ -316,7 +317,7 @@ LRESULT ShortcutDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
         if (pt.y < Y_FORM_TOP)
         {
             SetFocus(hWnd);
-            ReleaseCapture();
+            MouseCaptureController::ReleaseCurrent(L"window_move");
             SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         }
         return 0;

@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "TextBox.h"
 #include "../DpiHelper.h"
+#include "../UI/MouseCaptureController.h"
 #include <commctrl.h>
 #include <vector>
 #include <cwctype>
@@ -52,8 +53,25 @@ bool TextBox::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_
 
 void TextBox::Destroy()
 {
+    MouseCaptureController::ReleaseForContext(this, L"textbox_destroyed");
+    CancelPointerInteraction();
     SetFocus(false);
     m_textLayout.Reset();
+}
+
+void TextBox::CancelPointerInteractionThunk(void* context)
+{
+    if (context)
+        static_cast<TextBox*>(context)->CancelPointerInteraction();
+}
+
+void TextBox::CancelPointerInteraction()
+{
+    const bool changed = m_dragSelecting || m_draggingScrollbar;
+    m_dragSelecting = false;
+    m_draggingScrollbar = false;
+    if (changed && m_parent && IsWindow(m_parent))
+        InvalidateRect(m_parent, nullptr, FALSE);
 }
 
 void TextBox::SetFocus(bool focus)
@@ -552,7 +570,11 @@ void TextBox::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint)
         m_draggingScrollbar = true;
         m_sbDragStartY = pt.y / scale;
         m_sbDragStartOff = m_scrollOffset;
-        SetCapture(hWnd);
+        if (!MouseCaptureController::CaptureGesture(
+                hWnd, VK_LBUTTON, this, &TextBox::CancelPointerInteractionThunk))
+        {
+            m_draggingScrollbar = false;
+        }
         return;
     }
 
@@ -570,7 +592,11 @@ void TextBox::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& repaint)
     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
     m_dragSelecting = true;
-    SetCapture(hWnd);
+    if (!MouseCaptureController::CaptureGesture(
+            hWnd, VK_LBUTTON, this, &TextBox::CancelPointerInteractionThunk))
+    {
+        m_dragSelecting = false;
+    }
     m_caretIndex = GetCaretIndexFromPoint(pt, scale);
 
     if (shift)
@@ -672,7 +698,7 @@ void TextBox::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
     if (m_draggingScrollbar)
     {
         m_draggingScrollbar = false;
-        ReleaseCapture();
+        MouseCaptureController::Complete(hWnd);
         repaint = true;
         return;
     }
@@ -680,7 +706,7 @@ void TextBox::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& repaint)
     if (m_dragSelecting)
     {
         m_dragSelecting = false;
-        ReleaseCapture();
+        MouseCaptureController::Complete(hWnd);
         repaint = true;
     }
 

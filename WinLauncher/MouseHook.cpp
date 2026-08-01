@@ -443,6 +443,15 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
+        // Popup activation is defined only for middle and X buttons. Keep the
+        // left/right/move/wheel path explicit so no future trigger-policy or
+        // recovery change can accidentally consume ordinary pointer input.
+        if (wParam != WM_MBUTTONDOWN && wParam != WM_MBUTTONUP &&
+            wParam != WM_XBUTTONDOWN && wParam != WM_XBUTTONUP)
+        {
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+
         DWORD suppressMask = s_suppressButtonUpMask.load();
         if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
         {

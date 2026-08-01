@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "BatchLaunchEditForm.h"
+#include "../UI/MouseCaptureController.h"
 #include "ConfirmWindow.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
@@ -64,7 +65,28 @@ BatchLaunchEditForm::BatchLaunchEditForm()
 
 BatchLaunchEditForm::~BatchLaunchEditForm()
 {
+    MouseCaptureController::ReleaseForContext(this, L"batch_form_destroyed");
     Destroy();
+}
+
+void BatchLaunchEditForm::CancelPointerInteractionThunk(void* context)
+{
+    if (context)
+        static_cast<BatchLaunchEditForm*>(context)->CancelPointerInteraction();
+}
+
+void BatchLaunchEditForm::CancelPointerInteraction()
+{
+    const bool changed = m_dragIndex >= 0;
+    m_dragIndex = -1;
+    m_dragInsertIndex = -1;
+    SyncQueueStates();
+    if (changed)
+    {
+        m_animating = true;
+        if (m_parentHWND && IsWindow(m_parentHWND))
+            InvalidateRect(m_parentHWND, nullptr, FALSE);
+    }
 }
 
 bool BatchLaunchEditForm::Create(HWND parentHWND, IDWriteFactory* dwriteFactory, const D2D1_RECT_F& logicalBounds, const BatchLaunchEditFormInitParams& init, AppContext* ctx)
@@ -578,7 +600,12 @@ void BatchLaunchEditForm::OnLButtonDown(HWND hWnd, POINT pt, float scale, bool& 
             float boxTop = m_bounds.top + Y_BOX_LISTS;
             float itemTop = boxTop + m_queueStates[m_dragIndex].currentY - m_rightScrollY;
             m_grabOffsetY = (float)logicalPt.y - itemTop;
-            SetCapture(hWnd);
+            if (!MouseCaptureController::CaptureGesture(
+                    hWnd, VK_LBUTTON, this, &BatchLaunchEditForm::CancelPointerInteractionThunk))
+            {
+                m_dragIndex = -1;
+                m_dragInsertIndex = -1;
+            }
             m_animating = true;
             repaint = true;
         }
@@ -617,7 +644,7 @@ void BatchLaunchEditForm::OnLButtonUp(HWND hWnd, POINT pt, float scale, bool& re
 {
     if (m_dragIndex >= 0)
     {
-        ReleaseCapture();
+        MouseCaptureController::Complete(hWnd);
         int insertIndex = m_dragInsertIndex;
         if (insertIndex >= 0 && insertIndex <= (int)m_steps.size() && insertIndex != m_dragIndex)
         {

@@ -23,6 +23,8 @@ public:
     void Reset();
 
 private:
+    static void CancelPointerInteractionThunk(void* context);
+    void CancelPointerInteraction();
     struct CategoryVisualState
     {
         float currentY = 0.0f;

@@ -1,4 +1,5 @@
 #include "SettingsPage.h"
+#include "../UI/MouseCaptureController.h"
 #include "SettingsTabHelper.h"
 #include "IConfigWindow.h"
 #include "UIStyle.h"
@@ -223,6 +224,25 @@ SettingsPage::SettingsPage(IConfigWindow* owner)
 
 SettingsPage::~SettingsPage()
 {
+    MouseCaptureController::ReleaseForContext(this, L"settings_page_destroyed");
+}
+
+void SettingsPage::CancelPointerInteractionThunk(void* context)
+{
+    if (context)
+        static_cast<SettingsPage*>(context)->CancelPointerInteraction();
+}
+
+void SettingsPage::CancelPointerInteraction()
+{
+    const bool changed = m_draggingAnimationDurationSlider || m_draggingGlobalScaleSlider;
+    m_draggingAnimationDurationSlider = false;
+    m_draggingGlobalScaleSlider = false;
+    if (changed && m_owner)
+    {
+        HWND hwnd = m_owner->GetWindowHWND();
+        if (hwnd) InvalidateRect(hwnd, nullptr, FALSE);
+    }
 }
 
 static bool SameRectLocal(const D2D1_RECT_F& a, const D2D1_RECT_F& b)
@@ -2299,7 +2319,11 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_draggingAnimationDurationSlider = true;
             m_pendingAnimationDuration = AnimationDurationFromPoint(pt);
             if (HWND hwnd = m_owner->GetWindowHWND())
-                SetCapture(hwnd);
+            {
+                if (!MouseCaptureController::CaptureGesture(
+                        hwnd, VK_LBUTTON, this, &SettingsPage::CancelPointerInteractionThunk))
+                    m_draggingAnimationDurationSlider = false;
+            }
             repaint = true;
         }
         else if (HitTestAnimationDurationApply(pt))
@@ -2317,7 +2341,11 @@ void SettingsPage::OnLButtonDown(POINT pt, bool& repaint)
             m_draggingGlobalScaleSlider = true;
             m_pendingGlobalScalePercent = GlobalScaleFromPoint(pt);
             if (HWND hwnd = m_owner->GetWindowHWND())
-                SetCapture(hwnd);
+            {
+                if (!MouseCaptureController::CaptureGesture(
+                        hwnd, VK_LBUTTON, this, &SettingsPage::CancelPointerInteractionThunk))
+                    m_draggingGlobalScaleSlider = false;
+            }
             repaint = true;
         }
         else if (HitTestGlobalScaleApply(pt))
@@ -2816,14 +2844,14 @@ void SettingsPage::OnLButtonUp(POINT pt, bool& repaint)
     {
         m_draggingAnimationDurationSlider = false;
         m_pendingAnimationDuration = AnimationDurationFromPoint(pt);
-        ReleaseCapture();
+        MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
         repaint = true;
     }
     else if (m_draggingGlobalScaleSlider)
     {
         m_draggingGlobalScaleSlider = false;
         m_pendingGlobalScalePercent = GlobalScaleFromPoint(pt);
-        ReleaseCapture();
+        MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
         repaint = true;
     }
 }

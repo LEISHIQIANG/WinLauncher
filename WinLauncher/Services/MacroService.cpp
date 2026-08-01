@@ -986,12 +986,14 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
                 if (ev.data == 1) input.mi.dwFlags |= MOUSEEVENTF_LEFTDOWN;
                 else if (ev.data == 2) input.mi.dwFlags |= MOUSEEVENTF_RIGHTDOWN;
                 else if (ev.data == 4) input.mi.dwFlags |= MOUSEEVENTF_MIDDLEDOWN;
+                else hasInput = false;
             }
             else if (ev.type == 3) // mouse_up
             {
                 if (ev.data == 1) input.mi.dwFlags |= MOUSEEVENTF_LEFTUP;
                 else if (ev.data == 2) input.mi.dwFlags |= MOUSEEVENTF_RIGHTUP;
                 else if (ev.data == 4) input.mi.dwFlags |= MOUSEEVENTF_MIDDLEUP;
+                else hasInput = false;
             }
             else if (ev.type == 4) // wheel
             {
@@ -1048,11 +1050,25 @@ DWORD WINAPI MacroPlayer::PlayThreadProc(LPVOID lpParam)
         }
     }
 
-    if (s_interruptRequested.load())
+    if (!releaseInputs.empty())
     {
+        size_t releasedCount = 0;
         for (auto it = releaseInputs.rbegin(); it != releaseInputs.rend(); ++it)
-            SendInput(1, &*it, sizeof(INPUT));
-        LOG_G_INFO(L"MacroPlayer::PlayThreadProc: playback interrupted by physical input; released %zu held inputs", releaseInputs.size());
+        {
+            if (SendInput(1, &*it, sizeof(INPUT)) == 1)
+            {
+                ++releasedCount;
+            }
+            else
+            {
+                LOG_G_ERRA(
+                    L"MacroPlayer::PlayThreadProc: failed to release held input (type=%u, error=%lu)",
+                    it->type, GetLastError());
+            }
+        }
+        LOG_G_INFO(
+            L"MacroPlayer::PlayThreadProc: playback ended with held inputs; requested=%zu released=%zu interrupted=%d",
+            releaseInputs.size(), releasedCount, s_interruptRequested.load() ? 1 : 0);
     }
 
     s_playing.store(false);

@@ -139,6 +139,8 @@ $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
 $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
 $keyboardHookSource = Read-RepoFile "WinLauncher\KeyboardHook.cpp"
 $mouseHookSource = Read-RepoFile "WinLauncher\MouseHook.cpp"
+$mouseCaptureSource = Read-RepoFile "WinLauncher\UI\MouseCaptureController.cpp"
+$mouseCaptureHeader = Read-RepoFile "WinLauncher\UI\MouseCaptureController.h"
 $triggerBlacklistPolicy = Read-RepoFile "WinLauncher\TriggerBlacklistPolicy.h"
 $macroServiceSource = Read-RepoFile "WinLauncher\Services\MacroService.cpp"
 $macroEditFormSource = Read-RepoFile "WinLauncher\Config\MacroEditForm.cpp"
@@ -604,6 +606,33 @@ Add-TestResult `
     -Detail "Paused triggers must preserve a consumed down/up pair, reject stale popup requests, and close the visible popup"
 
 Add-TestResult `
+    -Name "Gesture mouse capture self-heals without breaking popup menus" `
+    -Passed (
+        $mouseCaptureHeader -match 'enum class Mode' -and
+        $mouseCaptureHeader -match 'Gesture' -and
+        $mouseCaptureHeader -match 'PersistentPopup' -and
+        $mouseCaptureHeader -match 'ShouldRecoverGesture' -and
+        $mouseCaptureSource -match 'GetAsyncKeyState\(snapshot\.virtualKey\)' -and
+        $mouseCaptureSource -match 'IsWindowVisible\(snapshot\.owner\)' -and
+        $applicationSource -match 'RecoverStaleGestureCapture\(L"ui_heartbeat"\)' -and
+        $applicationSource -match 'RecoverStaleGestureCapture\(L"hook_restart"\)' -and
+        $applicationSource -match 'ForceReleaseGestureCapture\(L"application_shutdown"\)' -and
+        $popupSource -match 'CaptureGesture\(hWnd\)' -and
+        $shortcutPageSource -match 'CaptureGesture' -and
+        $mouseCaptureSource -match 'Mode::PersistentPopup'
+    ) `
+    -Detail "Only stale button gestures may be recovered; menu capture and a physically held drag must remain intact"
+
+Add-TestResult `
+    -Name "Low-level mouse hook always passes ordinary left-button input" `
+    -Passed (
+        $mouseHookSource -match 'wParam != WM_MBUTTONDOWN && wParam != WM_MBUTTONUP' -and
+        $mouseHookSource -match 'wParam != WM_XBUTTONDOWN && wParam != WM_XBUTTONUP' -and
+        $mouseHookSource -match 'return CallNextHookEx\(nullptr, nCode, wParam, lParam\);'
+    ) `
+    -Detail "Only configured middle/X-button trigger pairs may be consumed by the popup hook"
+
+Add-TestResult `
     -Name "Trigger blacklist follows the window under the pointer" `
     -Passed (
         $mouseHookSource -match 'IsTriggerBlacklistedAtPoint\s*\(\s*POINT\s+triggerPoint\s*\)' -and
@@ -633,6 +662,16 @@ Add-TestResult `
         $mouseHookSource -match 'MacroPlayer::RequestInterruptFromMouse'
     ) `
     -Detail "Physical input may request playback cancellation without blocking a low-level hook callback"
+
+Add-TestResult `
+    -Name "Macro playback releases every successfully injected held input" `
+    -Passed (
+        $macroServiceSource -match 'if \(!releaseInputs\.empty\(\)\)' -and
+        $macroServiceSource -match 'playback ended with held inputs' -and
+        $macroServiceSource -match 'failed to release held input' -and
+        $macroServiceSource -match 'else hasInput = false'
+    ) `
+    -Detail "Normal completion, cancellation, malformed mouse buttons, and failed matching-up events must not leave LEFTDOWN held"
 
 Add-TestResult `
     -Name "Macro recording batches high-frequency preview updates by session" `

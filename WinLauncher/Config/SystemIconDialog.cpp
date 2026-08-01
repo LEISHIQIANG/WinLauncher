@@ -3,6 +3,7 @@
 #include "DialogShell.h"
 #include "UIStyle.h"
 #include "../DpiHelper.h"
+#include "../UI/MouseCaptureController.h"
 #include <windowsx.h>
 #include <commctrl.h>
 #include <algorithm>
@@ -216,7 +217,7 @@ LRESULT SystemIconDialog::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         if (pt.y < Y_FORM_TOP)
         {
             SetFocus(hWnd);
-            ReleaseCapture();
+            MouseCaptureController::ReleaseCurrent(L"window_move");
             SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         }
         return 0;

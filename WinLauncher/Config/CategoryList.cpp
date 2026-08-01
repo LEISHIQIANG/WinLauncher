@@ -1,4 +1,5 @@
 #include "CategoryList.h"
+#include "../UI/MouseCaptureController.h"
 #include "IConfigWindow.h"
 #include "ConfirmWindow.h"
 #include "PromptWindow.h"
@@ -61,6 +62,32 @@ CategoryList::CategoryList(IConfigWindow* owner)
 
 CategoryList::~CategoryList()
 {
+    MouseCaptureController::ReleaseForContext(this, L"category_list_destroyed");
+}
+
+void CategoryList::CancelPointerInteractionThunk(void* context)
+{
+    if (context)
+        static_cast<CategoryList*>(context)->CancelPointerInteraction();
+}
+
+void CategoryList::CancelPointerInteraction()
+{
+    const bool changed = m_pendingDragIndex >= 0 || m_dragIndex >= 0;
+    m_dragIndex = -1;
+    m_pendingDragIndex = -1;
+    m_pendingDragStartPt = { 0, 0 };
+    m_dragCurrentInsertIndex = -1;
+    EnsureCategoryStates();
+    for (size_t i = 0; i < m_categoryStates.size(); ++i)
+        m_categoryStates[i].targetY = kCategoryTop + static_cast<float>(i) * kCategoryStep;
+    if (changed && m_owner)
+    {
+        m_animating = true;
+        m_owner->StartAnimation();
+        HWND hwnd = m_owner->GetWindowHWND();
+        if (hwnd) InvalidateRect(hwnd, nullptr, FALSE);
+    }
 }
 
 void CategoryList::Reset()
@@ -583,7 +610,11 @@ void CategoryList::OnLButtonDown(POINT pt, bool& repaint)
         {
             m_pendingDragIndex = hc;
             m_pendingDragStartPt = pt;
-            SetCapture(hwnd);
+            if (!MouseCaptureController::CaptureGesture(
+                    hwnd, VK_LBUTTON, this, &CategoryList::CancelPointerInteractionThunk))
+            {
+                m_pendingDragIndex = -1;
+            }
         }
 
         repaint = true;
@@ -594,7 +625,7 @@ void CategoryList::OnLButtonUp(POINT pt, bool& repaint)
 {
     if (m_pendingDragIndex >= 0 && m_dragIndex < 0)
     {
-        ReleaseCapture();
+        MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
         m_pendingDragIndex = -1;
         m_pendingDragStartPt = { 0, 0 };
         return;
@@ -602,7 +633,7 @@ void CategoryList::OnLButtonUp(POINT pt, bool& repaint)
 
     if (m_dragIndex >= 0)
     {
-        ReleaseCapture();
+        MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
 
         int insertIndex = m_dragCurrentInsertIndex;
         if (insertIndex >= 1 && insertIndex < (int)m_owner->GetCategoryCount() && insertIndex != m_dragIndex)
