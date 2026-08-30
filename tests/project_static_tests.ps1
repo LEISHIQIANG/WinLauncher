@@ -644,11 +644,13 @@ Add-TestResult `
         $mouseHookSource -match 'PROCESS_QUERY_LIMITED_INFORMATION\s*\|\s*SYNCHRONIZE' -and
         $mouseHookSource -match 'lifetimeCheckAvailable' -and
         $mouseHookSource -match 'CommonProcessPathCapacity\s*=\s*1024' -and
+        $mouseHookSource -match 'g_processIdentityCache\.Resolve\s*\(\s*windowAtPoint\s*\)' -and
+        $mouseHookSource -notmatch 'ResolveCacheOnly' -and
         $mouseHookSource -match 'MatchesNormalized' -and
         $triggerBlacklistPolicy -match 'class\s+Matcher' -and
         $triggerBlacklistPolicy -match 'static\s+Matcher\s+Compile'
     ) `
-    -Detail "Trigger blacklist decisions must use the exact hook-event position with precompiled rules and a non-blocking PID-safe process cache"
+    -Detail "Trigger blacklist decisions must resolve first-seen processes at the exact hook-event position and reuse a lifetime-checked PID-safe cache"
 
 Add-TestResult `
     -Name "Macro playback interruption stays non-blocking and ignores injected input" `

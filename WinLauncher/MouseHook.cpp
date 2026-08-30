@@ -68,21 +68,6 @@ namespace
 
         const ProcessIdentity* Resolve(HWND hwnd)
         {
-            return ResolveImpl(hwnd, false);
-        }
-
-        // Cache-only lookup: returns a cached ProcessIdentity if one exists for
-        // the window's owning PID, otherwise returns nullptr without performing
-        // any blocking OS calls (OpenProcess, QueryFullProcessImageNameW).
-        // Safe to call from the low-level hook callback.
-        const ProcessIdentity* ResolveCacheOnly(HWND hwnd)
-        {
-            return ResolveImpl(hwnd, true);
-        }
-
-    private:
-        const ProcessIdentity* ResolveImpl(HWND hwnd, bool cacheOnly)
-        {
             DWORD pid = 0;
             if (!hwnd || GetWindowThreadProcessId(hwnd, &pid) == 0 || pid == 0)
                 return nullptr;
@@ -108,11 +93,10 @@ namespace
                 break;
             }
 
-            // In cache-only mode, avoid blocking OS calls that risk exceeding
-            // the 200ms LowLevelHooksTimeout inside the hook callback.
-            if (cacheOnly)
-                return nullptr;
-
+            // These process queries do not synchronously call the target GUI
+            // thread, so an unresponsive application cannot stall us in the
+            // same way as GetGUIThreadInfo/GetClassNameW on a foreign window.
+            // A successful lookup is cached and lifetime-checked thereafter.
             HANDLE process = OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
                 FALSE,
@@ -150,6 +134,7 @@ namespace
             return slot;
         }
 
+    private:
         static bool QueryProcessName(HANDLE process, std::wstring& processName)
         {
             wchar_t commonPath[CommonProcessPathCapacity]{};
@@ -237,13 +222,11 @@ namespace
         if (!blacklist || blacklist->empty())
             return false;
 
-        // Use cache-only lookups to stay within the 200ms hook timeout.
-        // OpenProcess / QueryFullProcessImageNameW are avoided here; they run
-        // on a previous trigger's Resolve() call that populated the cache.
-        // A true miss (brand-new process) lets one trigger through and will be
-        // cached for subsequent events.
+        // Resolve a first-seen PID here so blacklist enforcement cannot fail
+        // open forever. The cache keeps later triggers on a lifetime-checked
+        // fast path; Resolve itself performs no synchronous cross-window calls.
         HWND windowAtPoint = WindowFromPoint(triggerPoint);
-        const ProcessIdentity* identity = g_processIdentityCache.ResolveCacheOnly(windowAtPoint);
+        const ProcessIdentity* identity = g_processIdentityCache.Resolve(windowAtPoint);
         if (!identity)
         {
             // A window can disappear between hit testing and PID lookup.
@@ -251,7 +234,7 @@ namespace
             // normal path to one WindowFromPoint call.
             HWND retryWindow = WindowFromPoint(triggerPoint);
             if (retryWindow && retryWindow != windowAtPoint)
-                identity = g_processIdentityCache.ResolveCacheOnly(retryWindow);
+                identity = g_processIdentityCache.Resolve(retryWindow);
         }
         return identity &&
             blacklist->MatchesNormalized(identity->processName, identity->processStem);
