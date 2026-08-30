@@ -31,4 +31,5 @@ namespace AppMessages
 
     // 内部定时器 ID（与 WM_APP 消息不同，这些用于 SetTimer）
     constexpr UINT_PTR RestartAppTimerId  = 0xDEAD; // RestartApp 延迟重启定时器
+    constexpr UINT_PTR MouseStateRecoveryTimerId = 0xDEAE; // Post-popup mouse state recovery check
 }

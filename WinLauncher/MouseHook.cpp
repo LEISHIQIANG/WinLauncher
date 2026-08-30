@@ -34,6 +34,16 @@ namespace
     constexpr size_t CommonProcessPathCapacity = 1024;
     constexpr size_t MaximumProcessPathCapacity = 32768;
 
+    // Suppression mask aging: if a button-up suppression flag has been set for
+    // longer than this duration without being consumed, clear it automatically.
+    // This guards against the hook timeout scenario where Windows bypasses the
+    // hook for the down event but the hook still swallows the matching up event.
+    constexpr ULONGLONG SuppressionMaxAgeMs = 2000;
+
+    // Timestamp (GetTickCount64) when s_suppressButtonUpMask was last armed.
+    // Used by the aging logic to detect and clear leaked suppress flags.
+    std::atomic<ULONGLONG> g_suppressionArmedTick(0);
+
     std::shared_ptr<const TriggerBlacklistPolicy::Matcher> g_triggerBlacklist =
         std::make_shared<const TriggerBlacklistPolicy::Matcher>();
 
@@ -57,6 +67,21 @@ namespace
         }
 
         const ProcessIdentity* Resolve(HWND hwnd)
+        {
+            return ResolveImpl(hwnd, false);
+        }
+
+        // Cache-only lookup: returns a cached ProcessIdentity if one exists for
+        // the window's owning PID, otherwise returns nullptr without performing
+        // any blocking OS calls (OpenProcess, QueryFullProcessImageNameW).
+        // Safe to call from the low-level hook callback.
+        const ProcessIdentity* ResolveCacheOnly(HWND hwnd)
+        {
+            return ResolveImpl(hwnd, true);
+        }
+
+    private:
+        const ProcessIdentity* ResolveImpl(HWND hwnd, bool cacheOnly)
         {
             DWORD pid = 0;
             if (!hwnd || GetWindowThreadProcessId(hwnd, &pid) == 0 || pid == 0)
@@ -82,6 +107,11 @@ namespace
                 Reset(entry);
                 break;
             }
+
+            // In cache-only mode, avoid blocking OS calls that risk exceeding
+            // the 200ms LowLevelHooksTimeout inside the hook callback.
+            if (cacheOnly)
+                return nullptr;
 
             HANDLE process = OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
@@ -120,7 +150,6 @@ namespace
             return slot;
         }
 
-    private:
         static bool QueryProcessName(HANDLE process, std::wstring& processName)
         {
             wchar_t commonPath[CommonProcessPathCapacity]{};
@@ -208,12 +237,13 @@ namespace
         if (!blacklist || blacklist->empty())
             return false;
 
-        // The low-level hook provides the screen position for this exact input
-        // event. Hit-test that point instead of consulting the foreground
-        // window: focus can remain in one application while the pointer is
-        // already over another.
+        // Use cache-only lookups to stay within the 200ms hook timeout.
+        // OpenProcess / QueryFullProcessImageNameW are avoided here; they run
+        // on a previous trigger's Resolve() call that populated the cache.
+        // A true miss (brand-new process) lets one trigger through and will be
+        // cached for subsequent events.
         HWND windowAtPoint = WindowFromPoint(triggerPoint);
-        const ProcessIdentity* identity = g_processIdentityCache.Resolve(windowAtPoint);
+        const ProcessIdentity* identity = g_processIdentityCache.ResolveCacheOnly(windowAtPoint);
         if (!identity)
         {
             // A window can disappear between hit testing and PID lookup.
@@ -221,7 +251,7 @@ namespace
             // normal path to one WindowFromPoint call.
             HWND retryWindow = WindowFromPoint(triggerPoint);
             if (retryWindow && retryWindow != windowAtPoint)
-                identity = g_processIdentityCache.Resolve(retryWindow);
+                identity = g_processIdentityCache.ResolveCacheOnly(retryWindow);
         }
         return identity &&
             blacklist->MatchesNormalized(identity->processName, identity->processStem);
@@ -307,6 +337,7 @@ bool MouseHook::Install(HWND hTargetWnd)
 
     s_hTargetWnd = hTargetWnd;
     s_suppressButtonUpMask.store(0);
+    g_suppressionArmedTick.store(0, std::memory_order_release);
     s_popupRequestPending.store(false);
     s_hookThreadId.store(0);
 
@@ -381,6 +412,7 @@ void MouseHook::Uninstall()
     s_hTargetWnd = nullptr;
     s_hookThreadId.store(0);
     s_suppressButtonUpMask.store(0);
+    g_suppressionArmedTick.store(0, std::memory_order_release);
     LOG_G_INFO(L"MouseHook::Uninstall: uninstalled successfully");
 }
 
@@ -452,10 +484,39 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
-        DWORD suppressMask = s_suppressButtonUpMask.load();
+        // Never intercept injected events. The recovery mechanism (and other
+        // accessibility tools) may synthesize button-up events to clear a stuck
+        // state; swallowing those would defeat the purpose.
+        if (pMsh->flags & LLMHF_INJECTED)
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+
+        // --- Suppression mask aging ---
+        // If a suppress flag has been armed for longer than SuppressionMaxAgeMs
+        // (2 seconds) without being consumed by a matching button-up, it almost
+        // certainly leaked: the hook timed out on the down event (Windows
+        // bypassed the callback and delivered the down to the foreground app)
+        // but the hook is still planning to swallow the up. Clear the stale
+        // mask so the up event passes through, preventing the system-wide
+        // mouse lockup that occurs when a window never receives its button-up.
+        DWORD suppressMask = s_suppressButtonUpMask.load(std::memory_order_acquire);
+        if (suppressMask != 0)
+        {
+            const ULONGLONG armedAt = g_suppressionArmedTick.load(std::memory_order_acquire);
+            if (armedAt != 0 && GetTickCount64() - armedAt > SuppressionMaxAgeMs)
+            {
+                LOG_G_WORNING(L"MouseHook::LowLevelMouseProc: suppression mask 0x%X aged out after %llu ms — clearing to prevent stuck mouse state",
+                    suppressMask, GetTickCount64() - armedAt);
+                s_suppressButtonUpMask.store(0, std::memory_order_release);
+                g_suppressionArmedTick.store(0, std::memory_order_release);
+                suppressMask = 0;
+            }
+        }
+
         if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
         {
             s_suppressButtonUpMask.fetch_and(~SuppressMiddleUp);
+            if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
+                g_suppressionArmedTick.store(0, std::memory_order_release);
             return 1;
         }
         if (wParam == WM_XBUTTONUP)
@@ -464,11 +525,15 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             if (btn == XBUTTON1 && (suppressMask & SuppressXButton1Up))
             {
                 s_suppressButtonUpMask.fetch_and(~SuppressXButton1Up);
+                if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
+                    g_suppressionArmedTick.store(0, std::memory_order_release);
                 return 1;
             }
             if (btn == XBUTTON2 && (suppressMask & SuppressXButton2Up))
             {
                 s_suppressButtonUpMask.fetch_and(~SuppressXButton2Up);
+                if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
+                    g_suppressionArmedTick.store(0, std::memory_order_release);
                 return 1;
             }
         }
@@ -490,7 +555,11 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
-            if (InputFocusGuard::IsTextInputContextActive())
+            // Only check whether a WinLauncher-owned text box has focus.
+            // Cross-process checks (GetGUIThreadInfo, GetClassNameW) are
+            // removed to avoid blocking the hook callback beyond the 200ms
+            // LowLevelHooksTimeout when the foreground app is unresponsive.
+            if (InputFocusGuard::IsOwnProcessTextInputActive())
             {
                 LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger ignored because text input is active");
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -522,6 +591,7 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             if (suppressUpMask != 0)
             {
                 s_suppressButtonUpMask.fetch_or(suppressUpMask);
+                g_suppressionArmedTick.store(GetTickCount64(), std::memory_order_release);
             }
             return 1;
         }

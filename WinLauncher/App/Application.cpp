@@ -579,6 +579,12 @@ void Application::ShowPopupAtCursor(ULONG_PTR requestGeneration)
     POINT pt;
     GetCursorPos(&pt);
     PopupWindow::Show(m_hMainWnd, pt);
+
+    // Schedule a delayed recovery check. After 500ms the timer will verify
+    // that the middle button is not stuck in a logical-down state, which can
+    // happen when the hook callback timed out (Windows bypassed the hook for
+    // the down event but the hook swallowed the matching up event).
+    SetTimer(m_hMainWnd, AppMessages::MouseStateRecoveryTimerId, 500, nullptr);
 }
 
 void Application::ShowConfigWindow()
@@ -738,6 +744,30 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
     {
         KillTimer(hWnd, HOOK_RECOVERY_TIMER_ID);
         RestartHook(false);
+        return 0;
+    }
+    if (msg == WM_TIMER && wParam == AppMessages::MouseStateRecoveryTimerId)
+    {
+        KillTimer(hWnd, AppMessages::MouseStateRecoveryTimerId);
+        // Check whether the middle mouse button is physically released but the
+        // system still thinks it is pressed. This happens when the hook timed
+        // out on WM_MBUTTONDOWN (Windows bypassed the hook) but the hook later
+        // swallowed WM_MBUTTONUP, leaving the system in a stuck state where
+        // mouse clicks and hover feedback stop working in all applications.
+        const bool physicallyDown = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+        if (!physicallyDown)
+        {
+            // Inject a synthetic middle-button-up to clear the stuck implicit
+            // capture. The LLMHF_INJECTED flag on this event prevents our own
+            // hook from re-consuming it.
+            INPUT input{};
+            input.type = INPUT_MOUSE;
+            input.mi.dwFlags = MOUSEEVENTF_MIDDLEUP;
+            if (SendInput(1, &input, sizeof(INPUT)) == 1)
+            {
+                LOG_INFO(m_appCtx->logger, L"Application::MouseStateRecovery: injected synthetic middle-button-up to clear potential stuck state");
+            }
+        }
         return 0;
     }
     if (msg == AppMessages::UiDispatch)
