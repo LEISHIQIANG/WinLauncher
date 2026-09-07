@@ -270,7 +270,7 @@ Add-TestResult `
 Add-TestResult `
     -Name "Visible secondary windows retain shadows after deactivation" `
     -Passed (
-        $glassWindowSource -match 'case\s+WM_ACTIVATE:[\s\S]{0,500}activationResult\s*=\s*DefWindowProcW\([\s\S]{0,300}SyncPosition\(IsWindowVisible\(hWnd\)\s*&&\s*!IsIconic\(hWnd\)\)[\s\S]{0,120}return\s+activationResult' -and
+        $glassWindowSource -match 'case\s+WM_ACTIVATE:[\s\S]{0,500}activationResult\s*=\s*DefWindowProcW\([\s\S]{0,300}SyncPosition\(!m_revealFirstFrameBarrier\s*&&\s*IsWindowVisible\(hWnd\)\s*&&\s*!IsIconic\(hWnd\)\)[\s\S]{0,120}return\s+activationResult' -and
         $shadowWindowSource -match 'GetWindow\(m_hMainWnd,\s*GW_OWNER\)' -and
         $shadowWindowSource -match 'shadowOwner' -and
         $shadowWindowSource -match 'SWP_NOOWNERZORDER' -and
@@ -288,7 +288,7 @@ Add-TestResult `
 Add-TestResult `
     -Name "Secondary windows prepare a complete first frame before appearing" `
     -Passed (
-        $glassWindowSource -match 'void\s+GlassWindow::RevealAfterFirstPaint\s*\([\s\S]{0,1800}MarkBackgroundDirty\(L"prepared_reveal"[\s\S]{0,1800}RefreshBackgroundCache\(\);[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*animationEnabled[\s\S]{0,1800}DoPaint\(\);[\s\S]{0,1800}ShowWindow\(m_hWnd, showCommand\)[\s\S]{0,1800}if\s*\(animationEnabled\)[\s\S]{0,800}RedrawWindow\(m_hWnd[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*false' -and
+        $glassWindowSource -match 'void\s+GlassWindow::RevealAfterFirstPaint\s*\([\s\S]{0,1800}MarkBackgroundDirty\(L"prepared_reveal"[\s\S]{0,1800}RefreshBackgroundCache\(\);[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*true[\s\S]{0,1800}DoPaint\(\);[\s\S]{0,1800}ShowWindow\(m_hWnd, showCommand\)[\s\S]{0,1800}if\s*\(animationEnabled\)[\s\S]{0,800}RedrawWindow\(m_hWnd[\s\S]{0,1800}m_revealFirstFrameBarrier\s*=\s*false' -and
         $configWindowSource -match 'void\s+ConfigWindow::PrepareAndReveal\s*\([\s\S]{0,600}EnsureIcons\(\);[\s\S]{0,600}RevealAfterFirstPaint\(\)' -and
         $popupSource -match 'if\s*\(needsShow\)\s*\{[\s\S]{0,1000}RevealAfterFirstPaint\(SW_SHOWNOACTIVATE, false\)' -and
         @($secondaryFirstFrameSources | Where-Object { $_ -notmatch 'RevealAfterFirstPaint\(' }).Count -eq 0
@@ -396,34 +396,27 @@ Add-TestResult `
     -Detail "The UI thread must apply completed icon results instead of extracting every Shell icon synchronously"
 
 Add-TestResult `
-    -Name "Popup icon work is limited to visible pages and cancelled when hidden" `
+    -Name "Popup icon bitmaps are limited to visible pages and preload survives hiding" `
     -Passed (
         $popupSource -match 'distance\s*>\s*1\)\s*continue' -and
         $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(true\)' -and
         $popupIconRefreshControllerSource -match 'm_pending\s*=\s*false'
     ) `
-    -Detail "First paint should defer off-screen bitmaps, and hidden popups must not keep refreshing icons"
+    -Detail "First paint defers off-screen bitmaps and hiding preserves reusable preload"
 
 Add-TestResult `
-    -Name "Popup icon preload has a bounded stable fallback" `
+    -Name "Popup icon preload never gates reveal and refresh preserves old icons" `
     -Passed (
-        $popupSource -match 'void\s+PopupWindow::OnConfigChanged\s*\([\s\S]{0,7000}RefreshIcons\(false\)' -and
-        $popupSource -match 'WaitForCompletion\(state, 0\)' -and
-        $popupSource -match 'void\s+PopupWindow::QueueShowUntilIconsReady\s*\(' -and
-        $popupSource -match 'void\s+PopupWindow::OnIconPreloadCompleted\s*\(' -and
-        $popupSource -match 'void\s+PopupWindow::OnIconPreloadTimedOut\s*\(' -and
-        $popupSource -match 'popup\.icon_preload_complete' -and
-        $popupSource -match 'popup\.icon_preload_timeout' -and
-        $popupSource -match 'POPUP_ICON_PRELOAD_MAX_WAIT_MS\s*=\s*120' -and
-        $popupWindowHeader -match 'm_iconPreloadTimeoutTask' -and
-        $popupWindowHeader -match 'm_iconFallbackGeneration' -and
-        $popupSource -match 'if\s*\(page\.shortcuts\[i\]\.hIcon\s*==\s*nullptr\)' -and
-        $popupSource -match 'if\s*\(m_dockPage\.shortcuts\[i\]\.hIcon\s*==\s*nullptr\)' -and
-        $popupSource -notmatch 'm_deferPendingIcons|DrawPendingIcon|POPUP_ICON_FIRST_FRAME_WAIT_BUDGET_MS' -and
-        $popupIconRefreshControllerSource -match 'WaitForSingleObject\(state->completionEvent, timeoutMs\)' -and
+        $popupSource -notmatch 'QueueShowUntilIconsReady|POPUP_ICON_PRELOAD_MAX_WAIT_MS|m_iconFallbackGeneration' -and
+        $popupSource -match 'POPUP_ICON_PROGRESS_TIMER, 16' -and
+        $popupSource -match 'DrawShortcutIcon' -and
+        $popupSource -match 'm_iconFlashStart < 120' -and
+        $popupSource -match 'result.identity != PopupIconCacheKey' -and
+        $popupSource -match 'TakePendingForce' -and
+        $popupSource -match 'if \(preservePreload\) return' -and
         $popupIconRefreshControllerSource -notmatch 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
     ) `
-    -Detail "A cold trigger must use real icons when ready, but time out through the managed task service and keep any fallback stable for that open"
+    -Detail "Slow icon extraction must not delay the popup or erase existing icons; explicit refresh keeps visual feedback"
 
 Add-TestResult `
     -Name "Popup show reuses clean background caches and scene-safe page indices" `
@@ -626,8 +619,9 @@ Add-TestResult `
 Add-TestResult `
     -Name "Low-level mouse hook always passes ordinary left-button input" `
     -Passed (
-        $mouseHookSource -match 'wParam != WM_MBUTTONDOWN && wParam != WM_MBUTTONUP' -and
-        $mouseHookSource -match 'wParam != WM_XBUTTONDOWN && wParam != WM_XBUTTONUP' -and
+        $mouseHookSource -match 'wParam == WM_MBUTTONDOWN \|\| wParam == WM_MBUTTONUP' -and
+        $mouseHookSource -match 'wParam == WM_XBUTTONDOWN \|\| wParam == WM_XBUTTONUP' -and
+        $mouseHookSource -match '!middle && !side' -and
         $mouseHookSource -match 'return CallNextHookEx\(nullptr, nCode, wParam, lParam\);'
     ) `
     -Detail "Only configured middle/X-button trigger pairs may be consumed by the popup hook"
@@ -775,24 +769,26 @@ Add-TestResult `
     -Detail "Double-Alt must self-heal from a missing first release, work over text controls, and debounce repeated toggles"
 
 Add-TestResult `
-    -Name "Popup icon timeout falls back once without visible refresh churn" `
+    -Name "Popup preload reuses caches with bounded workers and identity validation" `
     -Passed (
-        $popupSource -match 'const bool iconsReady = state && m_iconRefresh.WaitForCompletion\(state, 0\)' -and
-        $popupSource -match '!iconsReady && m_iconFallbackGeneration != state->generation' -and
-        $popupSource -match 'iconsReady && m_iconRefresh.IsCurrent\(state\)' -and
-        $popupSource -match '\(needsShow \|\| sceneAppChanged\) && !this->m_iconRefresh.IsRefreshing\(\)' -and
-        $popupSource -match 'IsWindowVisible\(GetHWND\(\)\) && !m_applyIconRefreshWhileVisible' -and
-        $popupSource -match 'OnIconPreloadCompleted\(m_iconRefresh.Current\(\)\)' -and
-        $popupSource -match 'BackgroundTaskService::Priority::High' -and
         $popupSource -match 'PreserveLoadedIcons\(\)' -and
         $popupSource -match 'CopyCachedIcon\(si\)' -and
-        $popupSource -match 'ApplyRefreshedIcons\(false\)' -and
         $popupSource -match 'MaximumIconWorkers = 4' -and
-        $popupSource -match 'TakePending\(\)[\s\S]{0,400}RefreshIcons\(false\)' -and
-        $popupSource -match 'preserveCompletedFallback && m_iconFallbackGeneration != 0 && state' -and
-        $popupSource -match 'Closing a popup that used the bounded fallback must not cancel'
+        $popupSource -match 'result.layoutGeneration != m_iconLayoutGeneration' -and
+        $popupSource -match 'TakePendingForce\(\)' -and
+        $popupSource -match 'if \(preservePreload\) return'
     ) `
-    -Detail "Startup icon preparation must survive popup closes, show one stable fallback at most, and be reused instead of restarting"
+    -Detail "Hide preserves useful background results; replacements cannot apply stale layout icons"
+
+Add-TestResult `
+    -Name "Mouse pairing precedes mutable policy and avoids blind synthetic releases" `
+    -Passed (
+        $mouseHookSource.IndexOf('g_buttonPairs.Up(button)') -lt $mouseHookSource.IndexOf('!s_hTargetWnd || MacroRecorder::IsRecording()') -and
+        $mouseHookSource -notmatch 'SuppressionMaxAgeMs|g_suppressionArmedTick' -and
+        $applicationSource -notmatch 'MOUSEEVENTF_MIDDLEUP|MouseStateRecoveryTimerId' -and
+        $applicationSource -match 'MouseHook::FlushDiagnostics'
+    ) `
+    -Detail "A trigger up keeps its down decision even after policy changes; recovery must not inject unsolicited releases"
 
 Add-TestResult `
     -Name "External popup shortcuts use immediate launch dispatch" `

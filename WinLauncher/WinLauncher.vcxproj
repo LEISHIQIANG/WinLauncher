@@ -268,6 +268,8 @@
     <ClInclude Include="Popup\PopupSearchModel.h" />
     <ClInclude Include="Popup\PopupFileSelectionController.h" />
     <ClInclude Include="Popup\PopupIconRefreshController.h" />
+    <ClInclude Include="Popup\PopupWheelState.h" />
+    <ClInclude Include="App\MouseButtonPairs.h" />
     <ClInclude Include="Popup\PopupCommandDispatcher.h" />
     <ClInclude Include="Popup\PopupSearchService.h" />
     <ClInclude Include="Popup\PopupRenderHelper.h" />

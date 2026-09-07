@@ -172,7 +172,7 @@ namespace MouseCaptureController
 
     bool RecoverStaleGestureCapture(const wchar_t* reason)
     {
-        if (g_capture.mode != Mode::Gesture || !g_capture.owner)
+        if (g_capture.mode == Mode::None || !g_capture.owner)
             return false;
 
         const CaptureState snapshot = g_capture;
@@ -182,7 +182,15 @@ namespace MouseCaptureController
         const bool buttonDown = snapshot.virtualKey != 0 &&
             (GetAsyncKeyState(snapshot.virtualKey) & 0x8000) != 0;
 
-        if (!ShouldRecoverGesture(ownsCapture, ownerUsable, buttonDown))
+        const HWND foreground = GetForegroundWindow();
+        DWORD foregroundProcess = 0;
+        if (foreground) GetWindowThreadProcessId(foreground, &foregroundProcess);
+        const bool persistentUsable = ownerUsable && IsWindowEnabled(snapshot.owner) &&
+            foregroundProcess == GetCurrentProcessId();
+        const bool shouldRecover = snapshot.mode == Mode::Gesture
+            ? ShouldRecoverGesture(ownsCapture, ownerUsable, buttonDown)
+            : (!ownsCapture || !persistentUsable);
+        if (!shouldRecover)
             return false;
 
         bool released = false;

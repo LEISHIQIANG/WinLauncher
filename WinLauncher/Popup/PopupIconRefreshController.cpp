@@ -12,9 +12,9 @@ PopupIconRefreshController::State::~State()
     if (completionEvent) CloseHandle(completionEvent);
 }
 
-std::shared_ptr<PopupIconRefreshController::State> PopupIconRefreshController::Begin()
+std::shared_ptr<PopupIconRefreshController::State> PopupIconRefreshController::Begin(bool force)
 {
-    if (m_refreshing) { m_pending = true; return {}; }
+    if (m_refreshing) { m_pending = true; m_pendingForce = m_pendingForce || force; return {}; }
     m_refreshing = true;
     auto state = std::make_shared<State>();
     state->generation = ++m_generation;
@@ -32,6 +32,7 @@ void PopupIconRefreshController::Cancel()
     m_state.reset();
     m_refreshing = false;
     m_pending = false;
+    m_pendingForce = false;
     ++m_generation;
 }
 
@@ -52,6 +53,6 @@ std::vector<PopupIconRefreshController::Result> PopupIconRefreshController::Take
 bool PopupIconRefreshController::WaitForCompletion(const std::shared_ptr<State>& state, DWORD timeoutMs) const noexcept
 {
     if (!IsCurrent(state)) return false;
-    if (!state->completionEvent) return true;
+    if (!state->completionEvent) return state->pendingWorkers.load() == 0;
     return WaitForSingleObject(state->completionEvent, timeoutMs) == WAIT_OBJECT_0 && IsCurrent(state);
 }

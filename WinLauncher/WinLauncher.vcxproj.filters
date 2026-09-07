@@ -471,6 +471,8 @@
     <ClInclude Include="Popup\PopupSearchModel.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupFileSelectionController.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupIconRefreshController.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupWheelState.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="App\MouseButtonPairs.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupCommandDispatcher.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupSearchService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupRenderHelper.h"><Filter>头文件</Filter></ClInclude>

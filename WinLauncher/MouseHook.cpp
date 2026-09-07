@@ -1,6 +1,7 @@
 #include "MouseHook.h"
 #include "App/AppMessages.h"
 #include "App/Logger.h"
+#include "App/MouseButtonPairs.h"
 #include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
@@ -22,7 +23,6 @@ std::atomic<bool>   MouseHook::s_running(false);
 std::atomic<bool>   MouseHook::s_triggerEnabled(true);
 std::atomic<bool>   MouseHook::s_popupRequestPending(false);
 std::atomic<ULONG_PTR> MouseHook::s_triggerGeneration(1);
-std::atomic<DWORD>  MouseHook::s_suppressButtonUpMask(0);
 HMODULE             MouseHook::s_hModule     = nullptr;
 
 namespace
@@ -34,15 +34,20 @@ namespace
     constexpr size_t CommonProcessPathCapacity = 1024;
     constexpr size_t MaximumProcessPathCapacity = 32768;
 
-    // Suppression mask aging: if a button-up suppression flag has been set for
-    // longer than this duration without being consumed, clear it automatically.
-    // This guards against the hook timeout scenario where Windows bypasses the
-    // hook for the down event but the hook still swallows the matching up event.
-    constexpr ULONGLONG SuppressionMaxAgeMs = 2000;
-
-    // Timestamp (GetTickCount64) when s_suppressButtonUpMask was last armed.
-    // Used by the aging logic to detect and clear leaked suppress flags.
-    std::atomic<ULONGLONG> g_suppressionArmedTick(0);
+    MouseButtonPairs g_buttonPairs;
+    struct HookDiagnostic { WPARAM message; DWORD eventTime; ULONGLONG elapsed; DWORD pairs; bool consumed; };
+    std::array<HookDiagnostic, 64> g_diagnostics{};
+    std::atomic_size_t g_diagnosticWrite{0}, g_diagnosticRead{0};
+    std::atomic_uint g_diagnosticDropped{0};
+    // Single hook producer, UI heartbeat consumer. Never allocate or log here.
+    void RecordHook(WPARAM message, DWORD eventTime, ULONGLONG started, bool consumed)
+    {
+        const size_t write = g_diagnosticWrite.load(std::memory_order_relaxed);
+        if (write - g_diagnosticRead.load(std::memory_order_acquire) >= g_diagnostics.size())
+        { ++g_diagnosticDropped; return; }
+        g_diagnostics[write % g_diagnostics.size()] = {message, eventTime, GetTickCount64() - started, g_buttonPairs.Snapshot(), consumed};
+        g_diagnosticWrite.store(write + 1, std::memory_order_release);
+    }
 
     std::shared_ptr<const TriggerBlacklistPolicy::Matcher> g_triggerBlacklist =
         std::make_shared<const TriggerBlacklistPolicy::Matcher>();
@@ -319,8 +324,6 @@ bool MouseHook::Install(HWND hTargetWnd)
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
 
     s_hTargetWnd = hTargetWnd;
-    s_suppressButtonUpMask.store(0);
-    g_suppressionArmedTick.store(0, std::memory_order_release);
     s_popupRequestPending.store(false);
     s_hookThreadId.store(0);
 
@@ -394,8 +397,6 @@ void MouseHook::Uninstall()
         s_hHook.store(nullptr);
     s_hTargetWnd = nullptr;
     s_hookThreadId.store(0);
-    s_suppressButtonUpMask.store(0);
-    g_suppressionArmedTick.store(0, std::memory_order_release);
     LOG_G_INFO(L"MouseHook::Uninstall: uninstalled successfully");
 }
 
@@ -444,82 +445,61 @@ DWORD WINAPI MouseHook::ThreadProc(LPVOID)
     return 0;
 }
 
+void MouseHook::FlushDiagnostics()
+{
+    size_t read = g_diagnosticRead.load(std::memory_order_relaxed);
+    const size_t write = g_diagnosticWrite.load(std::memory_order_acquire);
+    while (read != write)
+    {
+        const auto item = g_diagnostics[read % g_diagnostics.size()];
+        LOG_G_DEBUG(L"MouseHook event: msg=%u tick=%lu elapsed_ms=%llu pairs=%lu consumed=%d",
+                    static_cast<UINT>(item.message), item.eventTime, item.elapsed, item.pairs, item.consumed);
+        ++read;
+    }
+    g_diagnosticRead.store(read, std::memory_order_release);
+    const auto dropped = g_diagnosticDropped.exchange(0);
+    if (dropped) LOG_G_WORNING(L"MouseHook diagnostics dropped=%u", dropped);
+}
+
 LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode == HC_ACTION && s_hTargetWnd && !MacroRecorder::IsRecording())
+    if (nCode == HC_ACTION)
     {
-        MSLLHOOKSTRUCT* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-        if (!pMsh)
+        auto* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+        if (!pMsh) return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        // Ordinary input and injected recovery events always pass through.
+        const bool middle = wParam == WM_MBUTTONDOWN || wParam == WM_MBUTTONUP;
+        const bool side = wParam == WM_XBUTTONDOWN || wParam == WM_XBUTTONUP;
+        if ((!middle && !side) || (pMsh->flags & LLMHF_INJECTED))
+        {
+            if (MacroPlayer::IsPlaying()) MacroPlayer::RequestInterruptFromMouse(*pMsh);
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+        const ULONGLONG started = GetTickCount64();
+        const DWORD button = middle ? SuppressMiddleUp :
+            (HIWORD(pMsh->mouseData) == XBUTTON1 ? SuppressXButton1Up : SuppressXButton2Up);
+        const bool up = wParam == WM_MBUTTONUP || wParam == WM_XBUTTONUP;
+        // Pair completion precedes every mutable policy, including recording.
+        if (up)
+        {
+            const bool consumed = g_buttonPairs.Up(button);
+            RecordHook(wParam, pMsh->time, started, consumed);
+            if (consumed) return 1;
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+        g_buttonPairs.Down(button, false);
+        struct DiagnosticScope
+        {
+            WPARAM message; DWORD time; ULONGLONG started; bool consumed = false;
+            ~DiagnosticScope() { RecordHook(message, time, started, consumed); }
+        } diagnostic{wParam, pMsh->time, started};
         if (MacroPlayer::IsPlaying())
         {
-            if (pMsh)
-                MacroPlayer::RequestInterruptFromMouse(*pMsh);
+            MacroPlayer::RequestInterruptFromMouse(*pMsh);
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
-
-        // Popup activation is defined only for middle and X buttons. Keep the
-        // left/right/move/wheel path explicit so no future trigger-policy or
-        // recovery change can accidentally consume ordinary pointer input.
-        if (wParam != WM_MBUTTONDOWN && wParam != WM_MBUTTONUP &&
-            wParam != WM_XBUTTONDOWN && wParam != WM_XBUTTONUP)
-        {
+        if (!s_hTargetWnd || MacroRecorder::IsRecording())
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        }
-
-        // Never intercept injected events. The recovery mechanism (and other
-        // accessibility tools) may synthesize button-up events to clear a stuck
-        // state; swallowing those would defeat the purpose.
-        if (pMsh->flags & LLMHF_INJECTED)
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-
-        // --- Suppression mask aging ---
-        // If a suppress flag has been armed for longer than SuppressionMaxAgeMs
-        // (2 seconds) without being consumed by a matching button-up, it almost
-        // certainly leaked: the hook timed out on the down event (Windows
-        // bypassed the callback and delivered the down to the foreground app)
-        // but the hook is still planning to swallow the up. Clear the stale
-        // mask so the up event passes through, preventing the system-wide
-        // mouse lockup that occurs when a window never receives its button-up.
-        DWORD suppressMask = s_suppressButtonUpMask.load(std::memory_order_acquire);
-        if (suppressMask != 0)
-        {
-            const ULONGLONG armedAt = g_suppressionArmedTick.load(std::memory_order_acquire);
-            if (armedAt != 0 && GetTickCount64() - armedAt > SuppressionMaxAgeMs)
-            {
-                LOG_G_WORNING(L"MouseHook::LowLevelMouseProc: suppression mask 0x%X aged out after %llu ms — clearing to prevent stuck mouse state",
-                    suppressMask, GetTickCount64() - armedAt);
-                s_suppressButtonUpMask.store(0, std::memory_order_release);
-                g_suppressionArmedTick.store(0, std::memory_order_release);
-                suppressMask = 0;
-            }
-        }
-
-        if (wParam == WM_MBUTTONUP && (suppressMask & SuppressMiddleUp))
-        {
-            s_suppressButtonUpMask.fetch_and(~SuppressMiddleUp);
-            if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
-                g_suppressionArmedTick.store(0, std::memory_order_release);
-            return 1;
-        }
-        if (wParam == WM_XBUTTONUP)
-        {
-            WORD btn = HIWORD(pMsh->mouseData);
-            if (btn == XBUTTON1 && (suppressMask & SuppressXButton1Up))
-            {
-                s_suppressButtonUpMask.fetch_and(~SuppressXButton1Up);
-                if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
-                    g_suppressionArmedTick.store(0, std::memory_order_release);
-                return 1;
-            }
-            if (btn == XBUTTON2 && (suppressMask & SuppressXButton2Up))
-            {
-                s_suppressButtonUpMask.fetch_and(~SuppressXButton2Up);
-                if (s_suppressButtonUpMask.load(std::memory_order_acquire) == 0)
-                    g_suppressionArmedTick.store(0, std::memory_order_release);
-                return 1;
-            }
-        }
 
         if (!s_triggerEnabled.load(std::memory_order_acquire))
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -534,7 +514,6 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
         {
             if (IsTriggerBlacklistedAtPoint(pMsh->pt))
             {
-                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger passed through because the process under the pointer is blacklisted");
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
@@ -544,9 +523,13 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             // LowLevelHooksTimeout when the foreground app is unresponsive.
             if (InputFocusGuard::IsOwnProcessTextInputActive())
             {
-                LOG_G_INFO(L"MouseHook::LowLevelMouseProc: trigger ignored because text input is active");
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
+
+            // A cold process lookup may be slow even without messaging its UI.
+            // If our decision budget was exceeded, pass the complete pair on.
+            if (GetTickCount64() - started >= 20)
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
 
             HWND target = s_hTargetWnd.load();
             if (!target || !IsWindow(target))
@@ -566,16 +549,13 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 s_popupRequestPending.store(false, std::memory_order_release);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
-            if (!PostMessageW(target, AppMessages::ShowPopup, requestGeneration, 0))
+            if (!PostMessageW(target, AppMessages::ShowPopup, requestGeneration, static_cast<LPARAM>(pMsh->time)))
             {
                 s_popupRequestPending.store(false, std::memory_order_release);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
-            if (suppressUpMask != 0)
-            {
-                s_suppressButtonUpMask.fetch_or(suppressUpMask);
-                g_suppressionArmedTick.store(GetTickCount64(), std::memory_order_release);
-            }
+            g_buttonPairs.Down(suppressUpMask, true);
+            diagnostic.consumed = true;
             return 1;
         }
     }

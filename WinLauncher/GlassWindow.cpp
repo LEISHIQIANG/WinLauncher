@@ -1,3 +1,4 @@
+#include "App/AppMessages.h"
 #define NOMINMAX
 #include "GlassWindow.h"
 #include "DpiHelper.h"
@@ -1217,6 +1218,7 @@ bool GlassWindow::RefreshBackgroundCache()
 
 void GlassWindow::DoPaint()
 {
+    m_lastPaintSucceeded = false;
     if (!EnsureD2D()) return;
 
     double paintStartMs = PerfNowMs();
@@ -1264,6 +1266,7 @@ void GlassWindow::DoPaint()
         }
         const double endDrawStartMs = PerfNowMs();
         HRESULT hr = m_rt->EndDraw();
+        m_lastPaintSucceeded = SUCCEEDED(hr);
         const double endDrawMs = PerfNowMs() - endDrawStartMs;
         double elapsedMs = PerfNowMs() - paintStartMs;
         const double renderMs = elapsedMs - endDrawMs;
@@ -1415,6 +1418,7 @@ void GlassWindow::DoPaint()
 
     const double endDrawStartMs = PerfNowMs();
     HRESULT hr = m_rt->EndDraw();
+    m_lastPaintSucceeded = SUCCEEDED(hr);
     const double endDrawMs = PerfNowMs() - endDrawStartMs;
     double elapsedMs = PerfNowMs() - paintStartMs;
     const double renderMs = elapsedMs - endDrawMs;
@@ -1506,6 +1510,12 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     {
         MouseCaptureController::OnCaptureChanged(hWnd, reinterpret_cast<HWND>(lParam));
     }
+    else if (uMsg == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE &&
+             MouseCaptureController::CurrentOwner() == hWnd &&
+             MouseCaptureController::CurrentMode() == MouseCaptureController::Mode::Gesture)
+    {
+        MouseCaptureController::Release(hWnd, L"gesture_deactivated");
+    }
     else if (uMsg == WM_CANCELMODE)
     {
         if (MouseCaptureController::CurrentOwner() == hWnd)
@@ -1532,7 +1542,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             LRESULT activationResult = DefWindowProcW(hWnd, uMsg, wParam, lParam);
             if (m_shadowWindow)
             {
-                m_shadowWindow->SyncPosition(IsWindowVisible(hWnd) && !IsIconic(hWnd));
+                m_shadowWindow->SyncPosition(!m_revealFirstFrameBarrier && IsWindowVisible(hWnd) && !IsIconic(hWnd));
             }
             return activationResult;
         }
@@ -1633,7 +1643,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             }
 
             // Sync shadow window
-            if (isVisible)
+            if (isVisible && !m_revealFirstFrameBarrier)
             {
                 if (sizeChanged || !m_shadowWindow)
                     EnsureShadowForCurrentBounds();
@@ -1676,7 +1686,11 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             if (m_bgRefreshMs > 0)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
 
-            if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
+            if (m_revealFirstFrameBarrier)
+            {
+                HideShadowNow();
+            }
+            else if (UIStyle::Animation::IsEnabled() && m_animState != AnimState::Opening)
             {
                 StartOpenTransition();
             }
@@ -1697,6 +1711,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         else
         {
+            m_revealRetryPending = false;
+            KillTimer(hWnd, AppMessages::GlassRevealRetryTimerId);
             LOG_G_INFO_NODE(L"ui.glass", L"window_hidden", L"hwnd=%p", hWnd);
             KillTimer(hWnd, 0x888);
             if (m_shadowWindow && m_animState != AnimState::Closing)
@@ -1707,6 +1723,13 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_TIMER:
+        if (wParam == AppMessages::GlassRevealRetryTimerId)
+        {
+            KillTimer(hWnd, AppMessages::GlassRevealRetryTimerId);
+            if (m_revealRetryPending) RevealAfterFirstPaint(m_revealShowCommand, false);
+            return 0;
+        }
+
         if (wParam == 0x888)
         {
             MarkBackgroundDirty(L"background_refresh_timer", false);
@@ -1896,6 +1919,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         LOG_G_INFO_NODE(L"ui.glass", L"window_destroy", L"hwnd=%p", hWnd);
         KillTimer(hWnd, 0x888);
         KillTimer(hWnd, 0x889);
+        KillTimer(hWnd, AppMessages::GlassRevealRetryTimerId);
         if (m_shadowWindow)
         {
             m_shadowWindow->Destroy();
@@ -1917,6 +1941,7 @@ bool GlassWindow::EnsureShadowForCurrentBounds(float initialOpacity)
         m_shadowWindow = std::make_unique<ShadowWindow>(m_hWnd);
         m_shadowWindow->SetSettings(GetShadowSettings());
     }
+    if (m_revealFirstFrameBarrier) initialOpacity = 0.0f;
     if (initialOpacity >= 0.0f)
     {
         m_shadowWindow->SetOpacity((std::max)(0.0f, (std::min)(1.0f, initialOpacity)));
@@ -1958,7 +1983,7 @@ void GlassWindow::ApplyVisibilityFrame(float opacity, float animScale)
     {
         float scale = GetWindowScale(m_hWnd);
         POINT ptCenter = { (LONG)(m_animCenter.x * scale + 0.5f), (LONG)(m_animCenter.y * scale + 0.5f) };
-        m_shadowWindow->SetOpacityAndScale(opacity, animScale, ptCenter);
+        m_shadowWindow->SetOpacityAndScale(m_revealFirstFrameBarrier ? 0.0f : opacity, animScale, ptCenter);
     }
 }
 
@@ -1976,6 +2001,9 @@ void GlassWindow::PrepareOpenTransitionFrame(bool fromWindowCenter)
     if (!m_hWnd || !IsWindow(m_hWnd) || !UIStyle::Animation::IsEnabled())
         return;
 
+    KillTimer(m_hWnd, 0x889);
+    m_animState = AnimState::Opening;
+    m_animProgress = 0.0f;
     SetAnimationCenter(fromWindowCenter);
     EnsureShadowForCurrentBounds(0.0f);
     ApplyVisibilityFrame(0.0f, GetAnimationScale(0.0f, AnimState::Opening));
@@ -1986,6 +2014,8 @@ void GlassWindow::RevealAfterFirstPaint(int showCommand, bool refreshBackground)
 {
     if (!m_hWnd || !IsWindow(m_hWnd))
         return;
+
+    if (!m_revealRetryPending) m_revealRequestStart = GetTickCount64();
 
     // Every GlassWindow surface, including a retained hidden instance, must
     // rebuild the material before it can opt out of WM_SHOWWINDOW's normal
@@ -1998,31 +2028,40 @@ void GlassWindow::RevealAfterFirstPaint(int showCommand, bool refreshBackground)
         RefreshBackgroundCache();
     }
 
-    // Keep the entire first composition (background, material and content)
-    // off-screen. On a slow machine, drawing while hidden alone is not enough:
-    // DWM can expose the backdrop before it has consumed that draw. The
-    // visible-transparent barrier is only needed on the existing animation
-    // path; forcing WS_EX_LAYERED when animations are disabled changes the
-    // native glass material and is therefore intentionally avoided.
     const bool animationEnabled = UIStyle::Animation::IsEnabled();
-    m_revealFirstFrameBarrier = animationEnabled;
-    if (animationEnabled)
-    {
-        PrepareOpenTransitionFrame();
-    }
-    else
-    {
-        // WM_SHOWWINDOW must not invalidate the prepared material before the
-        // first visible frame, even with animations switched off.
-        m_openTransitionPrepared = true;
-    }
+    m_revealFirstFrameBarrier = true;
+    m_revealShowCommand = showCommand;
+    m_revealRetryPending = false;
+    HideShadowNow();
+    if (animationEnabled) PrepareOpenTransitionFrame();
+    else m_openTransitionPrepared = true;
     DoPaint();
+    if (!m_lastPaintSucceeded)
+    {
+        m_revealRetryPending = true;
+        SetTimer(m_hWnd, AppMessages::GlassRevealRetryTimerId, 32, nullptr);
+        return;
+    }
     ShowWindow(m_hWnd, showCommand);
     if (animationEnabled)
-    {
         RedrawWindow(m_hWnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+    if (!m_lastPaintSucceeded)
+    {
+        ShowWindow(m_hWnd, SW_HIDE);
+        HideShadowNow();
+        m_revealRetryPending = true;
+        SetTimer(m_hWnd, AppMessages::GlassRevealRetryTimerId, 32, nullptr);
+        return;
     }
     m_revealFirstFrameBarrier = false;
+    LOG_G_DEBUG_NODE(L"ui.glass", L"reveal_ready", L"elapsed_ms=%llu hwnd=%p",
+                     GetTickCount64() - m_revealRequestStart, m_hWnd);
+    if (animationEnabled) StartOpenTransition();
+    else
+    {
+        EnsureShadowForCurrentBounds(0.0f);
+        ApplyVisibilityFrame(1.0f, 1.0f);
+    }
 }
 
 void GlassWindow::StartOpenTransition(bool fromWindowCenter)
@@ -2048,6 +2087,16 @@ void GlassWindow::StartOpenTransition(bool fromWindowCenter)
 
 void GlassWindow::StartCloseTransition(std::function<void()> onComplete, bool fromWindowCenter)
 {
+    m_revealRetryPending = false;
+    m_revealFirstFrameBarrier = false;
+    KillTimer(m_hWnd, AppMessages::GlassRevealRetryTimerId);
+    if (!IsWindowVisible(m_hWnd))
+    {
+        HideShadowNow();
+        if (onComplete) onComplete();
+        return;
+    }
+
     if (!UIStyle::Animation::IsEnabled())
     {
         if (onComplete) onComplete();
@@ -2076,6 +2125,9 @@ void GlassWindow::HideImmediately()
     // A normal ShowWindow(SW_HIDE) while an opening transition is still
     // active leaves its timer and opacity state alive. Stop that transition
     // first so the next popup show always starts from a clean first frame.
+    m_revealRetryPending = false;
+    m_revealFirstFrameBarrier = false;
+    KillTimer(m_hWnd, AppMessages::GlassRevealRetryTimerId);
     KillTimer(m_hWnd, 0x889);
     m_animState = AnimState::None;
     m_animProgress = 0.0f;

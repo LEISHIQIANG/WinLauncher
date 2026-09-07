@@ -149,6 +149,10 @@ protected:
     float m_closeStartOpacity = 1.0f;
     bool m_openTransitionPrepared = false;
     bool m_revealFirstFrameBarrier = false;
+    bool m_lastPaintSucceeded = false;
+    bool m_revealRetryPending = false;
+    int m_revealShowCommand = SW_SHOWNOACTIVATE;
+    ULONGLONG m_revealRequestStart = 0;
 
     bool m_themeTransitionActive = false;
     float m_themeTransitionProgress = 0.0f;

@@ -10,6 +10,7 @@ public:
     static bool Install(HWND hTargetWnd);
     static void Uninstall();
     static bool IsInstalled();
+    static void FlushDiagnostics();
     static void SetTriggerType(int type);
     static void SetTriggerEnabled(bool enabled);
     // Returns false when a queued request became stale because triggers were
@@ -28,7 +29,6 @@ private:
     static std::atomic<bool>   s_triggerEnabled;
     static std::atomic<bool>   s_popupRequestPending;
     static std::atomic<ULONG_PTR> s_triggerGeneration;
-    static std::atomic<DWORD>  s_suppressButtonUpMask;
     static HMODULE             s_hModule;
 
     static DWORD WINAPI ThreadProc(LPVOID lpParam);

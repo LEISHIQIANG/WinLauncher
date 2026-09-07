@@ -13,6 +13,8 @@
 #include "../../WinLauncher/Services/FolderWatcher.h"
 #include "../../WinLauncher/Services/FileSelectionService.h"
 #include "../../WinLauncher/Popup/PopupIconRefreshController.h"
+#include "../../WinLauncher/Popup/PopupWheelState.h"
+#include "../../WinLauncher/App/MouseButtonPairs.h"
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
 #include "../../WinLauncher/Popup/PinyinHelper.h"
 #include "../../WinLauncher/TriggerBlacklistPolicy.h"
@@ -258,6 +260,49 @@ int wmain(int argc, wchar_t** argv)
     }
 
     {
+        PopupWheelState wheel;
+        wheel.Reset(0);
+        if (wheel.Wheel(-30, 0) || wheel.Wheel(-30, 0) || wheel.Wheel(-30, 0) ||
+            !wheel.Wheel(-30, 0) || wheel.target != 1)
+            return Fail(L"high resolution wheel must accumulate a full detent");
+        for (int i = 0; i < 1000; ++i) wheel.Wheel(-120, 0.25f);
+        if (wheel.target != 1 || wheel.pending != 1 || !wheel.Arrive() || wheel.target != 2 || wheel.Arrive())
+            return Fail(L"wheel burst must retain only one pending page");
+        wheel.Reset(0);
+        wheel.Wheel(-120, 0);
+        wheel.Wheel(-120, 0.1f);
+        if (wheel.AdvanceQueued(0.5f) || !wheel.AdvanceQueued(0.8f) || wheel.target != 2 || wheel.pending)
+            return Fail(L"continuous wheel motion must advance its queued page near the boundary");
+        wheel.Reset(1);
+        wheel.Wheel(-120, 1);
+        if (wheel.target != 2 || PopupWheelState::Page(wheel.target, 2) != 0)
+            return Fail(L"two-page wrap must retain forward coordinates");
+        wheel.Wheel(-120, 1.2f);
+        wheel.Wheel(120, 1.2f);
+        if (wheel.target != 1 || wheel.pending != 0)
+            return Fail(L"wheel reversal must discard old direction backlog");
+        wheel.Reset(0);
+        wheel.Wheel(120, 0);
+        if (wheel.target != -1 || PopupWheelState::Page(wheel.target, 3) != 2)
+            return Fail(L"backward wrap must retain negative coordinates");
+        wheel.Reset(2);
+        if (wheel.active || wheel.pending || wheel.remainder || wheel.target != 2)
+            return Fail(L"hide/search/layout reset must clear wheel state");
+    }
+    {
+        MouseButtonPairs pairs;
+        pairs.Down(1, true);
+        pairs.Down(2, true);
+        pairs.Down(4, false);
+        // Policy/recording changes and reinstall do not mutate pair ownership.
+        if (pairs.Up(4) || !pairs.Up(1) || pairs.Up(1) || pairs.Snapshot() != 2 || !pairs.Up(2))
+            return Fail(L"physical button pairs must remain independent");
+        pairs.Down(1, true);
+        pairs.Down(1, false); // a new pass-through down replaces a missed old up
+        if (pairs.Up(1)) return Fail(L"stale pair must not swallow a new pass-through up");
+    }
+
+    {
         PopupIconRefreshController refresh;
         auto first = refresh.Begin();
         if (!first || !refresh.IsCurrent(first) || refresh.Begin() || !refresh.TakePending())
@@ -271,6 +316,21 @@ int wmain(int argc, wchar_t** argv)
           refresh.WaitForCompletion(completed, 0) || !refresh.IsCurrent(completed) ||
           !SetEvent(completed->completionEvent) || !refresh.WaitForCompletion(completed, 0))
             return Fail(L"popup icon refresh completion wait regressed");
+        refresh.Cancel();
+        auto partial = refresh.Begin();
+        partial->layoutGeneration = 7;
+        partial->results.push_back({false, 0, 0, nullptr, L"missing", 7});
+        const auto batch = refresh.Take(partial);
+        if (batch.size() != 1 || batch[0].identity != L"missing" || batch[0].layoutGeneration != 7 ||
+            !refresh.IsRefreshing() || !refresh.Take(partial).empty())
+            return Fail(L"partial icon consumption must retain the running generation");
+        if (refresh.Begin(true) || refresh.Begin(false) || !refresh.TakePending() || !refresh.TakePendingForce())
+            return Fail(L"coalescing must retain explicit refresh intent");
+        refresh.Cancel();
+        auto newer = refresh.Begin();
+        partial->results.push_back({false, 0, 0, nullptr, L"stale", 7});
+        if (refresh.IsCurrent(partial) || !refresh.Take(partial).empty() || !refresh.IsCurrent(newer))
+            return Fail(L"late icon completion must not enter a replacement generation");
         refresh.Cancel();
     }
 
@@ -620,6 +680,6 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(process.hProcess);
     if (!HasNonEmptyCrashArtifacts(crashDir)) return Fail(L"crash reporter did not create non-empty dump and metadata");
 
-    fwprintf(stdout, L"[PASS] native async, mouse capture recovery, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
+    fwprintf(stdout, L"[PASS] native async, mouse button pairing, bounded wheel paging, icon generations, mouse capture recovery, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
     return 0;
 }

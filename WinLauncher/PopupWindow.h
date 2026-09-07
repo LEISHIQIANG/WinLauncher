@@ -11,6 +11,7 @@
 #include "Services/FileSelectionService.h"
 #include "Popup/PopupFileSelectionController.h"
 #include "Popup/PopupIconRefreshController.h"
+#include "Popup/PopupWheelState.h"
 #include "Popup/PopupSearchService.h"
 #include <mutex>
 #include <memory>
@@ -74,18 +75,15 @@ private:
     int HitTestDot(POINT pt);
     int HitTestDock(POINT pt);
     void EnsureIcons();
-    void RefreshIcons(bool clearExisting = true);
+    void RefreshIcons(bool forceRefresh = true, bool showFeedback = true);
     void ApplyRefreshedIcons(bool refreshCompleted = true);
     void PreserveLoadedIcons();
     HICON CopyCachedIcon(const RendShortcutInfo& shortcut) const;
     void RememberLoadedIcon(const RendShortcutInfo& shortcut);
     void ClearLoadedIconCache();
-    void QueueShowUntilIconsReady(HWND parent, POINT pt, const std::shared_ptr<PopupIconRefreshController::State>& state);
     void OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
-    void OnIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state);
     static void OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
-    static void OnAnyIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state);
-    void CancelIconRefresh(bool preserveCompletedFallback = false);
+    void CancelIconRefresh(bool preservePreload = false);
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
@@ -151,6 +149,10 @@ private:
     double m_animLastTime;
     float m_scrollPosition;
     float m_scrollVelocity;
+    PopupWheelState m_wheel;
+    ULONGLONG m_iconFlashStart = 0;
+    std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_iconFlashBitmaps;
+    void DrawShortcutIcon(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bitmap, const D2D1_RECT_F& rect, const std::wstring& name);
 
     // Bitmap brush cache: keyed by ID2D1Bitmap pointer, cleared on EnsureIcons
     std::unordered_map<ID2D1Bitmap*, ComPtr<ID2D1BitmapBrush>> m_bmpBrushCache;
@@ -184,23 +186,10 @@ private:
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
     std::vector<BackgroundTaskService::TaskHandle> m_iconRefreshTasks;
-    BackgroundTaskService::TaskHandle m_iconPreloadTimeoutTask;
+    uint64_t m_iconLayoutGeneration = 0;
     PopupIconRefreshController m_iconRefresh;
     // Device-independent HICON copies survive scene/config render-page rebuilds.
     std::unordered_map<std::wstring, HICON> m_loadedIconCache;
-    // A startup trigger is retained until the initial Shell icon preload has
-    // finished.  The popup is never shown with provisional icon art.
-    bool m_hasPendingShow = false;
-    HWND m_pendingShowParent = nullptr;
-    POINT m_pendingShowPoint{};
-    uint64_t m_pendingShowIconGeneration = 0;
-    // A timed-out preload keeps its generated fallback for the current open;
-    // completed real icons are applied only after the popup has closed.
-    uint64_t m_iconFallbackGeneration = 0;
-    // Only an explicit blank-area double click may refresh icons while the
-    // popup is visible. Automatic/config preload keeps one stable snapshot.
-    bool m_applyIconRefreshWhileVisible = false;
-
     PopupFileSelectionController m_fileSelection;
     void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);
     void CancelFileSelectionQuery();

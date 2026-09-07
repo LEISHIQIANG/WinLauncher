@@ -77,7 +77,8 @@ static const double POPUP_SLOW_SHOW_MS = 24.0;
 static const double POPUP_SLOW_FRAME_MS = 16.0;
 static const double POPUP_SLOW_ICON_REFRESH_MS = 40.0;
 static const int DEFAULT_FILE_SELECTION_VALIDITY_SECONDS = 15;
-static const DWORD POPUP_ICON_PRELOAD_MAX_WAIT_MS = 120;
+static constexpr UINT_PTR POPUP_ICON_PROGRESS_TIMER = 0xA713;
+static constexpr UINT_PTR POPUP_ICON_FLASH_TIMER = 0xA714;
 
 static bool IsSelectionWithinValidity(double elapsedSeconds, int validitySeconds)
 {
@@ -599,7 +600,7 @@ void PopupWindow::ClearLoadedIconCache()
 
 void PopupWindow::ClearPages()
 {
-    m_iconFallbackGeneration = 0;
+    ++m_iconLayoutGeneration;
     CancelIconRefresh();
     m_searchResults.clear();
     m_selectedSearchResult = -1;
@@ -729,6 +730,7 @@ void PopupWindow::OnConfigChanged()
         if (m_currentPage >= (int)m_pages.size())
             m_currentPage = 0;
         m_scrollPosition = (float)m_currentPage;
+        m_wheel.Reset(m_currentPage);
         m_scrollVelocity = 0.0f;
 
         if (m_rt)
@@ -977,6 +979,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         if (this->m_currentPage >= static_cast<int>(this->m_pages.size()))
             this->m_currentPage = 0;
         this->m_scrollPosition = (float)this->m_currentPage;
+        this->m_wheel.Reset(this->m_currentPage);
         this->m_scrollVelocity = 0.0f;
     }
 
@@ -984,39 +987,9 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     // order for every show rather than waiting for a configuration reload.
     ApplyShortcutSortMode();
 
-    // A timed-out preload may have completed while the popup was hidden. Keep
-    // the fallback stable during the prior open, then adopt those real icons
-    // before the next open.
-    if (!IsWindowVisible(GetHWND()) && m_iconFallbackGeneration != 0)
-    {
-        auto state = m_iconRefresh.Current();
-        if (state && m_iconFallbackGeneration == state->generation &&
-            m_iconRefresh.WaitForCompletion(state, 0))
-        {
-            ApplyRefreshedIcons();
-            m_iconFallbackGeneration = 0;
-        }
-    }
-
-    // A cold trigger is retained until the initial Shell icon batch finishes,
-    // but never indefinitely. Completion resumes through UiDispatcher; a
-    // 120ms managed timeout resumes with a stable generated fallback.
-    if (!IsWindowVisible(GetHWND()) && m_iconRefresh.IsRefreshing())
-    {
-        auto state = m_iconRefresh.Current();
-        const bool iconsReady = state && m_iconRefresh.WaitForCompletion(state, 0);
-        if (state && !iconsReady && m_iconFallbackGeneration != state->generation)
-        {
-            QueueShowUntilIconsReady(parent, clickPt, state);
-            return;
-        }
-        if (state && iconsReady && m_iconRefresh.IsCurrent(state))
-        {
-            const double iconReadyStart = GetTimeInSeconds();
-            ApplyRefreshedIcons();
-            iconReadyMs = (GetTimeInSeconds() - iconReadyStart) * 1000.0;
-        }
-    }
+    // Never gate the first frame on Shell extraction or the background queue.
+    if (auto state = m_iconRefresh.Current())
+        ApplyRefreshedIcons(m_iconRefresh.WaitForCompletion(state, 0));
 
     // 2. Calculate window dimensions using user settings
     int cols = this->GetColumns();
@@ -1172,6 +1145,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         this->m_trackMouse = false;
         this->m_animating = false;
         this->m_scrollPosition = (float)this->m_currentPage;
+        this->m_wheel.Reset(this->m_currentPage);
         this->m_scrollVelocity = 0.0f;
         this->m_searchActive = this->m_appCtx && this->m_appCtx->configService
             ? this->m_appCtx->configService->GetSearchMode()
@@ -1252,12 +1226,13 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
                    sceneAppChanged ? 1 : 0, geometryChanged ? 1 : 0, dpiChanged ? 1 : 0,
                    backgroundRefreshNeeded ? 1 : 0, bgElapsedMs, static_cast<int>(this->m_pages.size()));
 
+        if (this->m_iconRefresh.IsRefreshing())
+            SetTimer(this->GetHWND(), POPUP_ICON_PROGRESS_TIMER, 16, nullptr);
+
         if (needsShow)
         {
             const double firstFrameStart = GetTimeInSeconds();
-            // The shared reveal barrier keeps the HWND transparent until DWM
-            // has consumed a synchronous visible redraw on slower machines.
-            // Background preparation above is already current for this popup.
+            // Reveal the prepared content before allowing the companion shadow.
             this->RevealAfterFirstPaint(SW_SHOWNOACTIVATE, false);
             firstFrameMs = (GetTimeInSeconds() - firstFrameStart) * 1000.0;
         }
@@ -1302,15 +1277,19 @@ void PopupWindow::Hide()
 {
     if (s_instance)
     {
-        s_instance->m_hasPendingShow = false;
+
         s_instance->HideSelf();
     }
 }
 
 void PopupWindow::HideSelf(bool immediate)
 {
+    m_wheel.Reset(m_currentPage);
+    m_iconFlashStart = 0;
+    m_iconFlashBitmaps.clear();
     CrashReporter::RecordBreadcrumb(L"popup.hide", L"");
     HWND h = GetHWND();
+    if (h && !IsWindowVisible(h)) HideImmediately();
     if (h)
     {
         if (GetCapture() == h)
@@ -1542,6 +1521,7 @@ void PopupWindow::UpdateTextFormat()
 
 void PopupWindow::UpdateSearch()
 {
+    m_wheel.Reset(m_currentPage);
     m_searchResults.clear();
     m_selectedSearchResult = -1;
     if (m_searchQuery.empty())
@@ -1774,7 +1754,7 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
                 }
 
                 // Dynamic opacity transition based on m_scrollPosition distance
-                float dist = std::abs((float)i - m_scrollPosition);
+                float dist = std::abs(std::remainder((float)i - m_scrollPosition, static_cast<float>(m_pages.size())));
                 if (numPages > 1)
                 {
                     float halfN = (float)numPages / 2.0f;
@@ -1798,7 +1778,7 @@ void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 
             float lineW = std::min(header.selectionIndicatorWidth, std::max(10.0f, tabWidth - 4.0f));
             float lineH = std::max(1.2f, header.controlHeight * 0.06f);
-            float lineX = topRect.left + m_scrollPosition * tabWidth + (tabWidth - lineW) * 0.5f;
+            float lineX = topRect.left + (m_scrollPosition - std::floor(m_scrollPosition / m_pages.size()) * m_pages.size()) * tabWidth + (tabWidth - lineW) * 0.5f;
             float lineY = topRect.bottom - lineH;
             D2D1_ROUNDED_RECT indicatorLine = D2D1::RoundedRect(
                 D2D1::RectF(lineX, lineY, lineX + lineW, lineY + lineH),
@@ -1916,7 +1896,7 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
             float iconX = ix + cellMarginX;
             float iconY = iy + cellMarginY;
             D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
-            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            DrawShortcutIcon(rt, bmp, iconRect, item.shortcut.name);
         }
     }
 
@@ -1975,6 +1955,7 @@ void PopupWindow::EnsureIcons()
     bool rtChanged = (m_rt.Get() != m_lastRt) || (currentDpi != m_lastDpi) || (iconBitmapSize != m_lastIconBitmapSize);
     if (rtChanged)
     {
+        m_iconFlashBitmaps.clear();
         m_lastRt = m_rt.Get();
         m_lastDpi = currentDpi;
         m_lastIconBitmapSize = iconBitmapSize;
@@ -2054,56 +2035,21 @@ void PopupWindow::EnsureIcons()
     }
 }
 
-void PopupWindow::RefreshIcons(bool clearExisting)
+void PopupWindow::RefreshIcons(bool forceRefresh, bool showFeedback)
 {
     if (!m_appCtx || !m_appCtx->backgroundTasks) return;
-    if (clearExisting)
-        m_applyIconRefreshWhileVisible = true;
-    auto state = m_iconRefresh.Begin();
+    if (forceRefresh && showFeedback && IsWindowVisible(GetHWND()))
+    {
+        m_iconFlashStart = GetTickCount64();
+        SetTimer(GetHWND(), POPUP_ICON_FLASH_TIMER, 16, nullptr);
+        InvalidateRect(GetHWND(), nullptr, FALSE);
+    }
+    auto state = m_iconRefresh.Begin(forceRefresh);
     if (!state) return;
+    state->layoutGeneration = m_iconLayoutGeneration;
     HWND hwnd = GetHWND();
     std::shared_ptr<UiDispatcher> dispatcher = m_appCtx->uiDispatcher;
-    if (m_hasPendingShow)
-        m_pendingShowIconGeneration = state->generation;
-
-    if (clearExisting)
-    {
-        // Keep the familiar refresh feedback: visible icons briefly return to
-        // placeholders, while expensive Shell extraction continues off the UI
-        // thread.  Off-screen pages retain their cache until they are visited.
-        const int pageCount = static_cast<int>(m_pages.size());
-        for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
-        {
-            int distance = std::abs(pageIndex - m_currentPage);
-            if (pageCount > 1) distance = (std::min)(distance, pageCount - distance);
-            if (distance > 1) continue;
-            auto& page = m_pages[pageIndex];
-            for (auto*& bitmap : page.iconBitmaps)
-            {
-                if (bitmap) bitmap->Release();
-                bitmap = nullptr;
-            }
-            for (auto& shortcut : page.shortcuts)
-            {
-                if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
-                shortcut.hIcon = nullptr;
-            }
-        }
-        for (auto*& bitmap : m_dockPage.iconBitmaps)
-        {
-            if (bitmap) bitmap->Release();
-            bitmap = nullptr;
-        }
-        for (auto& shortcut : m_dockPage.shortcuts)
-        {
-            if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
-            shortcut.hIcon = nullptr;
-        }
-        m_bmpBrushCache.clear();
-        EnsureIcons();
-        InvalidateRect(hwnd, nullptr, FALSE);
-        UpdateWindow(hwnd);
-    }
+    if (hwnd) SetTimer(hwnd, POPUP_ICON_PROGRESS_TIMER, 16, nullptr);
 
     std::vector<std::tuple<bool, size_t, size_t, RendShortcutInfo>> jobs;
     for (size_t pageIndex = 0; pageIndex < m_pages.size(); ++pageIndex)
@@ -2111,28 +2057,38 @@ void PopupWindow::RefreshIcons(bool clearExisting)
         for (size_t shortcutIndex = 0; shortcutIndex < m_pages[pageIndex].shortcuts.size(); ++shortcutIndex)
         {
             auto& sc = m_pages[pageIndex].shortcuts[shortcutIndex];
-            if (!clearExisting && sc.hIcon != nullptr) continue;
+            if (!forceRefresh && sc.hIcon != nullptr) continue;
             jobs.emplace_back(false, pageIndex, shortcutIndex, sc);
         }
     }
     for (size_t shortcutIndex = 0; shortcutIndex < m_dockPage.shortcuts.size(); ++shortcutIndex)
     {
         auto& sc = m_dockPage.shortcuts[shortcutIndex];
-        if (!clearExisting && sc.hIcon != nullptr) continue;
+        if (!forceRefresh && sc.hIcon != nullptr) continue;
         jobs.emplace_back(true, 0, shortcutIndex, sc);
     }
 
     if (jobs.empty())
     {
         m_iconRefresh.Complete();
-        m_applyIconRefreshWhileVisible = false;
+        if (hwnd) KillTimer(hwnd, POPUP_ICON_PROGRESS_TIMER);
         return;
     }
+
+    std::stable_sort(jobs.begin(), jobs.end(), [this](const auto& a, const auto& b) {
+        auto rank = [this](const auto& job) {
+            if (std::get<0>(job)) return 0;
+            const int count = static_cast<int>(m_pages.size());
+            const int distance = std::abs(static_cast<int>(std::get<1>(job)) - m_currentPage);
+            return (std::min)(distance, count - distance);
+        };
+        return rank(a) < rank(b);
+    });
 
     // Automatic icon preparation starts with the application and should run
     // ahead of ordinary background work so the first popup can reuse it.
     // Explicit visible refreshes remain normal-priority user maintenance.
-    const auto refreshPriority = clearExisting
+    const auto refreshPriority = forceRefresh
         ? BackgroundTaskService::Priority::Normal
         : BackgroundTaskService::Priority::High;
     constexpr size_t MaximumIconWorkers = 4;
@@ -2170,6 +2126,7 @@ void PopupWindow::RefreshIcons(bool clearExisting)
             refreshPriority,
             [state, sharedJobs, nextJob, finishWorker](
                 const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) mutable {
+            const auto completion = std::shared_ptr<void>(nullptr, [finishWorker](void*) { finishWorker(); });
             const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
             while (!state->cancelled && !cancellation->IsCancellationRequested())
             {
@@ -2185,10 +2142,9 @@ void PopupWindow::RefreshIcons(bool clearExisting)
                     break;
                 }
                 std::lock_guard<std::mutex> lock(state->mutex);
-                state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon });
+                state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon, PopupIconCacheKey(shortcut), state->layoutGeneration });
             }
             if (SUCCEEDED(comResult)) CoUninitialize();
-            finishWorker();
         });
         if (handle)
         {
@@ -2202,105 +2158,14 @@ void PopupWindow::RefreshIcons(bool clearExisting)
     }
 }
 
-void PopupWindow::QueueShowUntilIconsReady(HWND parent, POINT pt, const std::shared_ptr<PopupIconRefreshController::State>& state)
-{
-    if (!state || !m_iconRefresh.IsCurrent(state)) return;
-    m_hasPendingShow = true;
-    m_pendingShowParent = parent;
-    m_pendingShowPoint = pt;
-    m_pendingShowIconGeneration = state->generation;
-    LOG_G_DEBUG_NODE(L"ui.popup", L"show_deferred_for_icons", L"generation=%llu",
-                     static_cast<unsigned long long>(state->generation));
-
-    m_iconPreloadTimeoutTask.Cancel();
-    m_iconPreloadTimeoutTask = {};
-    const auto dispatcher = m_appCtx ? m_appCtx->uiDispatcher : nullptr;
-    const auto tasks = m_appCtx ? m_appCtx->backgroundTasks : nullptr;
-    if (!dispatcher || !tasks)
-    {
-        OnIconPreloadTimedOut(state);
-        return;
-    }
-    m_iconPreloadTimeoutTask = tasks->Submit(L"popup.icon_preload_timeout", BackgroundTaskService::Priority::High,
-        [state, dispatcher](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            Sleep(POPUP_ICON_PRELOAD_MAX_WAIT_MS);
-            if (cancellation->IsCancellationRequested() || state->cancelled)
-                return;
-            dispatcher->Post(L"popup.icon_preload_timeout", [state]() {
-                PopupWindow::OnAnyIconPreloadTimedOut(state);
-            });
-        });
-    if (!m_iconPreloadTimeoutTask)
-        OnIconPreloadTimedOut(state);
-}
-
 void PopupWindow::OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state)
 {
-    if (!state || !m_iconRefresh.IsCurrent(state)) return;
-
-    m_iconPreloadTimeoutTask.Cancel();
-    m_iconPreloadTimeoutTask = {};
-    if (IsWindowVisible(GetHWND()) && !m_applyIconRefreshWhileVisible)
-    {
-        // Freeze the icon snapshot for the whole visible session. Whether the
-        // batch merely ran slowly or completed just after reveal, retain its
-        // results and apply them atomically before the next open.
-        m_iconFallbackGeneration = state->generation;
-        m_iconRefresh.Complete();
-        m_applyIconRefreshWhileVisible = false;
-        return;
-    }
-
-    ApplyRefreshedIcons();
-    m_iconFallbackGeneration = 0;
-    if (!m_hasPendingShow) return;
-
-    // A config change can coalesce a newer preload while this batch finishes.
-    // Keep the original trigger and wait for that newer generation too.
-    auto current = m_iconRefresh.Current();
-    if (m_iconRefresh.IsRefreshing() && current && current->generation != state->generation)
-    {
-        m_pendingShowIconGeneration = current->generation;
-        return;
-    }
-    if (m_pendingShowIconGeneration != state->generation) return;
-
-    const HWND parent = m_pendingShowParent;
-    const POINT pt = m_pendingShowPoint;
-    m_hasPendingShow = false;
-    m_pendingShowParent = nullptr;
-    m_pendingShowIconGeneration = 0;
-    ShowAt(parent, pt);
-}
-
-void PopupWindow::OnIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state)
-{
-    if (!state || !m_iconRefresh.IsCurrent(state) || !m_hasPendingShow ||
-        m_pendingShowIconGeneration != state->generation)
-        return;
-
-    // The worker can signal just before its UI completion callback is queued.
-    // Prefer the completed real batch rather than needlessly entering fallback.
-    if (m_iconRefresh.WaitForCompletion(state, 0))
-    {
-        OnIconPreloadCompleted(state);
-        return;
-    }
-
-    // Consume every icon that finished within the bounded wait. The remaining
-    // workers continue in the background, so one sleeping drive or stale Shell
-    // target cannot force the whole first popup to use generated text icons.
-    ApplyRefreshedIcons(false);
-    m_iconFallbackGeneration = state->generation;
-    const HWND parent = m_pendingShowParent;
-    const POINT pt = m_pendingShowPoint;
-    m_hasPendingShow = false;
-    m_pendingShowParent = nullptr;
-    m_pendingShowIconGeneration = 0;
-    LOG_G_WARNING_NODE(L"ui.popup", L"icon_preload_timeout",
-        L"timeout_ms=%lu generation=%llu", POPUP_ICON_PRELOAD_MAX_WAIT_MS,
-        static_cast<unsigned long long>(state->generation));
-    ShowAt(parent, pt);
+    if (!m_iconRefresh.IsCurrent(state)) return;
+    // The timer coalesces visible updates; hidden preload can be consumed now.
+    if (!IsWindowVisible(GetHWND()))
+        ApplyRefreshedIcons(m_iconRefresh.WaitForCompletion(state, 0));
+    else
+        SetTimer(GetHWND(), POPUP_ICON_PROGRESS_TIMER, 16, nullptr);
 }
 
 void PopupWindow::OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state)
@@ -2308,8 +2173,7 @@ void PopupWindow::OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefre
     if (!state) return;
     if (s_instance && s_instance->m_iconRefresh.IsCurrent(state))
         s_instance->OnIconPreloadCompleted(state);
-    // Do not prune here: a multi-open popup may be waiting for this completion
-    // before it owns a HWND.
+    // Instances may still be preloading before they own a HWND.
     for (PopupWindow* window : s_extraWindows)
     {
         if (window && window->m_iconRefresh.IsCurrent(state))
@@ -2317,50 +2181,13 @@ void PopupWindow::OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefre
     }
 }
 
-void PopupWindow::OnAnyIconPreloadTimedOut(const std::shared_ptr<PopupIconRefreshController::State>& state)
+void PopupWindow::CancelIconRefresh(bool preservePreload)
 {
-    if (!state) return;
-    if (s_instance && s_instance->m_iconRefresh.IsCurrent(state))
-        s_instance->OnIconPreloadTimedOut(state);
-    for (PopupWindow* window : s_extraWindows)
-    {
-        if (window && window->m_iconRefresh.IsCurrent(state))
-            window->OnIconPreloadTimedOut(state);
-    }
-}
-
-void PopupWindow::CancelIconRefresh(bool preserveCompletedFallback)
-{
-    m_iconPreloadTimeoutTask.Cancel();
-    m_iconPreloadTimeoutTask = {};
-    auto state = m_iconRefresh.Current();
-    if (preserveCompletedFallback && m_iconFallbackGeneration != 0 && state &&
-        state->generation == m_iconFallbackGeneration)
-    {
-        // Closing a popup that used the bounded fallback must not cancel the
-        // startup preload. Let the one existing Shell batch finish in the
-        // background; its UI callback applies the complete icon set while
-        // hidden, or the next ShowAt consumes it atomically.
-        if (m_iconRefresh.WaitForCompletion(state, 0))
-        {
-            m_iconRefreshTasks.clear();
-            m_iconRefresh.Complete();
-        }
-        m_hasPendingShow = false;
-        m_pendingShowParent = nullptr;
-        m_pendingShowIconGeneration = 0;
-        m_applyIconRefreshWhileVisible = false;
-        return;
-    }
-    for (const auto& task : m_iconRefreshTasks)
-        task.Cancel();
+    if (preservePreload) return; // Hide keeps useful preload alive.
+    if (GetHWND()) KillTimer(GetHWND(), POPUP_ICON_PROGRESS_TIMER);
+    for (const auto& task : m_iconRefreshTasks) task.Cancel();
     m_iconRefreshTasks.clear();
     m_iconRefresh.Cancel();
-    m_iconFallbackGeneration = 0;
-    m_hasPendingShow = false;
-    m_pendingShowParent = nullptr;
-    m_pendingShowIconGeneration = 0;
-    m_applyIconRefreshWhileVisible = false;
 }
 
 void PopupWindow::ApplyRefreshedIcons(bool refreshCompleted)
@@ -2374,7 +2201,22 @@ void PopupWindow::ApplyRefreshedIcons(bool refreshCompleted)
     {
         auto* page = result.dock ? &m_dockPage : (result.pageIndex < m_pages.size() ? &m_pages[result.pageIndex] : nullptr);
         if (!page || result.shortcutIndex >= page->shortcuts.size()) { if (result.icon) DestroyIcon(result.icon); continue; }
+        if (result.layoutGeneration != m_iconLayoutGeneration)
+        { if (result.icon) DestroyIcon(result.icon); continue; }
+        if (PopupIconCacheKey(page->shortcuts[result.shortcutIndex]) != result.identity)
+        {
+            const auto found = std::find_if(page->shortcuts.begin(), page->shortcuts.end(),
+                [&result](const auto& shortcut) { return PopupIconCacheKey(shortcut) == result.identity; });
+            if (found == page->shortcuts.end()) { if (result.icon) DestroyIcon(result.icon); continue; }
+            result.shortcutIndex = static_cast<size_t>(found - page->shortcuts.begin());
+        }
         auto& shortcut = page->shortcuts[result.shortcutIndex];
+        if (!result.icon || result.layoutGeneration != m_iconLayoutGeneration ||
+            result.identity != PopupIconCacheKey(shortcut))
+        {
+            if (result.icon) DestroyIcon(result.icon);
+            continue;
+        }
         if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
         shortcut.hIcon = result.icon;
         RememberLoadedIcon(shortcut);
@@ -2385,28 +2227,40 @@ void PopupWindow::ApplyRefreshedIcons(bool refreshCompleted)
         }
         ++applied;
     }
-    m_bmpBrushCache.clear();
+    if (applied) m_bmpBrushCache.clear();
     if (refreshCompleted)
     {
         m_iconRefresh.Complete();
-        m_applyIconRefreshWhileVisible = false;
+        if (GetHWND()) KillTimer(GetHWND(), POPUP_ICON_PROGRESS_TIMER);
         m_iconRefreshTasks.clear();
     }
-    if (GetHWND())
+    if (GetHWND() && applied > 0)
     {
         EnsureIcons();
         InvalidateRect(GetHWND(), nullptr, FALSE);
     }
-    LOG_G_DEBUG(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
+    if (applied || refreshCompleted) LOG_G_DEBUG(L"PopupWindow perf: icon refresh applied=%d total=%zu ui_ms=%.2f generation=%llu",
                applied, results.size(), (GetTimeInSeconds() - started) * 1000.0,
                static_cast<unsigned long long>(m_iconRefresh.Generation()));
     if (refreshCompleted && m_iconRefresh.TakePending())
     {
-        // Coalesced automatic/config requests must only fill missing entries.
-        // Restarting as an explicit refresh would clear icons that were just
-        // applied and visibly regress the next popup to text placeholders.
-        RefreshIcons(false);
+        RefreshIcons(m_iconRefresh.TakePendingForce(), false);
     }
+}
+
+void PopupWindow::DrawShortcutIcon(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bitmap,
+    const D2D1_RECT_F& rect, const std::wstring& name)
+{
+    // Preserve the original text-icon flash without destroying real artwork.
+    if (m_iconFlashStart && GetTickCount64() - m_iconFlashStart < 120)
+    {
+        auto& flash = m_iconFlashBitmaps[name];
+        if (!flash)
+            flash = IconRenderer::CreateDefaultIcon(rt, GetDWFactory(), name,
+                IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(GetIconSize())));
+        if (flash) bitmap = flash.Get();
+    }
+    if (bitmap) rt->DrawBitmap(bitmap, rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 }
 
 void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
@@ -2462,7 +2316,7 @@ void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
             D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
 
             auto* bmp = page.iconBitmaps[i];
-            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            DrawShortcutIcon(rt, bmp, iconRect, page.shortcuts[i].name);
         }
     }
 
@@ -2526,9 +2380,7 @@ void PopupWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
             float diff = (float)i - m_scrollPosition;
             if (numPages > 1)
             {
-                float halfN = (float)numPages / 2.0f;
-                if (diff > halfN) diff -= (float)numPages;
-                else if (diff < -halfN) diff += (float)numPages;
+                diff = std::remainder(diff, static_cast<float>(numPages));
             }
 
             float offsetX = diff * w;
@@ -2632,7 +2484,7 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
             D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
 
             auto* bmp = m_dockPage.iconBitmaps[i];
-            rt->DrawBitmap(bmp, iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            DrawShortcutIcon(rt, bmp, iconRect, m_dockPage.shortcuts[i].name);
         }
     }
 
@@ -2692,7 +2544,10 @@ void PopupWindow::StartPageAnimationLoop()
 
     if (!UIStyle::Animation::IsEnabled())
     {
+        const int remainder = m_wheel.remainder;
         m_scrollPosition = (float)m_currentPage;
+        m_wheel.Reset(m_currentPage);
+        m_wheel.remainder = remainder;
         m_scrollVelocity = 0.0f;
         m_animating = false;
         if (m_viewModel)
@@ -2722,7 +2577,10 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
 
     if (!UIStyle::Animation::IsEnabled())
     {
+        const int remainder = m_wheel.remainder;
         m_scrollPosition = (float)m_currentPage;
+        m_wheel.Reset(m_currentPage);
+        m_wheel.remainder = remainder;
         m_scrollVelocity = 0.0f;
         m_animating = false;
         if (m_viewModel)
@@ -2742,7 +2600,12 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
     if (dt > 0.1f) dt = 0.1f;
     if (dt <= 0.0f) dt = 0.001f;
 
-    float target = (float)m_currentPage;
+    if (m_wheel.AdvanceQueued(m_scrollPosition))
+    {
+        m_currentPage = PopupWheelState::Page(m_wheel.target, static_cast<int>(m_pages.size()));
+        if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(m_currentPage));
+    }
+    float target = m_wheel.active ? static_cast<float>(m_wheel.target) : static_cast<float>(m_currentPage);
     int numPages = (int)m_pages.size();
     float stiffness = 400.0f;
     float damping = 40.0f;
@@ -2756,34 +2619,15 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
         if (currentStep <= 0.0f) break;
 
         float error = target - m_scrollPosition;
-        if (numPages > 1)
-        {
-            float halfN = (float)numPages / 2.0f;
-            if (error > halfN) error -= (float)numPages;
-            else if (error < -halfN) error += (float)numPages;
-        }
 
         float force = error * stiffness - m_scrollVelocity * damping;
         m_scrollVelocity += force * currentStep;
         m_scrollPosition += m_scrollVelocity * currentStep;
 
-        if (numPages > 1)
-        {
-            while (m_scrollPosition < 0.0f) m_scrollPosition += (float)numPages;
-            while (m_scrollPosition >= (float)numPages) m_scrollPosition -= (float)numPages;
-        }
-
         remainingTime -= currentStep;
     }
 
     float finalError = target - m_scrollPosition;
-    if (numPages > 1)
-    {
-        float halfN = (float)numPages / 2.0f;
-        if (finalError > halfN) finalError -= (float)numPages;
-        else if (finalError < -halfN) finalError += (float)numPages;
-    }
-
     RECT clientRect{};
     GetClientRect(hWnd, &clientRect);
     const float pageWidthPx = (std::max)(1.0f, static_cast<float>(clientRect.right - clientRect.left));
@@ -2795,7 +2639,19 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
     {
         m_scrollPosition = target;
         m_scrollVelocity = 0.0f;
-        m_animating = false;
+        m_animating = m_wheel.active && m_wheel.Arrive();
+        if (m_animating)
+        {
+            m_currentPage = PopupWheelState::Page(m_wheel.target, numPages);
+            if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(m_currentPage));
+        }
+        else
+        {
+            const int remainder = m_wheel.remainder;
+            m_scrollPosition = static_cast<float>(m_currentPage);
+            m_wheel.Reset(m_currentPage);
+            m_wheel.remainder = remainder;
+        }
     }
 
     if (m_viewModel)
@@ -2963,6 +2819,27 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_TIMER:
+        if (wParam == POPUP_ICON_FLASH_TIMER)
+        {
+            if (!m_iconFlashStart || GetTickCount64() - m_iconFlashStart >= 120)
+            {
+                m_iconFlashStart = 0;
+                m_iconFlashBitmaps.clear();
+                KillTimer(hWnd, POPUP_ICON_FLASH_TIMER);
+            }
+            InvalidateRect(hWnd, nullptr, FALSE);
+            return 0;
+        }
+        if (wParam == POPUP_ICON_PROGRESS_TIMER)
+        {
+            auto state = m_iconRefresh.Current();
+            if (m_iconRefresh.IsRefreshing() && state)
+                ApplyRefreshedIcons(m_iconRefresh.WaitForCompletion(state, 0));
+            else
+                KillTimer(hWnd, POPUP_ICON_PROGRESS_TIMER);
+            return 0;
+        }
+
     {
         if (wParam == FILE_SELECTION_TIMER_ID)
         {
@@ -3235,23 +3112,12 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     {
         if (m_searchActive && !m_searchQuery.empty()) return 0;
         if (m_pages.size() <= 1) return 0;
-        int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-        int targetPage = m_currentPage;
-        if (zDelta > 0)
-            targetPage = (m_currentPage - 1 + (int)m_pages.size()) % (int)m_pages.size();
-        else if (zDelta < 0)
-            targetPage = (m_currentPage + 1) % (int)m_pages.size();
-
-        if (targetPage != m_currentPage)
+        if (m_wheel.Wheel(GET_WHEEL_DELTA_WPARAM(wParam), m_scrollPosition))
         {
-            m_currentPage = targetPage;
+            m_currentPage = PopupWheelState::Page(m_wheel.target, static_cast<int>(m_pages.size()));
             m_hovered = -1;
-            if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
-
-            if (!m_animating)
-            {
-                StartPageAnimationLoop();
-            }
+            if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(m_currentPage));
+            if (!m_animating) StartPageAnimationLoop();
             InvalidateRect(hWnd, nullptr, FALSE);
         }
         return 0;
@@ -3299,6 +3165,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     if (clickedTab != m_currentPage)
                     {
+                        m_wheel.Reset(clickedTab);
                         m_currentPage = clickedTab;
                         m_hovered = -1;
                         if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(clickedTab));
@@ -3642,6 +3509,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int targetPage = (m_currentPage - 1 + (int)m_pages.size()) % (int)m_pages.size();
                 if (targetPage != m_currentPage)
                 {
+                    m_wheel.Reset(targetPage);
                     m_currentPage = targetPage;
                     m_hovered = -1;
                     if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
@@ -3661,6 +3529,7 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 int targetPage = (m_currentPage + 1) % (int)m_pages.size();
                 if (targetPage != m_currentPage)
                 {
+                    m_wheel.Reset(targetPage);
                     m_currentPage = targetPage;
                     m_hovered = -1;
                     if (m_viewModel) m_viewModel->SetCurrentPage(ToModelPageIndex(targetPage));
