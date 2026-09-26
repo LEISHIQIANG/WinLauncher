@@ -2,6 +2,7 @@
 #include "BaseWindow.h"
 #include "GlassBackgroundCapture.h"
 #include "GlassThemeTransition.h"
+#include "GlassBackdrop.h"
 #include "App/AppContext.h"
 #include "UI/Render/Compositor.h"
 #include "ShadowWindow.h"
@@ -17,6 +18,7 @@ using Microsoft::WRL::ComPtr;
 
 class GlassWindow : public BaseWindow
 {
+    friend class GlassBackdrop;
 public:
     GlassWindow();
     virtual ~GlassWindow();
@@ -120,8 +122,6 @@ protected:
     D2D1_SIZE_F               m_effectWinSize = {};
     float                     m_effectCornerRadius = -1.0f;
 
-    // Corner radius for window decoration; 0 = no DWM rounded corners (Win10)
-    float m_cornerRadius = 8.0f;
 
     // Background refresh rate (ms). 11 = ~90 fps for live background behind the window.
     UINT     m_bgRefreshMs = 11;
@@ -156,8 +156,7 @@ protected:
     int m_revealShowCommand = SW_SHOWNOACTIVATE;
     ULONGLONG m_revealRequestStart = 0;
 
-    int m_lastAppliedAccentState = -1;
-
+    GlassBackdrop m_backdrop;
     GlassThemeTransition m_themeTransition;
 
 public:

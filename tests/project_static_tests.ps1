@@ -228,6 +228,7 @@ $networkPluginSource = Read-RepoFile "plugins\network_tools\network_tools.cpp"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 $glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
 $glassCaptureSource = Read-RepoFile "WinLauncher\GlassBackgroundCapture.cpp"
+$glassBackdropSource = Read-RepoFile "WinLauncher\GlassBackdrop.cpp"
 $shadowWindowSource = Read-RepoFile "WinLauncher\ShadowWindow.cpp"
 $shortcutDialogSource = Read-RepoFile "WinLauncher\Config\ShortcutDialog.cpp"
 $confirmWindowSource = Read-RepoFile "WinLauncher\Config\ConfirmWindow.cpp"
@@ -877,7 +878,8 @@ Add-TestResult `
         $glassCaptureSource -match 'fallback=last_valid_cache' -and
         $glassWindowSource -match 'm_bgCompositeDirty = captured' -and
         $glassCaptureSource -match 'now - m_lastLogTick >= 30000' -and
-        $glassWindowSource -match 'dwm_backdrop_disable_unsupported'
+        ($glassWindowSource -match 'dwm_backdrop_disable_unsupported' -or
+         $glassBackdropSource -match 'dwm_backdrop_disable_unsupported')
     ) `
     -Detail "Transient desktop capture failures must not rebuild from stale pixels or flood warning logs"
 
@@ -1018,13 +1020,9 @@ Add-TestResult `
     -Passed ($hasCancellation) `
     -Detail "FaviconFetcher common-icon-paths loop must check BackgroundTaskService::IsCurrentTaskCancellationRequested()"
 
-# 2000-line red line with ratchet exemptions (REFACTOR_PLAN.md section 10.4).
-# Remove a file from the exemption list in the same slice that brings it under
-# the ceiling; once the list is empty, delete the mechanism entirely.
+# 2000-line red line (REFACTOR_PLAN.md section 10.4).
+# Universal ceiling across all source trees: no file may exceed 2000 lines.
 $lineCeiling = 2000
-$lineCeilingExemptions = @(
-    "WinLauncher\GlassWindow.cpp"
-)
 $oversizedFiles = @()
 $sourceRoots = @("WinLauncher", "SDK", "plugins", "tests")
 foreach ($root in $sourceRoots) {
@@ -1032,7 +1030,6 @@ foreach ($root in $sourceRoots) {
         Where-Object { $_.FullName -notmatch '\\(x64|Release|Debug|Win32|\.vs|dist)\\' } |
         ForEach-Object {
             $relative = $_.FullName.Substring($repoRoot.Length + 1)
-            if ($lineCeilingExemptions -contains $relative) { return }
             $lineCount = (Get-Content -LiteralPath $_.FullName | Measure-Object -Line).Lines
             if ($lineCount -gt $lineCeiling) {
                 $oversizedFiles += "$relative ($lineCount lines)"

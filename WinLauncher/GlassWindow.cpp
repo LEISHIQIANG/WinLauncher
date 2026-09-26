@@ -22,27 +22,11 @@
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
 
-static bool IsWindows11OrLater();
 static float EaseOutCubic(float t);
 static float EaseInCubic(float t);
 static double PerfNowMs();
 static const wchar_t* WindowModeName(int windowMode);
 static float ClampCornerRadius(float radius, float width, float height);
-
-using SWCAFn = BOOL(WINAPI*)(HWND, void*);
-struct AccentPolicy { int s, f; unsigned int g; int a; };
-struct WinCompAttr { int attr; void* data; size_t size; };
-
-static void SetAccent(HWND hwnd, int accentState, unsigned int gradientColor)
-{
-    auto u = GetModuleHandleW(L"user32.dll");
-    if (!u) return;
-    auto fn = (SWCAFn)GetProcAddress(u, "SetWindowCompositionAttribute");
-    if (!fn) return;
-    AccentPolicy ap{ accentState, 2, gradientColor, 0 };
-    WinCompAttr d{ 19, &ap, sizeof(ap) };
-    fn(hwnd, &d);
-}
 
 float GlassWindow::GetDpiScaleForMonitor(HMONITOR hMonitor)
 {
@@ -61,7 +45,6 @@ float GlassWindow::GetSystemWindowScale(HWND hwnd)
 
 GlassWindow::GlassWindow()
 {
-    m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
     m_consecutiveDeviceLossCount = 0;
 }
 
@@ -104,17 +87,6 @@ ComPtr<ID2D1SolidColorBrush> GlassWindow::GetCachedBrush(const D2D1_COLOR_F& col
         }
     }
     return nullptr;
-}
-
-static bool IsWindows11OrLater()
-{
-    auto ntdll = GetModuleHandleW(L"ntdll.dll");
-    if (!ntdll) return false;
-    auto fn = (LONG(WINAPI*)(void*))GetProcAddress(ntdll, "RtlGetVersion");
-    if (!fn) return false;
-    OSVERSIONINFOW vi = { sizeof(vi) };
-    if (fn(&vi) != 0) return false;
-    return vi.dwBuildNumber >= 22000;
 }
 
 static float Clamp01(float t)
@@ -221,188 +193,27 @@ ShadowSettings GlassWindow::GetShadowSettings() const
 
 void GlassWindow::UpdateWindowCornerRadius()
 {
-    m_cornerRadius = IsWindows11OrLater() ? 8.0f : 0.0f;
+    m_backdrop.UpdateWindowCornerRadius();
 }
 
 float GlassWindow::GetDrawCornerRadius(float renderScale, float width, float height) const
 {
-    float systemScale = GetSystemWindowScale(m_hWnd);
-    if (renderScale <= 0.0f)
-        renderScale = systemScale > 0.0f ? systemScale : 1.0f;
-
-    float radius = m_cornerRadius * (systemScale / renderScale);
-    return ClampCornerRadius(radius, width, height);
+    return m_backdrop.GetDrawCornerRadius(m_hWnd, renderScale, width, height);
 }
 
 float GlassWindow::GetPhysicalCornerRadius() const
 {
-    return ClampCornerRadius(m_cornerRadius * GetSystemWindowScale(m_hWnd), 0.0f, 0.0f);
+    return m_backdrop.GetPhysicalCornerRadius(m_hWnd);
 }
 
 void GlassWindow::UpdateWindowRoundRegion()
 {
-    if (!m_hWnd)
-        return;
-
-    RECT cr{};
-    if (!GetClientRect(m_hWnd, &cr))
-        return;
-
-    int width = cr.right - cr.left;
-    int height = cr.bottom - cr.top;
-    if (width <= 0 || height <= 0)
-        return;
-
-    if (m_cornerRadius <= 0.0f)
-    {
-        SetWindowRgn(m_hWnd, nullptr, TRUE);
-        return;
-    }
-
-    if (IsWindows11OrLater())
-    {
-        SetWindowRgn(m_hWnd, nullptr, TRUE);
-        return;
-    }
-
-    int radiusPx = (int)std::round(GetPhysicalCornerRadius());
-    if (radiusPx < 1) radiusPx = 1;
-
-    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radiusPx * 2, radiusPx * 2);
-    if (region && SetWindowRgn(m_hWnd, region, TRUE) == 0)
-    {
-        DeleteObject(region);
-    }
+    m_backdrop.UpdateWindowRoundRegion(m_hWnd);
 }
 
 void GlassWindow::ApplySystemBackdrop()
 {
-    MARGINS m{ -1, -1, -1, -1 };
-    HRESULT frameHr = DwmExtendFrameIntoClientArea(m_hWnd, &m);
-
-    UpdateWindowCornerRadius();
-    HRESULT cornerHr = S_OK;
-    if (m_cornerRadius > 0.0f)
-    {
-        DWORD corner = 2;
-        cornerHr = DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-    }
-    UpdateWindowRoundRegion();
-
-    // Dynamically update the display affinity for the window and its shadow window
-    SetWindowDisplayAffinitySafe(m_hWnd);
-    if (m_shadowWindow)
-    {
-        SetWindowDisplayAffinitySafe(m_shadowWindow->GetHWND());
-    }
-
-    DWORD border = 0xFFFFFFFE;
-    HRESULT borderHr = DwmSetWindowAttribute(m_hWnd, 34, &border, sizeof(border));
-
-    int windowMode = 0;
-    if (m_appCtx && m_appCtx->configService)
-    {
-        windowMode = m_appCtx->configService->GetWindowMode();
-    }
-
-    LOG_G_INFO_NODE(
-        L"ui.glass",
-        L"system_backdrop_apply",
-        L"windowMode=%d(%s) frameHr=0x%08X cornerHr=0x%08X borderHr=0x%08X cornerRadius=%.2f hwnd=%p",
-        windowMode,
-        WindowModeName(windowMode),
-        frameHr,
-        cornerHr,
-        borderHr,
-        m_cornerRadius,
-        m_hWnd);
-
-    const int targetAccentState = (windowMode == 1) ? 4 : 2;
-    const bool leavingHostedBackdrop =
-        (m_lastAppliedAccentState == 4 && targetAccentState != 4);
-
-    if (leavingHostedBackdrop)
-    {
-        // Acrylic (accent 4) installs a DWM-hosted backdrop visual. Switching
-        // it directly to another accent hot-swaps the composition and can
-        // leave a 1px strip of the rebuilt frame visible at the far edges
-        // (window size / UI scale dependent). Pass through ACCENT_DISABLED
-        // first so DWM tears the hosted backdrop down completely.
-        SetAccent(m_hWnd, 0, 0x00000000);
-    }
-
-    if (windowMode == 1) // Acrylic
-    {
-        bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
-        auto& cfg = isLight ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig;
-
-        D2D1_COLOR_F rgb = UIStyle::HslToRgb(cfg.hue, 0.0f, cfg.brightness, cfg.opacity);
-
-        BYTE r = (BYTE)(fminf(fmaxf(rgb.r, 0.0f), 1.0f) * 255.0f);
-        BYTE g = (BYTE)(fminf(fmaxf(rgb.g, 0.0f), 1.0f) * 255.0f);
-        BYTE b = (BYTE)(fminf(fmaxf(rgb.b, 0.0f), 1.0f) * 255.0f);
-        BYTE a = (BYTE)(cfg.opacity * 255.0f);
-
-        unsigned int gradientColor = (a << 24) | (b << 16) | (g << 8) | r;
-        SetAccent(m_hWnd, 4, gradientColor);
-    }
-    else // Glass (custom blur)
-    {
-        int backdropType = 1; // DWMSBT_DISABLE
-        for (int attr : {38, 1029})
-        {
-            HRESULT backdropHr = DwmSetWindowAttribute(m_hWnd, attr, &backdropType, sizeof(backdropType));
-            if (FAILED(backdropHr))
-            {
-                if (backdropHr == E_INVALIDARG)
-                    LOG_G_DEBUG_NODE(L"ui.glass", L"dwm_backdrop_disable_unsupported", L"attr=%d hr=0x%08X hwnd=%p", attr, backdropHr, m_hWnd);
-                else
-                    LOG_G_WARNING_NODE(L"ui.glass", L"dwm_backdrop_disable_failed", L"attr=%d hr=0x%08X hwnd=%p", attr, backdropHr, m_hWnd);
-            }
-        }
-        SetAccent(m_hWnd, 2, 0x00000000);
-    }
-
-    // Accent policy changes rebuild DWM's frame visuals and can drop window
-    // attributes set before the change (border color override included, whose
-    // default reappears as a 1px theme-colored edge line). Re-assert them
-    // after the accent is final.
-    {
-        DWORD borderNone = 0xFFFFFFFE;
-        DwmSetWindowAttribute(m_hWnd, 34, &borderNone, sizeof(borderNone));
-    }
-    if (leavingHostedBackdrop)
-    {
-        UpdateWindowCornerRadius();
-        if (m_cornerRadius > 0.0f)
-        {
-            DWORD corner = 2;
-            DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-        }
-        UpdateWindowRoundRegion();
-        if (IsWindowVisible(m_hWnd))
-        {
-            SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        }
-        LOG_G_INFO_NODE(
-            L"ui.glass",
-            L"accent_transition_recovery",
-            L"from=4 to=%d hwnd=%p",
-            targetAccentState,
-            m_hWnd);
-    }
-    m_lastAppliedAccentState = targetAccentState;
-
-    if (UIStyle::Animation::IsEnabled() && !IsWindowVisible(m_hWnd))
-    {
-        LONG_PTR exStyle = GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-        if (!(exStyle & WS_EX_LAYERED))
-        {
-            SetWindowLongPtr(m_hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-        }
-        SetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_ALPHA);
-    }
+    m_backdrop.ApplySystemBackdrop(this);
 }
 
 bool GlassWindow::EnsureD2D()

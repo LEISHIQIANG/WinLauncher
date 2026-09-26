@@ -153,6 +153,7 @@
     <ClCompile Include="GlassWindow.cpp" />
     <ClCompile Include="GlassBackgroundCapture.cpp" />
     <ClCompile Include="GlassThemeTransition.cpp" />
+    <ClCompile Include="GlassBackdrop.cpp" />
     <ClCompile Include="ShadowWindow.cpp" />
     <ClCompile Include="PopupWindow.cpp" />
     <ClCompile Include="Popup\PopupLayout.cpp" />
@@ -258,6 +259,7 @@
     <ClInclude Include="GlassWindow.h" />
     <ClInclude Include="GlassBackgroundCapture.h" />
     <ClInclude Include="GlassThemeTransition.h" />
+    <ClInclude Include="GlassBackdrop.h" />
     <ClInclude Include="ShadowWindow.h" />
     <ClInclude Include="PopupWindow.h" />
     <ClInclude Include="TrayMenuWindow.h" />
