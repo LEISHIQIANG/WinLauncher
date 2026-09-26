@@ -16,6 +16,7 @@
 #include "../Services/UpdateService.h"
 #include "ConfigMaintenanceOps.h"
 #include "QuickLauncherImportFlow.h"
+#include "ConfigChromeRenderer.h"
 #include "../Services/ConfigPath.h"
 #include "UIStyle.h"
 #include <windowsx.h>
@@ -941,111 +942,17 @@ void ConfigWindow::OnPaintContent(ID2D1HwndRenderTarget* rt)
     float w = (float)cr.right / scale;
     float h = (float)cr.bottom / scale;
 
-    // Header Title
-    if (m_tfHeader)
+    ConfigChromeRenderer::DrawHeaderTitle(rt, m_tfHeader.Get(), this, m_showSettings);
+
+    auto& updater = UpdateService::GetInstance();
+    if (updater.GetState() == UpdateService::UpdateState::NewVersionAvailable && !updater.IsUpdatePromptClosed())
     {
-        auto textBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-        if (textBrush)
-        {
-            std::wstring headerText = m_showSettings ? L"设置面板" : L"配置面板";
-            rt->DrawTextW(headerText.c_str(), (UINT32)headerText.size(), m_tfHeader.Get(), D2D1::RectF(10, 10, 150, 30), textBrush.Get());
-        }
+        bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
+        ConfigChromeRenderer::DrawUpdatePill(rt, m_tfLeft.Get(), this, isDownloading, updater.GetDownloadProgress(), m_hoveredUpdateText, m_hoveredUpdateClose);
     }
 
-    // Update Tag Pill next to Header Title
-    {
-        auto& updater = UpdateService::GetInstance();
-        bool showUpdate = (updater.GetState() == UpdateService::UpdateState::NewVersionAvailable && !updater.IsUpdatePromptClosed());
-        if (showUpdate)
-        {
-            bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
-            float pillLeft = 72.0f;
-            float pillRight = isDownloading ? 138.0f : 110.0f;
-            float textRight = isDownloading ? 126.0f : 98.0f;
-
-            D2D1_RECT_F pillRect = D2D1::RectF(pillLeft, 10.0f, pillRight, 30.0f);
-            D2D1_ROUNDED_RECT roundedPill = D2D1::RoundedRect(pillRect, 4.0f, 4.0f);
-
-            // Background
-            float bgAlpha = m_hoveredUpdateText ? 0.22f : 0.10f;
-            auto bgBrush = GetOrCreateBrush(D2D1::ColorF(UIStyle::ThemeColor::Accent().d2d.r, UIStyle::ThemeColor::Accent().d2d.g, UIStyle::ThemeColor::Accent().d2d.b, bgAlpha));
-            if (bgBrush) rt->FillRoundedRectangle(roundedPill, bgBrush.Get());
-
-            // Border
-            float borderAlpha = (m_hoveredUpdateText || m_hoveredUpdateClose) ? 0.35f : 0.15f;
-            auto borderBrush = GetOrCreateBrush(D2D1::ColorF(UIStyle::ThemeColor::Accent().d2d.r, UIStyle::ThemeColor::Accent().d2d.g, UIStyle::ThemeColor::Accent().d2d.b, borderAlpha));
-            if (borderBrush) rt->DrawRoundedRectangle(roundedPill, borderBrush.Get(), 1.0f);
-
-            // Text: "更新" or progress
-            auto accentBrush = GetOrCreateBrush(UIStyle::ThemeColor::Accent().d2d);
-            if (accentBrush && m_tfLeft)
-            {
-                std::wstring btnText = L"更新";
-                if (isDownloading)
-                {
-                    btnText = L"更新 " + std::to_wstring(updater.GetDownloadProgress()) + L"%";
-                }
-
-                D2D1_RECT_F textRect = D2D1::RectF(pillLeft, 10.0f, textRight, 30.0f);
-                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), m_tfLeft.Get(), textRect, accentBrush.Get());
-                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            }
-
-            // Close button "x"
-            auto xBrush = GetOrCreateBrush(m_hoveredUpdateClose ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::TextMuted().d2d);
-            if (xBrush)
-            {
-                float xCenter = pillRight - 6.0f;
-                rt->DrawLine(D2D1::Point2F(xCenter - 2.5f, 17.5f), D2D1::Point2F(xCenter + 2.5f, 22.5f), xBrush.Get(), 1.0f);
-                rt->DrawLine(D2D1::Point2F(xCenter + 2.5f, 17.5f), D2D1::Point2F(xCenter - 2.5f, 22.5f), xBrush.Get(), 1.0f);
-            }
-        }
-    }
-
-    // Close Button "X"
-    {
-        D2D1_RECT_F closeRect = D2D1::RectF(490, 10, 510, 30);
-        D2D1_ROUNDED_RECT roundedClose = D2D1::RoundedRect(closeRect, 4.0f, 4.0f);
-        if (m_hoveredClose)
-        {
-            auto closeBg = GetOrCreateBrush(D2D1::ColorF(UIStyle::ThemeColor::DangerRed().d2d.r, UIStyle::ThemeColor::DangerRed().d2d.g, UIStyle::ThemeColor::DangerRed().d2d.b, 0.4f));
-            if (closeBg) rt->FillRoundedRectangle(roundedClose, closeBg.Get());
-        }
-
-        auto xBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextMuted().d2d);
-        if (xBrush)
-        {
-            rt->DrawLine(D2D1::Point2F(495, 15), D2D1::Point2F(505, 25), xBrush.Get(), UIStyle::Metrics::IconStroke());
-            rt->DrawLine(D2D1::Point2F(505, 15), D2D1::Point2F(495, 25), xBrush.Get(), UIStyle::Metrics::IconStroke());
-        }
-    }
-
-    // Settings Button
-    {
-        D2D1_RECT_F settingsRect = D2D1::RectF(430, 10, 475, 30);
-        D2D1_ROUNDED_RECT roundedSettings = D2D1::RoundedRect(settingsRect, 4.0f, 4.0f);
-        if (m_hoveredSettingsBtn)
-        {
-            auto btnBg = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d);
-            if (btnBg) rt->FillRoundedRectangle(roundedSettings, btnBg.Get());
-        }
-        auto btnBorder = GetOrCreateBrush(m_hoveredSettingsBtn ?
-            UIStyle::ThemeColor::ButtonBorderHover().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-        if (btnBorder) rt->DrawRoundedRectangle(roundedSettings, btnBorder.Get(), UIStyle::Metrics::ControlStroke());
-
-        if (m_tfLeft)
-        {
-            auto textBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-            if (textBrush)
-            {
-                std::wstring btnText = m_showSettings ? L"返回" : L"设置";
-                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                rt->DrawTextW(btnText.c_str(), (UINT32)btnText.size(), m_tfLeft.Get(), settingsRect, textBrush.Get());
-                m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            }
-        }
-    }
+    ConfigChromeRenderer::DrawCloseButton(rt, this, m_hoveredClose);
+    ConfigChromeRenderer::DrawSettingsButton(rt, m_tfLeft.Get(), this, m_showSettings, m_hoveredSettingsBtn);
 
     // Left Column Separator
     {
@@ -1146,13 +1053,13 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         POINT pt{ (int)(GET_X_LPARAM(lParam) / scale), (int)(GET_Y_LPARAM(lParam) / scale) };
         bool repaint = false;
 
-        bool hcl = HitTestCloseButton(pt);
+        bool hcl = ConfigChromeRenderer::HitTestCloseButton(pt);
         if (hcl != m_hoveredClose) { m_hoveredClose = hcl; repaint = true; }
 
-        bool hsb = HitTestSettingsButton(pt);
+        bool hsb = ConfigChromeRenderer::HitTestSettingsButton(pt);
         if (hsb != m_hoveredSettingsBtn) { m_hoveredSettingsBtn = hsb; repaint = true; }
 
-        bool hab = !m_showSettings && (HitTestAddButton(pt) || DropDownMenu::IsVisible());
+        bool hab = !m_showSettings && (ConfigChromeRenderer::HitTestAddButton(pt) || DropDownMenu::IsVisible());
         if (hab != m_hoveredAddBtn) { m_hoveredAddBtn = hab; repaint = true; }
 
         bool hUpdateText = false;
@@ -1162,18 +1069,8 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         if (showUpdate)
         {
             bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
-            float pillLeft = 72.0f;
-            float pillRight = isDownloading ? 138.0f : 110.0f;
-            float textRight = isDownloading ? 126.0f : 98.0f;
-
-            if (pt.x >= (int)pillLeft && pt.x <= (int)textRight && pt.y >= 10 && pt.y <= 30)
-            {
-                hUpdateText = true;
-            }
-            else if (pt.x > (int)textRight && pt.x <= (int)pillRight && pt.y >= 10 && pt.y <= 30)
-            {
-                hUpdateClose = true;
-            }
+            hUpdateText = ConfigChromeRenderer::HitTestUpdatePillText(pt, isDownloading);
+            hUpdateClose = ConfigChromeRenderer::HitTestUpdatePillClose(pt, isDownloading);
         }
         if (hUpdateText != m_hoveredUpdateText) { m_hoveredUpdateText = hUpdateText; repaint = true; }
         if (hUpdateClose != m_hoveredUpdateClose) { m_hoveredUpdateClose = hUpdateClose; repaint = true; }
@@ -1244,11 +1141,8 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         if (showUpdate)
         {
             bool isDownloading = (updater.GetDownloadProgress() > 0 && updater.GetDownloadProgress() < 100);
-            float pillLeft = 72.0f;
-            float pillRight = isDownloading ? 138.0f : 110.0f;
-            float textRight = isDownloading ? 126.0f : 98.0f;
 
-            if (pt.x >= (int)pillLeft && pt.x <= (int)textRight && pt.y >= 10 && pt.y <= 30)
+            if (ConfigChromeRenderer::HitTestUpdatePillText(pt, isDownloading))
             {
                 if (!isDownloading)
                 {
@@ -1258,7 +1152,7 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
                 if (repaint) InvalidateRect(hWnd, nullptr, FALSE);
                 return 0;
             }
-            else if (pt.x > (int)textRight && pt.x <= (int)pillRight && pt.y >= 10 && pt.y <= 30)
+            else if (ConfigChromeRenderer::HitTestUpdatePillClose(pt, isDownloading))
             {
                 updater.SetUpdatePromptClosed(true);
                 repaint = true;
@@ -1267,15 +1161,15 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
             }
         }
 
-        if (HitTestCloseButton(pt)) { Release(); return 0; }
-        if (HitTestSettingsButton(pt))
+        if (ConfigChromeRenderer::HitTestCloseButton(pt)) { Release(); return 0; }
+        if (ConfigChromeRenderer::HitTestSettingsButton(pt))
         {
             SetSettingsMode(!m_showSettings);
             repaint = true;
             InvalidateRect(hWnd, nullptr, FALSE);
             return 0;
         }
-        if (!m_showSettings && HitTestAddButton(pt))
+        if (!m_showSettings && ConfigChromeRenderer::HitTestAddButton(pt))
         {
             if (DropDownMenu::IsVisible())
             {
@@ -1408,50 +1302,22 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
 
 bool ConfigWindow::HitTestCloseButton(POINT pt)
 {
-    return (pt.x >= 490 && pt.x <= 510 && pt.y >= 10 && pt.y <= 30);
+    return ConfigChromeRenderer::HitTestCloseButton(pt);
 }
 
 bool ConfigWindow::HitTestSettingsButton(POINT pt)
 {
-    return (pt.x >= 430 && pt.x <= 475 && pt.y >= 10 && pt.y <= 30);
+    return ConfigChromeRenderer::HitTestSettingsButton(pt);
 }
 
 bool ConfigWindow::HitTestAddButton(POINT pt)
 {
-    // "添加" button: left = settings-button-left (430), right = close-button-right (510)
-    return (pt.x >= 430 && pt.x <= 510 && pt.y >= 36 && pt.y <= 56);
+    return ConfigChromeRenderer::HitTestAddButton(pt);
 }
 
 void ConfigWindow::DrawAddButton(ID2D1HwndRenderTarget* rt)
 {
-    // Left aligns with settings button (430), right aligns with close button right edge (510)
-    D2D1_RECT_F addRect = D2D1::RectF(430, 36, 510, 56);
-    D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addRect, 4.0f, 4.0f);
-
-    bool isActive = m_hoveredAddBtn || DropDownMenu::IsVisible();
-
-    D2D1_COLOR_F accentClr = UIStyle::ThemeColor::Accent().d2d;
-    D2D1_COLOR_F bgClr = accentClr;
-    bgClr.a = isActive ? 0.22f : 0.18f;
-    auto btnBg = GetOrCreateBrush(bgClr);
-    if (btnBg) rt->FillRoundedRectangle(roundedAdd, btnBg.Get());
-
-    D2D1_COLOR_F borderClr = accentClr;
-    borderClr.a = 0.55f;
-    auto btnBorder = GetOrCreateBrush(borderClr);
-    if (btnBorder) rt->DrawRoundedRectangle(roundedAdd, btnBorder.Get(), UIStyle::Metrics::HairlineStroke());
-
-    if (m_tfLeft)
-    {
-        auto textBrush = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
-        if (textBrush)
-        {
-            const wchar_t* btnText = L"+\u6dfb\u52a0\u56fe\u6807";  // "+添加图标"
-            m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            rt->DrawTextW(btnText, (UINT32)wcslen(btnText), m_tfLeft.Get(), addRect, textBrush.Get());
-            m_tfLeft->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-        }
-    }
+    ConfigChromeRenderer::DrawAddButton(rt, m_tfLeft.Get(), this, m_hoveredAddBtn, DropDownMenu::IsVisible());
 }
 
 

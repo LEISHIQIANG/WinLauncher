@@ -105,6 +105,9 @@
     <ClCompile Include="Config\IconBackfillCoordinator.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\ConfigChromeRenderer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\CategoryList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -317,6 +320,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\IconBackfillCoordinator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\ConfigChromeRenderer.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\CategoryList.h">
