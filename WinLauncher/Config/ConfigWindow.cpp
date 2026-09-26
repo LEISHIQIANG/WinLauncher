@@ -14,6 +14,7 @@
 #include "../Services/SyncFolderService.h"
 #include "../Services/QuickLauncherConfigImport.h"
 #include "../Services/UpdateService.h"
+#include "ConfigMaintenanceOps.h"
 #include "../Services/ConfigPath.h"
 #include "UIStyle.h"
 #include <windowsx.h>
@@ -30,161 +31,9 @@
 static const int ICON_SIZE = 24;
 static constexpr UINT CONFIG_ANIMATION_TIMER_ID = 2;
 static constexpr UINT CONFIG_ANIMATION_FRAME_MS = 8;
-static constexpr size_t SHORTCUT_HISTORY_LIMIT = 5;
 
 namespace fs = std::filesystem;
 
-namespace
-{
-    std::wstring FormatHistoryTime(unsigned long long fileTimeValue)
-    {
-        if (fileTimeValue == 0)
-            return L"未知时间";
-
-        FILETIME ft{};
-        ULARGE_INTEGER value{};
-        value.QuadPart = fileTimeValue;
-        ft.dwLowDateTime = value.LowPart;
-        ft.dwHighDateTime = value.HighPart;
-
-        FILETIME localFt{};
-        SYSTEMTIME st{};
-        if (!FileTimeToLocalFileTime(&ft, &localFt) || !FileTimeToSystemTime(&localFt, &st))
-            return L"未知时间";
-
-        wchar_t buf[32]{};
-        swprintf_s(buf, L"%04u-%02u-%02u %02u:%02u:%02u",
-            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-        return buf;
-    }
-
-    std::wstring NormalizePathForComparison(const fs::path& path)
-    {
-        std::error_code ec;
-        fs::path normalized = fs::weakly_canonical(path, ec);
-        if (ec)
-        {
-            ec.clear();
-            normalized = fs::absolute(path, ec);
-            if (ec)
-                normalized = path;
-        }
-
-        std::wstring value = normalized.lexically_normal().wstring();
-        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
-            return static_cast<wchar_t>(std::towlower(ch));
-        });
-        return value;
-    }
-
-    bool IsPathWithinDirectory(const std::wstring& path, const std::wstring& directory)
-    {
-        if (path == directory)
-            return true;
-        if (path.size() <= directory.size() || path.compare(0, directory.size(), directory) != 0)
-            return false;
-        return directory.back() == L'\\' || path[directory.size()] == L'\\';
-    }
-
-    struct CacheCleanupResult
-    {
-        size_t deletedFiles = 0;
-        uintmax_t releasedBytes = 0;
-        size_t failedItems = 0;
-    };
-
-    bool IsPreservedFile(const std::wstring& normalizedPath, const std::set<std::wstring>& preservedFiles)
-    {
-        return preservedFiles.find(normalizedPath) != preservedFiles.end();
-    }
-
-    bool IsPreservedRuntimeDirectory(const std::wstring& normalizedPath, const std::vector<std::wstring>& preservedDirectories)
-    {
-        return std::any_of(preservedDirectories.begin(), preservedDirectories.end(), [&](const std::wstring& directory) {
-            return IsPathWithinDirectory(normalizedPath, directory);
-        });
-    }
-
-    CacheCleanupResult CleanupUserDataDirectory(const fs::path& root, const std::set<std::wstring>& preservedFiles)
-    {
-        CacheCleanupResult result;
-        const std::vector<std::wstring> preservedDirectories = {
-            NormalizePathForComparison(root / L"plugins" / L"installed"),
-            NormalizePathForComparison(root / L"plugins" / L"state")
-        };
-        std::vector<fs::path> emptyDirectories;
-        std::error_code ec;
-        fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
-        for (; !ec && it != end; it.increment(ec))
-        {
-            const fs::directory_entry& entry = *it;
-            const std::wstring normalizedPath = NormalizePathForComparison(entry.path());
-            if (IsPreservedRuntimeDirectory(normalizedPath, preservedDirectories))
-            {
-                if (entry.is_directory(ec))
-                    it.disable_recursion_pending();
-                ec.clear();
-                continue;
-            }
-
-            if (entry.is_directory(ec))
-            {
-                emptyDirectories.push_back(entry.path());
-                continue;
-            }
-
-            if (!entry.is_regular_file(ec) && !entry.is_symlink(ec))
-            {
-                ec.clear();
-                continue;
-            }
-            if (IsPreservedFile(normalizedPath, preservedFiles))
-                continue;
-
-            std::error_code sizeError;
-            const uintmax_t size = entry.is_regular_file(sizeError) ? entry.file_size(sizeError) : 0;
-            DWORD attributes = GetFileAttributesW(entry.path().c_str());
-            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_READONLY))
-                SetFileAttributesW(entry.path().c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
-
-            ec.clear();
-            if (fs::remove(entry.path(), ec))
-            {
-                result.deletedFiles++;
-                result.releasedBytes += size;
-            }
-            else
-            {
-                result.failedItems++;
-            }
-            ec.clear();
-        }
-        if (ec)
-        {
-            result.failedItems++;
-            ec.clear();
-        }
-
-        for (auto dir = emptyDirectories.rbegin(); dir != emptyDirectories.rend(); ++dir)
-        {
-            const std::wstring normalizedPath = NormalizePathForComparison(*dir);
-            if (IsPreservedRuntimeDirectory(normalizedPath, preservedDirectories))
-                continue;
-            ec.clear();
-            fs::remove(*dir, ec);
-        }
-        return result;
-    }
-
-    std::wstring FormatReleasedSize(uintmax_t bytes)
-    {
-        if (bytes < 1024)
-            return std::to_wstring(bytes) + L" B";
-        if (bytes < 1024 * 1024)
-            return std::to_wstring((bytes + 512) / 1024) + L" KB";
-        return std::to_wstring((bytes + 512 * 1024) / (1024 * 1024)) + L" MB";
-    }
-}
 
 ConfigWindow* ConfigWindow::s_instance = nullptr;
 AppContext* ConfigWindow::s_ctx = nullptr;
@@ -911,161 +760,53 @@ std::wstring ConfigWindow::GetConfigHistorySummary()
     const auto& latest = history.front();
     unsigned long long kb = (latest.sizeBytes + 1023ULL) / 1024ULL;
     return L"历史 " + std::to_wstring(history.size()) + L" 条，最近: " +
-        FormatHistoryTime(latest.lastWriteTime) + L"，" + std::to_wstring(kb) + L" KB";
+        ConfigMaintenanceOps::FormatHistoryTime(latest.lastWriteTime) + L"，" + std::to_wstring(kb) + L" KB";
 }
 
 void ConfigWindow::OpenLogFile()
 {
-    std::wstring path = ConfigPath::GetUserLogDirectory() + L"\\current.jsonl";
-    if (!path.empty())
-        ShellExecuteW(GetHWND(), L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ConfigMaintenanceOps::OpenLogFile(GetHWND());
 }
 
 void ConfigWindow::OpenConfigDir()
 {
-    std::wstring dir = ConfigPath::GetUserDataDirectory();
-    if (!dir.empty())
-        ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ConfigMaintenanceOps::OpenConfigDir(GetHWND());
 }
 
 void ConfigWindow::CreateDiagnosticPackage()
 {
-    if (!m_appCtx || !m_appCtx->diagnostics) return;
-    // Build default filename with timestamp
-    wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st);
-    swprintf_s(stamp, L"%04u%02u%02u-%02u%02u%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-    std::wstring defaultName = std::wstring(L"WinLauncher-diagnostic-") + stamp + L".zip";
-    // Resolve Desktop as initial directory
-    wchar_t desktopPath[MAX_PATH]{};
-    SHGetFolderPathW(nullptr, CSIDL_DESKTOP, nullptr, SHGFP_TYPE_CURRENT, desktopPath);
-    // Show Save dialog
-    wchar_t filePath[MAX_PATH]{};
-    wcsncpy_s(filePath, defaultName.c_str(), _TRUNCATE);
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize   = sizeof(ofn);
-    ofn.hwndOwner     = GetHWND();
-    ofn.lpstrFilter   = L"ZIP 文件 (*.zip)\0*.zip\0";
-    ofn.lpstrFile     = filePath;
-    ofn.nMaxFile      = MAX_PATH;
-    ofn.lpstrInitialDir = desktopPath;
-    ofn.lpstrTitle    = L"保存诊断包";
-    ofn.lpstrDefExt   = L"zip";
-    ofn.Flags         = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    if (!GetSaveFileNameW(&ofn)) return; // user cancelled
-    std::wstring path = filePath, error;
-    bool ok = m_appCtx->diagnostics->CreatePackage(path, error);
-    std::wstring message = ok ? std::wstring(L"已在本地生成脱敏诊断包：\n") + path + L"\n不会自动上传。" : error;
-    ConfirmWindow::Show(GetHWND(), ok ? L"诊断包已生成" : L"诊断包生成失败", message.c_str(), m_appCtx, false);
+    ConfigMaintenanceOps::CreateDiagnosticPackage(GetHWND(), m_appCtx);
 }
 
 void ConfigWindow::ExportMigrationBackup()
 {
-    // Build default filename with timestamp
-    wchar_t stamp[32]{}; SYSTEMTIME st{}; GetLocalTime(&st);
-    swprintf_s(stamp, L"%04u%02u%02u-%02u%02u%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-    std::wstring defaultName = std::wstring(L"WinLauncher-migration-") + stamp + L".zip";
-    // Resolve Desktop as initial directory
-    wchar_t desktopPath[MAX_PATH]{};
-    SHGetFolderPathW(nullptr, CSIDL_DESKTOP, nullptr, SHGFP_TYPE_CURRENT, desktopPath);
-    // Show Save dialog
-    wchar_t filePath[MAX_PATH]{};
-    wcsncpy_s(filePath, defaultName.c_str(), _TRUNCATE);
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize   = sizeof(ofn);
-    ofn.hwndOwner     = GetHWND();
-    ofn.lpstrFilter   = L"ZIP 文件 (*.zip)\0*.zip\0";
-    ofn.lpstrFile     = filePath;
-    ofn.nMaxFile      = MAX_PATH;
-    ofn.lpstrInitialDir = desktopPath;
-    ofn.lpstrTitle    = L"保存迁移备份";
-    ofn.lpstrDefExt   = L"zip";
-    ofn.Flags         = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    if (!GetSaveFileNameW(&ofn)) return; // user cancelled
-    std::wstring path = filePath;
-    MigrationBackupService service; auto result = service.Export(path);
-    std::wstring message = result.ok ? result.message + L"：\n" + path : result.message;
-    ConfirmWindow::Show(GetHWND(), result.ok ? L"迁移备份已导出" : L"迁移备份失败", message.c_str(), m_appCtx, false);
+    ConfigMaintenanceOps::ExportMigrationBackup(GetHWND(), m_appCtx);
 }
 
 void ConfigWindow::ImportMigrationBackup()
 {
-    wchar_t path[MAX_PATH]{}; OPENFILENAMEW ofn{}; ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=GetHWND(); ofn.lpstrFilter=L"WinLauncher migration (*.zip)\0*.zip\0"; ofn.lpstrFile=path; ofn.nMaxFile=MAX_PATH; ofn.Flags=OFN_FILEMUSTEXIST;
-    if (!GetOpenFileNameW(&ofn)) return;
-    MigrationBackupService service; auto check=service.Preflight(path);
-    if (!check.ok) { ConfirmWindow::Show(GetHWND(), L"迁移包无效", check.message.c_str(), m_appCtx, false); return; }
-    auto result=service.Restore(path); if(result.ok) ReloadAfterConfigFileOperation();
-    ConfirmWindow::Show(GetHWND(), result.ok ? L"迁移恢复完成" : L"迁移恢复失败", result.message.c_str(), m_appCtx, false);
+    if (ConfigMaintenanceOps::ImportMigrationBackup(GetHWND(), m_appCtx))
+    {
+        ReloadAfterConfigFileOperation();
+    }
 }
 
 void ConfigWindow::ClearUsageHistory()
 {
-    bool ok=m_appCtx && m_appCtx->usageHistory && m_appCtx->usageHistory->Clear();
-    ConfirmWindow::Show(GetHWND(), ok ? L"使用记录已清除" : L"清除失败", ok ? L"智能图标排序记录已清除。" : L"无法清除本地使用记录。", m_appCtx, false);
+    ConfigMaintenanceOps::ClearUsageHistory(GetHWND(), m_appCtx);
 }
 
 void ConfigWindow::ClearCache()
 {
-    if (!m_appCtx || !m_appCtx->configService)
-        return;
-
-    if (!ConfirmWindow::Show(GetHWND(), L"清理缓存",
-        L"清理未使用图标、日志及临时文件？\n"
-        L"配置、在用图标和已装插件会保留。",
-        m_appCtx))
-    {
-        return;
-    }
-
-    // Flush the current edits first, then derive the protected icon list from exactly that file.
-    SaveConfig(false, true);
-    const fs::path dataRoot = ConfigPath::GetUserDataDirectory();
-    std::set<std::wstring> preservedFiles = {
-        NormalizePathForComparison(m_appCtx->configService->GetConfigFilePath())
-    };
-    for (const auto& page : m_appCtx->configService->LoadConfig())
-    {
-        for (const auto& shortcut : page.shortcuts)
-        {
-            if (shortcut.iconPath.empty())
-                continue;
-
-            std::error_code iconError;
-            const fs::path iconPath(shortcut.iconPath);
-            if (fs::is_regular_file(iconPath, iconError) &&
-                IsPathWithinDirectory(NormalizePathForComparison(iconPath), NormalizePathForComparison(dataRoot)))
-            {
-                preservedFiles.insert(NormalizePathForComparison(iconPath));
-            }
-        }
-    }
-
-    CacheCleanupResult result;
-    WaitWindow::Show(GetHWND(), L"正在清理", L"正在清理未使用的缓存文件，请稍候...",
-        [&]() {
-            result = CleanupUserDataDirectory(dataRoot, preservedFiles);
-        }, m_appCtx);
-
-    const bool complete = result.failedItems == 0;
-    std::wstring message;
-    if (complete)
-    {
-        message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个未使用文件，释放 " +
-            FormatReleasedSize(result.releasedBytes) + L"。\n配置、在用图标和已安装插件均已保留。";
-    }
-    else
-    {
-        message = L"已删除 " + std::to_wstring(result.deletedFiles) + L" 个文件，释放 " +
-            FormatReleasedSize(result.releasedBytes) + L"。\n另有 " + std::to_wstring(result.failedItems) + L" 项未清理，关闭程序后重试。";
-    }
-    ConfirmWindow::Show(GetHWND(), complete ? L"缓存清理完成" : L"缓存已部分清理", message.c_str(), m_appCtx, false);
+    ConfigMaintenanceOps::ClearCache(GetHWND(), m_appCtx, [this]() {
+        SaveConfig(false, true);
+    });
     InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
 void ConfigWindow::OpenConfigHistoryDir()
 {
-    std::wstring dir = GetConfigHistoryDir();
-    if (!dir.empty())
-        ShellExecuteW(GetHWND(), L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ConfigMaintenanceOps::OpenConfigHistoryDir(GetHWND(), GetConfigHistoryDir());
 }
 
 void ConfigWindow::ReloadAfterConfigFileOperation()
@@ -1100,91 +841,36 @@ void ConfigWindow::ReloadAfterConfigFileOperation()
 
 void ConfigWindow::CreateConfigBackupNow()
 {
-    if (!m_appCtx || !m_appCtx->configService)
-        return;
-
-    SaveConfig();
-    bool ok = m_appCtx->configService->CreateConfigBackup(L"manual");
-    ConfirmWindow::Show(GetHWND(), ok ? L"备份完成" : L"备份失败",
-        ok ? L"已创建当前配置的手动备份，可在配置历史中回滚找回。"
-           : L"未能创建配置备份，请检查配置目录权限或磁盘状态。",
-        m_appCtx, false);
+    ConfigMaintenanceOps::CreateConfigBackupNow(GetHWND(), m_appCtx, [this]() {
+        SaveConfig();
+    });
     InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
 void ConfigWindow::RestoreLatestConfigBackup()
 {
-    if (!m_appCtx || !m_appCtx->configService)
-        return;
-
-    SaveConfig();
-    auto history = m_appCtx->configService->GetConfigHistory();
-    if (history.empty())
-    {
-        ConfirmWindow::Show(GetHWND(), L"无法回滚", L"当前没有可用的配置历史。", m_appCtx, false);
-        return;
-    }
-
-    std::wstring prompt = L"将回滚到最近历史:\n" + FormatHistoryTime(history.front().lastWriteTime) +
-        L"\n当前配置会先自动备份。是否继续？";
-    if (!ConfirmWindow::Show(GetHWND(), L"回滚配置", prompt.c_str(), m_appCtx))
-        return;
-
-    bool ok = m_appCtx->configService->RestoreConfigBackup(history.front().filePath);
-    if (ok)
+    if (ConfigMaintenanceOps::RestoreLatestConfigBackup(GetHWND(), m_appCtx, [this]() {
+        SaveConfig();
+    }))
     {
         ReloadAfterConfigFileOperation();
     }
-
-    ConfirmWindow::Show(GetHWND(), ok ? L"回滚完成" : L"回滚失败",
-        ok ? L"配置已恢复到最近历史，并已刷新当前窗口。"
-           : L"未能恢复配置历史，请检查历史文件是否仍存在。",
-        m_appCtx, false);
 }
 
 void ConfigWindow::ClearConfigData()
 {
-    if (!m_appCtx || !m_appCtx->configService)
-        return;
-
-    if (!ConfirmWindow::Show(GetHWND(), L"清除配置",
-        L"只清空当前快捷方式和设置，不删除配置历史。\n清除前会立即自动备份当前配置。是否继续？",
-        m_appCtx))
-    {
-        return;
-    }
-
-    SaveConfig();
-    bool ok = m_appCtx->configService->ClearConfig();
-    if (ok)
+    if (ConfigMaintenanceOps::ClearConfigData(GetHWND(), m_appCtx, [this]() {
+        SaveConfig();
+    }))
     {
         m_currentCategory = 0;
         ReloadAfterConfigFileOperation();
     }
-
-    ConfirmWindow::Show(GetHWND(), ok ? L"配置已清除" : L"清除失败",
-        ok ? L"已恢复默认配置，原配置已保存在配置历史中。"
-           : L"未能清除配置，当前配置可能未完成备份或文件权限异常。",
-        m_appCtx, false);
 }
 
 void ConfigWindow::ClearConfigHistoryData()
 {
-    if (!m_appCtx || !m_appCtx->configService)
-        return;
-
-    if (!ConfirmWindow::Show(GetHWND(), L"清除配置历史",
-        L"将删除所有配置历史备份。\n删除后无法从历史中回滚找回。是否继续？",
-        m_appCtx))
-    {
-        return;
-    }
-
-    bool ok = m_appCtx->configService->ClearConfigHistory();
-    ConfirmWindow::Show(GetHWND(), ok ? L"历史已清除" : L"清除失败",
-        ok ? L"配置历史已清空。"
-           : L"部分历史文件未能删除，请检查配置历史目录。",
-        m_appCtx, false);
+    ConfigMaintenanceOps::ClearConfigHistoryData(GetHWND(), m_appCtx);
     InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
