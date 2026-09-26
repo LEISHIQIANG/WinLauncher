@@ -416,7 +416,7 @@ Add-TestResult `
         $popupSource -match 'POPUP_ICON_PROGRESS_TIMER, 16' -and
         $popupSource -match 'DrawShortcutIcon' -and
         $popupSource -match 'm_iconFlashStart < 120' -and
-        $popupSource -match 'result.identity != PopupIconCacheKey' -and
+        $popupSource -match 'result\.identity\s*!=\s*PopupIconCache::Key' -and
         $popupSource -match 'TakePendingForce' -and
         $popupSource -match 'if \(preservePreload\) return' -and
         $popupIconRefreshControllerSource -notmatch 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
@@ -795,8 +795,8 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup preload reuses caches with bounded workers and identity validation" `
     -Passed (
-        $popupSource -match 'PreserveLoadedIcons\(\)' -and
-        $popupSource -match 'CopyCachedIcon\(si\)' -and
+        $popupSource -match 'm_iconCache\.Preserve\(m_pages, m_dockPage\)' -and
+        $popupSource -match 'm_iconCache\.Copy\(si\)' -and
         $popupSource -match 'MaximumIconWorkers = 4' -and
         $popupSource -match 'result.layoutGeneration != m_iconLayoutGeneration' -and
         $popupSource -match 'TakePendingForce\(\)' -and

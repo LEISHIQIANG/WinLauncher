@@ -158,6 +158,7 @@
     <ClCompile Include="Popup\PopupRenderHelper.cpp" />
     <ClCompile Include="Popup\PopupTimeZoneAction.cpp" />
     <ClCompile Include="Popup\PopupShortcutSorter.cpp" />
+    <ClCompile Include="Popup\PopupIconCache.cpp" />
     <ClCompile Include="Popup\PinyinHelper.cpp" />
     <ClCompile Include="Config\SettingsTabHelper.cpp" />
     <ClCompile Include="Config\SettingsGeneralView.cpp" />
@@ -278,6 +279,7 @@
     <ClInclude Include="Popup\PopupRenderHelper.h" />
     <ClInclude Include="Popup\PopupTimeZoneAction.h" />
     <ClInclude Include="Popup\PopupShortcutSorter.h" />
+    <ClInclude Include="Popup\PopupIconCache.h" />
     <ClInclude Include="Popup\PinyinHelper.h" />
     <ClInclude Include="Config\SettingsTabHelper.h" />
     <ClInclude Include="Config\SettingsGeneralView.h" />

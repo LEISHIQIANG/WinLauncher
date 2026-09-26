@@ -69,6 +69,7 @@
     <ClCompile Include="Popup\PopupRenderHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupTimeZoneAction.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupShortcutSorter.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupIconCache.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsTabHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsGeneralView.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsPluginView.cpp"><Filter>源文件</Filter></ClCompile>
@@ -481,6 +482,7 @@
     <ClInclude Include="Popup\PopupRenderHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupTimeZoneAction.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupShortcutSorter.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupIconCache.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsTabHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsGeneralView.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsPluginView.h"><Filter>头文件</Filter></ClInclude>

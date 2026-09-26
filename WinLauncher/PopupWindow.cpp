@@ -192,26 +192,6 @@ static AppScene::AppIdentity CachedSceneIdentity(AppContext* context, POINT poin
     return result;
 }
 
-static std::wstring PopupIconCacheKey(const RendShortcutInfo& shortcut)
-{
-    constexpr wchar_t Separator = L'\x1f';
-    std::wstring key;
-    key.reserve(shortcut.id.size() + shortcut.targetPath.size() +
-        shortcut.iconPath.size() + shortcut.builtinIconId.size() + 32);
-    key.append(shortcut.id);
-    key.push_back(Separator);
-    key.append(shortcut.targetPath);
-    key.push_back(Separator);
-    key.append(shortcut.iconPath);
-    key.push_back(Separator);
-    key.append(shortcut.builtinIconId);
-    key.push_back(Separator);
-    key.append(std::to_wstring(static_cast<int>(shortcut.type)));
-    key.push_back(Separator);
-    key.append(std::to_wstring(static_cast<int>(shortcut.iconSource)));
-    return key;
-}
-
 static double GetTimeInSeconds()
 {
     static double freq = 0.0;
@@ -413,61 +393,7 @@ PopupWindow::~PopupWindow()
             m_appCtx->eventBus->Unsubscribe(EventType::UiScaleChanged, m_uiScaleChangedToken);
     }
     ClearPages();
-    ClearLoadedIconCache();
-}
-
-void PopupWindow::PreserveLoadedIcons()
-{
-    for (const auto& page : m_pages)
-        for (const auto& shortcut : page.shortcuts)
-            RememberLoadedIcon(shortcut);
-    for (const auto& shortcut : m_dockPage.shortcuts)
-        RememberLoadedIcon(shortcut);
-}
-
-HICON PopupWindow::CopyCachedIcon(const RendShortcutInfo& shortcut) const
-{
-    const auto found = m_loadedIconCache.find(PopupIconCacheKey(shortcut));
-    return found != m_loadedIconCache.end() && found->second
-        ? CopyIcon(found->second)
-        : nullptr;
-}
-
-void PopupWindow::RememberLoadedIcon(const RendShortcutInfo& shortcut)
-{
-    if (!shortcut.hIcon)
-        return;
-
-    HICON copy = CopyIcon(shortcut.hIcon);
-    if (!copy)
-        return;
-
-    const std::wstring key = PopupIconCacheKey(shortcut);
-    auto found = m_loadedIconCache.find(key);
-    if (found != m_loadedIconCache.end())
-    {
-        if (found->second)
-            DestroyIcon(found->second);
-        found->second = copy;
-        return;
-    }
-
-    constexpr size_t MaximumRememberedIcons = 512;
-    if (m_loadedIconCache.size() >= MaximumRememberedIcons)
-    {
-        auto oldest = m_loadedIconCache.begin();
-        if (oldest->second)
-            DestroyIcon(oldest->second);
-        m_loadedIconCache.erase(oldest);
-    }
-    m_loadedIconCache.emplace(key, copy);
-}
-
-void PopupWindow::ClearLoadedIconCache()
-{
-    for (auto& entry : m_loadedIconCache)
-        if (entry.second) DestroyIcon(entry.second);
-    m_loadedIconCache.clear();
+    m_iconCache.Clear();
 }
 
 void PopupWindow::ClearPages()
@@ -527,7 +453,7 @@ void PopupWindow::RebuildRenderPagesForScene(bool configurationReloaded)
     // Preserve real device-independent icons before scene/config filtering
     // destroys the current render pages. A foreground-app scene switch must
     // never regress an unchanged shortcut to generated text artwork.
-    PreserveLoadedIcons();
+    m_iconCache.Preserve(m_pages, m_dockPage);
 
     // Rebuild legacy render data
     ClearPages();
@@ -566,7 +492,7 @@ void PopupWindow::RebuildRenderPagesForScene(bool configurationReloaded)
                 si.builtinIconId = vs.builtinIconId;
                 si.iconInvertLight = vs.iconInvertLight;
                 si.iconInvertDark = vs.iconInvertDark;
-                si.hIcon = CopyCachedIcon(si);
+                si.hIcon = m_iconCache.Copy(si);
                 if (!si.hIcon)
                     si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
                 pp.shortcuts.push_back(std::move(si));
@@ -597,7 +523,7 @@ void PopupWindow::RebuildRenderPagesForScene(bool configurationReloaded)
             si.builtinIconId = vs.builtinIconId;
             si.iconInvertLight = vs.iconInvertLight;
             si.iconInvertDark = vs.iconInvertDark;
-            si.hIcon = CopyCachedIcon(si);
+            si.hIcon = m_iconCache.Copy(si);
             if (!si.hIcon)
                 si.hIcon = ShortcutManager::GetShortcutIcon(si, true);
             m_dockPage.shortcuts.push_back(std::move(si));
@@ -2065,7 +1991,7 @@ void PopupWindow::RefreshIcons(bool forceRefresh, bool showFeedback)
                     break;
                 }
                 std::lock_guard<std::mutex> lock(state->mutex);
-                state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon, PopupIconCacheKey(shortcut), state->layoutGeneration });
+                state->results.push_back({ std::get<0>(job), std::get<1>(job), std::get<2>(job), icon, PopupIconCache::Key(shortcut), state->layoutGeneration });
             }
             if (SUCCEEDED(comResult)) CoUninitialize();
         });
@@ -2126,23 +2052,23 @@ void PopupWindow::ApplyRefreshedIcons(bool refreshCompleted)
         if (!page || result.shortcutIndex >= page->shortcuts.size()) { if (result.icon) DestroyIcon(result.icon); continue; }
         if (result.layoutGeneration != m_iconLayoutGeneration)
         { if (result.icon) DestroyIcon(result.icon); continue; }
-        if (PopupIconCacheKey(page->shortcuts[result.shortcutIndex]) != result.identity)
+        if (PopupIconCache::Key(page->shortcuts[result.shortcutIndex]) != result.identity)
         {
             const auto found = std::find_if(page->shortcuts.begin(), page->shortcuts.end(),
-                [&result](const auto& shortcut) { return PopupIconCacheKey(shortcut) == result.identity; });
+                [&result](const auto& shortcut) { return PopupIconCache::Key(shortcut) == result.identity; });
             if (found == page->shortcuts.end()) { if (result.icon) DestroyIcon(result.icon); continue; }
             result.shortcutIndex = static_cast<size_t>(found - page->shortcuts.begin());
         }
         auto& shortcut = page->shortcuts[result.shortcutIndex];
         if (!result.icon || result.layoutGeneration != m_iconLayoutGeneration ||
-            result.identity != PopupIconCacheKey(shortcut))
+            result.identity != PopupIconCache::Key(shortcut))
         {
             if (result.icon) DestroyIcon(result.icon);
             continue;
         }
         if (shortcut.hIcon) DestroyIcon(shortcut.hIcon);
         shortcut.hIcon = result.icon;
-        RememberLoadedIcon(shortcut);
+            m_iconCache.Remember(shortcut);
         if (result.shortcutIndex < page->iconBitmaps.size() && page->iconBitmaps[result.shortcutIndex])
         {
             page->iconBitmaps[result.shortcutIndex]->Release();

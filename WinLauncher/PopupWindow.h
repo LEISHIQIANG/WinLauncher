@@ -11,6 +11,7 @@
 #include "Services/FileSelectionService.h"
 #include "Popup/PopupFileSelectionController.h"
 #include "Popup/PopupIconRefreshController.h"
+#include "Popup/PopupIconCache.h"
 #include "Popup/PopupWheelState.h"
 #include "Popup/PopupSearchService.h"
 #include <mutex>
@@ -79,10 +80,6 @@ private:
     void EnsureIcons();
     void RefreshIcons(bool forceRefresh = true, bool showFeedback = true);
     void ApplyRefreshedIcons(bool refreshCompleted = true);
-    void PreserveLoadedIcons();
-    HICON CopyCachedIcon(const RendShortcutInfo& shortcut) const;
-    void RememberLoadedIcon(const RendShortcutInfo& shortcut);
-    void ClearLoadedIconCache();
     void OnIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
     static void OnAnyIconPreloadCompleted(const std::shared_ptr<PopupIconRefreshController::State>& state);
     void CancelIconRefresh(bool preservePreload = false);
@@ -195,7 +192,7 @@ private:
     uint64_t m_iconLayoutGeneration = 0;
     PopupIconRefreshController m_iconRefresh;
     // Device-independent HICON copies survive scene/config render-page rebuilds.
-    std::unordered_map<std::wstring, HICON> m_loadedIconCache;
+    PopupIconCache m_iconCache;
     PopupFileSelectionController m_fileSelection;
     void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);
     void CancelFileSelectionQuery();
