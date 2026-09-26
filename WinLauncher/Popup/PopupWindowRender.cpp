@@ -303,13 +303,9 @@ void PopupWindow::DrawShortcutIcon(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bitma
     const D2D1_RECT_F& rect, const std::wstring& name)
 {
     // Preserve the original text-icon flash without destroying real artwork.
-    if (m_iconFlashStart && GetTickCount64() - m_iconFlashStart < 120)
+    if (m_iconPresenter.IsFlashing())
     {
-        auto& flash = m_iconFlashBitmaps[name];
-        if (!flash)
-            flash = IconRenderer::CreateDefaultIcon(rt, GetDWFactory(), name,
-                IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(GetIconSize())));
-        if (flash) bitmap = flash.Get();
+        bitmap = m_iconPresenter.GetOrCreateFlashBitmap(name, rt, GetDWFactory(), GetIconSize(), bitmap);
     }
     if (bitmap) rt->DrawBitmap(bitmap, rect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 }

@@ -67,7 +67,7 @@ void PopupWindow::OnDropFiles(HWND hWnd, WPARAM wParam)
 
 LRESULT PopupWindow::OnDpiChanged(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    m_bmpBrushCache.clear();
+    m_iconPresenter.ClearBrushCache();
     RECT* const prcNewWindow = (RECT*)lParam;
     if (prcNewWindow)
     {
@@ -112,10 +112,8 @@ bool PopupWindow::OnTimer(HWND hWnd, WPARAM wParam)
 {
     if (wParam == PopupWindowMessages::IconFlashTimer)
     {
-        if (!m_iconFlashStart || GetTickCount64() - m_iconFlashStart >= 120)
+        if (m_iconPresenter.OnFlashTimerTick())
         {
-            m_iconFlashStart = 0;
-            m_iconFlashBitmaps.clear();
             KillTimer(hWnd, PopupWindowMessages::IconFlashTimer);
         }
         InvalidateRect(hWnd, nullptr, FALSE);

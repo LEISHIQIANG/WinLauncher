@@ -12,6 +12,7 @@
 #include "Popup/PopupFileSelectionController.h"
 #include "Popup/PopupIconRefreshController.h"
 #include "Popup/PopupIconCache.h"
+#include "Popup/PopupIconPresenter.h"
 #include "Popup/PopupLayout.h"
 #include "Popup/PopupShortcutLauncher.h"
 #include "Popup/PopupWheelState.h"
@@ -24,6 +25,7 @@ using Microsoft::WRL::ComPtr;
 
 class PopupWindow : public GlassWindow
 {
+    friend class PopupIconPresenter;
 public:
     PopupWindow(AppContext* ctx);
     virtual ~PopupWindow() override;
@@ -157,9 +159,7 @@ private:
     bool m_trackMouse;
     bool m_pinned;
 
-    ID2D1HwndRenderTarget* m_lastRt;
-    float m_lastDpi;
-    int m_lastIconBitmapSize = 0;
+    PopupIconPresenter m_iconPresenter;
 
     // Animation states
     bool m_animating;
@@ -167,12 +167,7 @@ private:
     float m_scrollPosition;
     float m_scrollVelocity;
     PopupWheelState m_wheel;
-    ULONGLONG m_iconFlashStart = 0;
-    std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_iconFlashBitmaps;
     void DrawShortcutIcon(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bitmap, const D2D1_RECT_F& rect, const std::wstring& name);
-
-    // Bitmap brush cache: keyed by ID2D1Bitmap pointer, cleared on EnsureIcons
-    std::unordered_map<ID2D1Bitmap*, ComPtr<ID2D1BitmapBrush>> m_bmpBrushCache;
 
     ComPtr<IDWriteTextFormat> m_popupTextFormat;
     ComPtr<IDWriteTextFormat> m_searchTextFormat;
@@ -203,8 +198,6 @@ private:
     EventBus::Token m_themeChangedToken = 0;
     EventBus::Token m_bgStyleChangedToken = 0;
     EventBus::Token m_uiScaleChangedToken = 0;
-    std::vector<BackgroundTaskService::TaskHandle> m_iconRefreshTasks;
-    uint64_t m_iconLayoutGeneration = 0;
     PopupIconRefreshController m_iconRefresh;
     // Device-independent HICON copies survive scene/config render-page rebuilds.
     PopupIconCache m_iconCache;

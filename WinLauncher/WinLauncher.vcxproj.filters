@@ -91,6 +91,7 @@
     <ClCompile Include="Popup\PopupShortcutLauncher.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupWindowInput.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupWindowRender.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupIconPresenter.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsTabHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsPageHitTest.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsControlKit.cpp"><Filter>源文件</Filter></ClCompile>
@@ -591,6 +592,7 @@
     <ClInclude Include="Popup\PopupShortcutLauncher.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupScrollAnimator.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupWindowMessages.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Popup\PopupIconPresenter.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PopupClock.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsTabHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsPageLayout.h"><Filter>头文件</Filter></ClInclude>

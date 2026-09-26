@@ -213,6 +213,8 @@ Add-TestResult `
     -Detail "Repeated config loads must not reset missing-folder recovery backoff"
 
 $popupWindowHeader = Read-RepoFile "WinLauncher\PopupWindow.h"
+$popupIconPresenterHeader = Read-RepoFile "WinLauncher\Popup\PopupIconPresenter.h"
+$popupIconPresenterSource = Read-RepoFile "WinLauncher\Popup\PopupIconPresenter.cpp"
 $popupFileSelectionControllerSource = Read-RepoFile "WinLauncher\Popup\PopupFileSelectionController.cpp"
 $popupIconRefreshControllerSource = Read-RepoFile "WinLauncher\Popup\PopupIconRefreshController.cpp"
 $fileSelectionServiceSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
@@ -401,8 +403,10 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup icon refresh leaves Shell extraction off the UI message path" `
     -Passed (
-        $popupWindowHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_iconRefreshTasks' -and
-        $popupSource -match 'Submit\(\s*L"popup\.icon_refresh\.' -and
+        ($popupWindowHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_iconRefreshTasks' -or
+         $popupIconPresenterHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_iconRefreshTasks') -and
+        ($popupSource -match 'Submit\(\s*L"popup\.icon_refresh\.' -or
+         $popupIconPresenterSource -match 'Submit\(\s*L"popup\.icon_refresh\.') -and
         $popupSource -match 'void\s+PopupWindow::CancelIconRefresh\s*\(' -and
         $popupSource -match 'void\s+PopupWindow::ApplyRefreshedIcons\s*\(' -and
         $popupSource -notmatch 'case\s+WM_USER_REFRESH_ICONS:[\s\S]{0,1800}ShortcutManager::RefreshShortcutIcon'
@@ -412,7 +416,8 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup icon bitmaps are limited to visible pages and preload survives hiding" `
     -Passed (
-        $popupSource -match 'distance\s*>\s*1\)\s*continue' -and
+        ($popupSource -match 'distance\s*>\s*1\)\s*continue' -or
+         $popupIconPresenterSource -match 'distance\s*>\s*1\)\s*continue') -and
         $popupSource -match 'void\s+PopupWindow::HideSelf\s*\([\s\S]{0,900}CancelIconRefresh\(true\)' -and
         $popupIconRefreshControllerSource -match 'm_pending\s*=\s*false'
     ) `
@@ -422,12 +427,17 @@ Add-TestResult `
     -Name "Popup icon preload never gates reveal and refresh preserves old icons" `
     -Passed (
         $popupSource -notmatch 'QueueShowUntilIconsReady|POPUP_ICON_PRELOAD_MAX_WAIT_MS|m_iconFallbackGeneration' -and
-        $popupSource -match 'PopupWindowMessages::IconProgressTimer, 16' -and
+        ($popupSource -match 'PopupWindowMessages::IconProgressTimer, 16' -or
+         $popupIconPresenterSource -match 'PopupWindowMessages::IconProgressTimer, 16') -and
         $popupRenderSource -match 'DrawShortcutIcon' -and
-        $popupRenderSource -match 'm_iconFlashStart < 120' -and
-        $popupSource -match 'result\.identity\s*!=\s*PopupIconCache::Key' -and
-        $popupSource -match 'TakePendingForce' -and
-        $popupSource -match 'if \(preservePreload\) return' -and
+        ($popupRenderSource -match 'm_iconFlashStart < 120' -or
+         $popupIconPresenterSource -match 'm_iconFlashStart < 120') -and
+        ($popupSource -match 'result\.identity\s*!=\s*PopupIconCache::Key' -or
+         $popupIconPresenterSource -match 'result\.identity\s*!=\s*PopupIconCache::Key') -and
+        ($popupSource -match 'TakePendingForce' -or
+         $popupIconPresenterSource -match 'TakePendingForce') -and
+        ($popupSource -match 'if \(preservePreload\) return' -or
+         $popupIconPresenterSource -match 'if \(preservePreload\) return') -and
         $popupIconRefreshControllerSource -notmatch 'WaitForSingleObject\(state->completionEvent, INFINITE\)'
     ) `
     -Detail "Slow icon extraction must not delay the popup or erase existing icons; explicit refresh keeps visual feedback"
@@ -812,10 +822,10 @@ Add-TestResult `
     -Passed (
         $popupSource -match 'm_iconCache\.Preserve\(m_pages, m_dockPage\)' -and
         $popupSource -match 'm_iconCache\.Copy\(si\)' -and
-        $popupSource -match 'MaximumIconWorkers = 4' -and
-        $popupSource -match 'result.layoutGeneration != m_iconLayoutGeneration' -and
-        $popupSource -match 'TakePendingForce\(\)' -and
-        $popupSource -match 'if \(preservePreload\) return'
+        ($popupSource -match 'MaximumIconWorkers = 4' -or $popupIconPresenterSource -match 'MaximumIconWorkers = 4') -and
+        ($popupSource -match 'result.layoutGeneration != m_iconLayoutGeneration' -or $popupIconPresenterSource -match 'result.layoutGeneration != m_iconLayoutGeneration') -and
+        ($popupSource -match 'TakePendingForce\(\)' -or $popupIconPresenterSource -match 'TakePendingForce\(\)') -and
+        ($popupSource -match 'if \(preservePreload\) return' -or $popupIconPresenterSource -match 'if \(preservePreload\) return')
     ) `
     -Detail "Hide preserves useful background results; replacements cannot apply stale layout icons"
 
