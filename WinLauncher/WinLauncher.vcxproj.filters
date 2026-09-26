@@ -69,6 +69,9 @@
     <ClCompile Include="GlassBackgroundCapture.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="GlassThemeTransition.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="ShadowWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -340,6 +343,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="GlassBackgroundCapture.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GlassThemeTransition.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ShadowWindow.h">

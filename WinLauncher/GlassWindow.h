@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseWindow.h"
 #include "GlassBackgroundCapture.h"
+#include "GlassThemeTransition.h"
 #include "App/AppContext.h"
 #include "UI/Render/Compositor.h"
 #include "ShadowWindow.h"
@@ -137,7 +138,6 @@ protected:
     void PrepareOpenTransitionFrame(bool fromWindowCenter = false);
     void CancelVisibilityTransitionForShow();
 
-    void CaptureTransitionSnapshot();
     void DrawThemeTransitionOverlay(ID2D1HwndRenderTarget* rt, float w, float h);
     void StartThemeTransition(POINT clickPt);
     void DrawBackgroundFullTarget(ID2D1Bitmap* bitmap);
@@ -158,14 +158,7 @@ protected:
 
     int m_lastAppliedAccentState = -1;
 
-    bool m_themeTransitionActive = false;
-    float m_themeTransitionProgress = 0.0f;
-    ULONGLONG m_themeTransitionStartTime = 0;
-    D2D1_POINT_2F m_themeTransitionCenter = { 0.0f, 0.0f };
-    ComPtr<ID2D1Bitmap> m_themeTransitionOldBitmap = nullptr;
-    ComPtr<ID2D1Layer> m_themeTransitionLayer = nullptr;
-    ComPtr<ID2D1GradientStopCollection> m_themeTransitionStopCollection = nullptr;
-    bool m_pendingBackdropUpdate = false;
+    GlassThemeTransition m_themeTransition;
 
 public:
     // App context for dependency injection (public for free function access)

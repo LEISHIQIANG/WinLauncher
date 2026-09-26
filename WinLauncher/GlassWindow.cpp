@@ -557,7 +557,7 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
     m_roundedClipGeometry.Reset();
     m_effectWinSize = {};
     m_effectCornerRadius = -1.0f;
-    m_themeTransitionStopCollection.Reset();
+    m_themeTransition.Reset();
     if (includeRenderTarget)
     {
         m_rt.Reset();
@@ -604,8 +604,8 @@ void GlassWindow::UpdateTheme()
     m_sheenBrush.Reset();
     m_sheenLayerRt.Reset();
     m_sheenLayerBitmap.Reset();
-    if (m_themeTransitionActive)
-        m_pendingBackdropUpdate = true;
+    if (m_themeTransition.IsActive())
+        m_themeTransition.SetPendingBackdropUpdate(true);
     else
     {
         // Reapply for every mode, not just acrylic: leaving acrylic must
@@ -623,8 +623,8 @@ void GlassWindow::UpdateTheme()
         L"theme_updated",
         L"themeMode=%d themeTransitionActive=%d pendingBackdrop=%d hwnd=%p",
         (int)UIStyle::GetThemeMode(),
-        (int)m_themeTransitionActive,
-        (int)m_pendingBackdropUpdate,
+        (int)m_themeTransition.IsActive(),
+        (int)m_themeTransition.PendingBackdropUpdate(),
         m_hWnd);
     if (m_hWnd)
     {
@@ -1126,7 +1126,7 @@ void GlassWindow::DoPaint()
                 w,
                 h,
                 scale,
-                (int)m_themeTransitionActive,
+                (int)m_themeTransition.IsActive(),
                 (int)m_animState,
                 m_hWnd);
         }
@@ -1284,7 +1284,7 @@ void GlassWindow::DoPaint()
             (int)m_bgCompositeDirty,
             m_bgFinal ? 1 : 0,
             m_backgroundCapture.Bitmap() ? 1 : 0,
-            (int)m_themeTransitionActive,
+            (int)m_themeTransition.IsActive(),
             (int)m_animState,
             m_hWnd);
     }
@@ -1635,34 +1635,13 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 }
             }
 
-            if (m_themeTransitionActive)
+            if (m_themeTransition.IsActive())
             {
                 animating = true;
                 float duration = UIStyle::Animation::GetDurationMs();
-                if (duration <= 0.0f) duration = 1.0f;
-                float elapsed = (float)(GetTickCount64() - m_themeTransitionStartTime);
-                m_themeTransitionProgress = elapsed / duration;
-                if (m_pendingBackdropUpdate && m_themeTransitionProgress >= 0.45f)
-                {
+                m_themeTransition.Step(duration, [this]() {
                     ApplySystemBackdrop();
-                    m_pendingBackdropUpdate = false;
-                }
-                if (m_themeTransitionProgress >= 1.0f)
-                {
-                    m_themeTransitionProgress = 1.0f;
-                    m_themeTransitionActive = false;
-                    m_themeTransitionOldBitmap.Reset();
-                    if (m_pendingBackdropUpdate)
-                    {
-                        ApplySystemBackdrop();
-                        m_pendingBackdropUpdate = false;
-                    }
-                    UIStyle::ThemeTransition::End();
-                }
-                else
-                {
-                    UIStyle::ThemeTransition::SetProgress(m_themeTransitionProgress);
-                }
+                });
                 m_brushCache.clear();
                 if (m_compositor) m_compositor->MarkAllDirty();
                 m_bgCompositeDirty = true;
@@ -2049,89 +2028,19 @@ void GlassWindow::GetAnimationTransform(float w, float h, float progress, AnimSt
     transform = D2D1::Matrix3x2F::Identity();
 }
 
-void GlassWindow::CaptureTransitionSnapshot()
-{
-    m_themeTransitionOldBitmap.Reset();
-    if (!EnsureD2D() || !m_rt)
-        return;
-
-    m_rt->Flush();
-
-    D2D1_SIZE_U size = m_rt->GetPixelSize();
-    if (size.width == 0 || size.height == 0)
-        return;
-
-    FLOAT dpiX = 96.0f;
-    FLOAT dpiY = 96.0f;
-    m_rt->GetDpi(&dpiX, &dpiY);
-
-    D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-        m_rt->GetPixelFormat(),
-        dpiX,
-        dpiY);
-
-    ComPtr<ID2D1Bitmap> snapshot;
-    HRESULT hr = m_rt->CreateBitmap(size, nullptr, 0, props, &snapshot);
-    if (SUCCEEDED(hr) && snapshot)
-    {
-        hr = snapshot->CopyFromRenderTarget(nullptr, m_rt.Get(), nullptr);
-        if (SUCCEEDED(hr))
-            m_themeTransitionOldBitmap = snapshot;
-    }
-}
-
 void GlassWindow::DrawThemeTransitionOverlay(ID2D1HwndRenderTarget* rt, float w, float h)
 {
-    if (!m_themeTransitionActive || !m_themeTransitionOldBitmap || !rt)
-        return;
-
-    float opacity = 1.0f - UIStyle::ThemeTransition::BlendProgress();
-    if (opacity <= 0.001f)
-        return;
-    if (opacity > 1.0f)
-        opacity = 1.0f;
-
-    rt->DrawBitmap(
-        m_themeTransitionOldBitmap.Get(),
-        D2D1::RectF(0.0f, 0.0f, w, h),
-        opacity,
-        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    m_themeTransition.DrawOverlay(rt, w, h);
 }
 
 void GlassWindow::StartThemeTransition(POINT clickPt)
 {
-    if (!UIStyle::Animation::IsEnabled())
+    EnsureD2D();
+    if (m_themeTransition.Start(m_hWnd, m_rt.Get(), clickPt))
     {
-        m_themeTransitionActive = false;
-        m_themeTransitionOldBitmap.Reset();
-        UIStyle::ThemeTransition::End();
-        return;
+        m_bgCompositeDirty = true;
+        if (m_compositor) m_compositor->MarkAllDirty();
+        m_brushCache.clear();
+        SetTimer(m_hWnd, 0x889, 10, nullptr);
     }
-
-    m_themeTransitionActive = true;
-    m_themeTransitionProgress = 0.0f;
-    m_themeTransitionStartTime = GetTickCount64();
-    UIStyle::ThemeTransition::SetProgress(0.0f);
-    CaptureTransitionSnapshot();
-
-    RECT cr;
-    GetClientRect(m_hWnd, &cr);
-    float scale = GetWindowScale(m_hWnd);
-    float w = (float)cr.right / scale;
-    float h = (float)cr.bottom / scale;
-
-    if (clickPt.x == -1 && clickPt.y == -1)
-    {
-        m_themeTransitionCenter = D2D1::Point2F(w / 2.0f, h / 2.0f);
-    }
-    else
-    {
-        m_themeTransitionCenter = D2D1::Point2F((float)clickPt.x, (float)clickPt.y);
-    }
-
-    m_bgCompositeDirty = true;
-    if (m_compositor) m_compositor->MarkAllDirty();
-    m_brushCache.clear();
-
-    SetTimer(m_hWnd, 0x889, 10, nullptr);
 }
