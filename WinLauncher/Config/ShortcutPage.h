@@ -3,6 +3,7 @@
 #include "ShortcutDialogController.h"
 #include "ShortcutGridViewHelper.h"
 #include "ShortcutSelectionModel.h"
+#include "FaviconBatchFetcher.h"
 #include "../ShortcutManager.h"
 #include "../App/BackgroundTaskService.h"
 #include <vector>
@@ -49,8 +50,6 @@ public:
     bool IsDragging() const { return m_dragActive; }
 
 private:
-    struct BatchFaviconState;
-
     IIconService* SharedIconService() const;
 
     static void CancelPointerInteractionThunk(void* context);
@@ -79,9 +78,6 @@ private:
     ShortcutDialogController::DialogHostContext BuildDialogHostContext() const;
     ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
     void FetchSelectedUrlFavicons(const std::vector<int>& indices);
-    void ApplyBatchFaviconResult(uint64_t generation, int index, const std::wstring& shortcutId,
-                                 const std::wstring& url, const std::wstring& iconPath);
-    void FinishBatchFaviconFetch();
     void CancelBatchFaviconFetches();
 
     int HitTestShortcut(POINT pt);
@@ -125,13 +121,7 @@ private:
     std::vector<ShortcutVisualState> m_shortcutStates;
     std::vector<int> m_pendingDeleteIndices;
 
-    std::shared_ptr<BatchFaviconState> m_batchFaviconState;
-    std::vector<BackgroundTaskService::TaskHandle> m_batchFaviconTasks;
-    uint64_t m_batchFaviconGeneration = 0;
-    int m_batchFaviconPending = 0;
-    int m_batchFaviconApplied = 0;
-    bool m_batchFaviconChanged = false;
-    bool m_batchFaviconHistoryRecorded = false;
+    std::unique_ptr<FaviconBatchFetcher> m_faviconFetcher;
 
     int m_selectionAnchorIndex;
     POINT m_dragStartPt;

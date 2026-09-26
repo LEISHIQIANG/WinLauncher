@@ -186,6 +186,7 @@
     <ClCompile Include="Config\DeleteCursorFactory.cpp" />
     <ClCompile Include="Config\ShortcutDialogController.cpp" />
     <ClCompile Include="Config\ShortcutSelectionModel.cpp" />
+    <ClCompile Include="Config\FaviconBatchFetcher.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
     <ClCompile Include="Config\SceneSettingsWindow.cpp" />
@@ -351,6 +352,7 @@
     <ClInclude Include="Config\DeleteCursorFactory.h" />
     <ClInclude Include="Config\ShortcutDialogController.h" />
     <ClInclude Include="Config\ShortcutSelectionModel.h" />
+    <ClInclude Include="Config\FaviconBatchFetcher.h" />
     <ClInclude Include="Config\CategoryList.h" />
     <ClInclude Include="Config\ContextMenu.h" />
     <ClInclude Include="Config\SceneSettingsWindow.h" />

@@ -29,13 +29,6 @@
 
 static const int ICON_SIZE = 24;
 
-struct ShortcutPage::BatchFaviconState
-{
-    std::mutex mutex;
-    ShortcutPage* owner = nullptr; // Accessed only by UI-dispatched callbacks while holding mutex.
-    uint64_t generation = 0;
-};
-
 ShortcutPage::ShortcutPage(IConfigWindow* owner)
     : m_owner(owner)
     , m_pageData(nullptr)
@@ -57,19 +50,15 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
     , m_lastRt(nullptr)
     , m_trackMouse(false)
 {
-    m_batchFaviconState = std::make_shared<BatchFaviconState>();
-    m_batchFaviconState->owner = this;
+    m_faviconFetcher = std::make_unique<FaviconBatchFetcher>();
 }
 
 ShortcutPage::~ShortcutPage()
 {
     MouseCaptureController::ReleaseForContext(this, L"shortcut_page_destroyed");
-    CancelBatchFaviconFetches();
-    if (m_batchFaviconState)
+    if (m_faviconFetcher)
     {
-        std::lock_guard<std::mutex> lock(m_batchFaviconState->mutex);
-        m_batchFaviconState->owner = nullptr;
-        ++m_batchFaviconState->generation;
+        m_faviconFetcher->Detach();
     }
     m_brushCache.Clear();
     if (m_deleteCursor)
@@ -1161,146 +1150,24 @@ bool ShortcutPage::ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bo
 
 void ShortcutPage::CancelBatchFaviconFetches()
 {
-    for (const auto& task : m_batchFaviconTasks)
+    if (m_faviconFetcher)
     {
-        task.Cancel();
-    }
-    m_batchFaviconTasks.clear();
-    m_batchFaviconPending = 0;
-    m_batchFaviconApplied = 0;
-    m_batchFaviconChanged = false;
-    m_batchFaviconHistoryRecorded = false;
-
-    if (m_batchFaviconState)
-    {
-        std::lock_guard<std::mutex> lock(m_batchFaviconState->mutex);
-        ++m_batchFaviconState->generation;
+        m_faviconFetcher->Cancel();
     }
 }
 
 void ShortcutPage::FetchSelectedUrlFavicons(const std::vector<int>& indices)
 {
-    if (!m_pageData || m_pageData->isSyncFolder || !m_owner) return;
+    if (!m_faviconFetcher) return;
 
-    AppContext* context = m_owner->GetAppContext();
-    if (!context || !context->backgroundTasks || !context->uiDispatcher || !m_batchFaviconState) return;
-
-    struct UrlJob { int index; std::wstring shortcutId; std::wstring url; };
-    std::vector<UrlJob> jobs;
-    for (int index : NormalizeShortcutIndices(indices))
-    {
-        const RendShortcutInfo& shortcut = m_pageData->shortcuts[index];
-        if (shortcut.type == Model::ShortcutType::Url && !shortcut.targetPath.empty())
-        {
-            jobs.push_back({ index, shortcut.id, shortcut.targetPath });
-        }
-    }
-    if (jobs.empty())
-    {
-        ToastWindow::Show(L"选中的项目中没有可获取图标的网址", 1800);
-        return;
-    }
-
-    CancelBatchFaviconFetches();
-    const auto state = m_batchFaviconState;
-    uint64_t generation = 0;
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        generation = ++state->generation;
-    }
-    m_batchFaviconGeneration = generation;
-
-    auto dispatcher = context->uiDispatcher;
-    for (const UrlJob& job : jobs)
-    {
-        BackgroundTaskService::TaskHandle task = context->backgroundTasks->Submit(
-            L"config.url_favicon.batch", BackgroundTaskService::Priority::Normal,
-            [state, dispatcher, generation, index = job.index, shortcutId = job.shortcutId, url = job.url]
-            (const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-                std::wstring iconPath;
-                try
-                {
-                    iconPath = FaviconFetcher::FetchFavicon(url, /*forceRefresh=*/true);
-                }
-                catch (...) {}
-                if (cancellation->IsCancellationRequested()) return;
-                dispatcher->Post(L"config.url_favicon.batch.complete", [state, generation, index, shortcutId, url, iconPath]() {
-                    std::lock_guard<std::mutex> lock(state->mutex);
-                    if (state->owner)
-                        state->owner->ApplyBatchFaviconResult(generation, index, shortcutId, url, iconPath);
-                });
-            });
-        if (task)
-        {
-            m_batchFaviconTasks.push_back(task);
-            ++m_batchFaviconPending;
-        }
-    }
-
-    if (m_batchFaviconPending == 0)
-    {
-        ToastWindow::Show(L"后台任务繁忙，未开始获取图标", 1800);
-        return;
-    }
-
-    ToastWindow::Show(L"正在并行获取 " + std::to_wstring(m_batchFaviconPending) + L" 个网站图标...", 1600);
-}
-
-void ShortcutPage::ApplyBatchFaviconResult(uint64_t generation, int index, const std::wstring& shortcutId,
-                                           const std::wstring& url, const std::wstring& iconPath)
-{
-    if (generation != m_batchFaviconGeneration || m_batchFaviconPending <= 0) return;
-
-    if (!iconPath.empty() && m_pageData && index >= 0 && index < (int)m_pageData->shortcuts.size())
-    {
-        RendShortcutInfo& shortcut = m_pageData->shortcuts[index];
-        if (shortcut.type == Model::ShortcutType::Url && shortcut.id == shortcutId && shortcut.targetPath == url)
-        {
-            bool changed = shortcut.iconPath != iconPath || shortcut.iconSource != Model::IconSource::CustomPath;
-            if (changed && !m_batchFaviconHistoryRecorded)
-            {
-                m_owner->RecordShortcutHistoryCheckpoint();
-                m_batchFaviconHistoryRecorded = true;
-            }
-            shortcut.iconPath = iconPath;
-            shortcut.iconSource = Model::IconSource::CustomPath;
-
-            if (shortcut.hIcon) { DestroyIcon(shortcut.hIcon); shortcut.hIcon = nullptr; }
-            shortcut.hIcon = ShortcutManager::GetShortcutIcon(shortcut, false, SharedIconService());
-            if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
-            {
-                m_pageData->iconBitmaps[index]->Release();
-                m_pageData->iconBitmaps[index] = nullptr;
-            }
-            if (index < (int)m_pageData->iconBitmaps.size())
-                m_pageData->iconBitmaps[index] = CreateShortcutBitmap(shortcut);
-
-            ++m_batchFaviconApplied;
-            m_batchFaviconChanged = m_batchFaviconChanged || changed;
-        }
-    }
-
-    --m_batchFaviconPending;
-    if (m_batchFaviconPending == 0)
-        FinishBatchFaviconFetch();
-}
-
-void ShortcutPage::FinishBatchFaviconFetch()
-{
-    m_batchFaviconTasks.clear();
-    if (m_batchFaviconChanged)
-        m_owner->NotifyConfigChanged();
-
-    if (m_batchFaviconApplied > 0)
-    {
-        ToastWindow::Show(L"已获取并应用 " + std::to_wstring(m_batchFaviconApplied) + L" 个网站图标", 2200);
-    }
-    else
-    {
-        ToastWindow::Show(L"未获取到选中网站的图标", 2200);
-    }
-    HWND hWnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
-    if (hWnd && IsWindow(hWnd)) InvalidateRect(hWnd, nullptr, FALSE);
+    FaviconBatchFetcher::HostContext host{
+        m_owner,
+        m_pageData,
+        SharedIconService(),
+        [this](const RendShortcutInfo& sc) { return CreateShortcutBitmap(sc); },
+        [this](const std::vector<int>& ind) { return NormalizeShortcutIndices(ind); }
+    };
+    m_faviconFetcher->StartFetch(host, indices);
 }
 
 bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices, bool& repaint)

@@ -1,4 +1,4 @@
-﻿param()
+param()
 
 $ErrorActionPreference = "Stop"
 
@@ -230,6 +230,8 @@ $contextMenuSource = Read-RepoFile "WinLauncher\Config\ContextMenu.cpp"
 $dropDownMenuSource = Read-RepoFile "WinLauncher\Config\DropDownMenu.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $shortcutPageHeader = Read-RepoFile "WinLauncher\Config\ShortcutPage.h"
+$faviconBatchFetcherSource = Read-RepoFile "WinLauncher\Config\FaviconBatchFetcher.cpp"
+$faviconBatchFetcherHeader = Read-RepoFile "WinLauncher\Config\FaviconBatchFetcher.h"
 $secondaryFirstFrameSources = @(
     $shortcutDialogSource,
     $confirmWindowSource,
@@ -328,11 +330,11 @@ Add-TestResult `
         $shortcutPageSource -match ('L"' + (-join [char[]]@(0x5220, 0x9664)) + '"') -and
         $shortcutPageSource -match ('L"' + (-join [char[]]@(0x83B7, 0x53D6, 0x56FE, 0x6807)) + '"') -and
         $shortcutPageSource -match 'FetchSelectedUrlFavicons' -and
-        $shortcutPageSource -match 'Model::ShortcutType::Url' -and
-        $shortcutPageSource -match 'Submit\(\s*L"config\.url_favicon\.batch"' -and
-        $shortcutPageSource -match 'FaviconFetcher::FetchFavicon' -and
+        ($shortcutPageSource -match 'Model::ShortcutType::Url' -or $faviconBatchFetcherSource -match 'Model::ShortcutType::Url') -and
+        ($shortcutPageSource -match 'Submit\(\s*L"config\.url_favicon\.batch"' -or $faviconBatchFetcherSource -match 'Submit\(\s*L"config\.url_favicon\.batch"') -and
+        ($shortcutPageSource -match 'FaviconFetcher::FetchFavicon' -or $faviconBatchFetcherSource -match 'FaviconFetcher::FetchFavicon') -and
         $shortcutPageSource -match 'CancelBatchFaviconFetches' -and
-        $shortcutPageHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_batchFaviconTasks'
+        ($shortcutPageHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_batchFaviconTasks' -or $faviconBatchFetcherHeader -match 'std::vector<BackgroundTaskService::TaskHandle>\s+m_tasks')
     ) `
     -Detail "Multi-select menus must omit edit actions and batch-fetch only URL icons through cancellable background tasks"
 
