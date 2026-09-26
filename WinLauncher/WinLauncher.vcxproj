@@ -164,6 +164,7 @@
     <ClCompile Include="Popup\PopupShortcutSorter.cpp" />
     <ClCompile Include="Popup\PopupIconCache.cpp" />
     <ClCompile Include="Popup\PopupShortcutLauncher.cpp" />
+    <ClCompile Include="Popup\PopupWindowInput.cpp" />
     <ClCompile Include="Popup\PinyinHelper.cpp" />
     <ClCompile Include="Config\SettingsTabHelper.cpp" />
     <ClCompile Include="Config\SettingsPageHitTest.cpp" />
@@ -307,6 +308,8 @@
     <ClInclude Include="Popup\PopupIconCache.h" />
     <ClInclude Include="Popup\PopupShortcutLauncher.h" />
     <ClInclude Include="Popup\PopupScrollAnimator.h" />
+    <ClInclude Include="Popup\PopupWindowMessages.h" />
+    <ClInclude Include="Popup\PopupClock.h" />
     <ClInclude Include="Popup\PinyinHelper.h" />
     <ClInclude Include="Config\SettingsTabHelper.h" />
     <ClInclude Include="Config\SettingsPageLayout.h" />

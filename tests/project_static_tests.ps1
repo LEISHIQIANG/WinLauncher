@@ -90,6 +90,7 @@ $shortcutDragControllerSource = Read-RepoFile "WinLauncher\Config\ShortcutDragCo
 $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
 $popupSorterSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutSorter.cpp"
 $popupLauncherSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutLauncher.cpp"
+$popupInputSource = Read-RepoFile "WinLauncher\Popup\PopupWindowInput.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
@@ -122,7 +123,7 @@ Add-TestResult `
         $popupSource -match 'void\s+PopupWindow::ApplyShortcutSortMode' -and
         $popupSource -match 'm_appCtx->configService->GetSortMode\(\)\s*!=\s*1' -and
         $popupSource -match 'void\s+PopupWindow::RecordShortcutUsage' -and
-        $popupSource -match 'RecordShortcutUsage\(sc\)' -and
+        $popupInputSource -match 'RecordShortcutUsage\(sc\)' -and
         $popupSearchServiceSource -match 'item\.shortcut\.name, queryLower,\s*\{\}' -and
         $popupSearchServiceSource -notmatch 'usageHistory|sortMode' -and
         ($shortcutPageSource -match 'm_owner->GetSortMode\(\)\s*==\s*1' -or $shortcutDragControllerSource -match 'owner->GetSortMode\(\)\s*==\s*1') -and
@@ -289,7 +290,7 @@ Add-TestResult `
         $confirmWindowSource -match 'case\s+WM_ACTIVATE:\s*\{\s*GlassWindow::HandleMessage' -and
         $promptWindowSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
         $commandPanelSource -match 'case\s+WM_ACTIVATE:\s*\{\s*GlassWindow::HandleMessage' -and
-        $popupSource -match 'case\s+WM_ACTIVATE:\s*\{\s*[\s\S]{0,400}GlassWindow::HandleMessage' -and
+        $popupInputSource -match 'case\s+WM_ACTIVATE:\s*\{\s*[\s\S]{0,400}GlassWindow::HandleMessage' -and
         $trayMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
         $contextMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage' -and
         $dropDownMenuSource -match 'case\s+WM_ACTIVATE:\s*GlassWindow::HandleMessage'
@@ -419,7 +420,7 @@ Add-TestResult `
     -Name "Popup icon preload never gates reveal and refresh preserves old icons" `
     -Passed (
         $popupSource -notmatch 'QueueShowUntilIconsReady|POPUP_ICON_PRELOAD_MAX_WAIT_MS|m_iconFallbackGeneration' -and
-        $popupSource -match 'POPUP_ICON_PROGRESS_TIMER, 16' -and
+        $popupSource -match 'PopupWindowMessages::IconProgressTimer, 16' -and
         $popupSource -match 'DrawShortcutIcon' -and
         $popupSource -match 'm_iconFlashStart < 120' -and
         $popupSource -match 'result\.identity\s*!=\s*PopupIconCache::Key' -and
@@ -492,8 +493,8 @@ Add-TestResult `
         $popupSource -match 'void\s+PopupWindow::CancelFileSelectionQuery\(\)' -and
         $popupSource -match 'm_fileSelection\.Cancel\(\)' -and
         $popupFileSelectionControllerSource -match 'request->Cancel\(\)' -and
-        $popupSource -match 'KillTimer\(hWnd, FILE_SELECTION_TIMER_ID\)' -and
-        ([regex]::Matches($popupSource, 'CancelFileSelectionQuery\(\);')).Count -ge 5
+        $popupSource -match 'KillTimer\(hWnd, PopupWindowMessages::FileSelectionTimerId\)' -and
+        ([regex]::Matches($popupSource + $popupInputSource, 'CancelFileSelectionQuery\(\);')).Count -ge 5
     ) `
     -Detail "Closing, destroying, replacing, and releasing popups must cancel obsolete Shell selection work"
 
@@ -629,7 +630,7 @@ Add-TestResult `
         $applicationSource -match 'RecoverStaleGestureCapture\(L"ui_heartbeat"\)' -and
         $applicationSource -match 'RecoverStaleGestureCapture\(L"hook_restart"\)' -and
         $applicationSource -match 'ForceReleaseGestureCapture\(L"application_shutdown"\)' -and
-        $popupSource -match 'CaptureGesture\(hWnd\)' -and
+        $popupInputSource -match 'CaptureGesture\(hWnd\)' -and
         $shortcutPageSource -match 'CaptureGesture' -and
         $mouseCaptureSource -match 'Mode::PersistentPopup'
     ) `
@@ -834,7 +835,7 @@ Add-TestResult `
         $popupLauncherSource -match 'PrivilegeLaunchService::Launch\(shortcut\.targetPath, arguments, shortcut\.runAsAdmin\)' -and
         $popupLauncherSource -notmatch 'tasks->Submit\(L"shortcut\.launch"' -and
         $popupLauncherSource -match 'if \(IsBackgroundExternalLaunch\(sc\)\)' -and
-        $popupSource -match 'HideSelf\(PopupShortcutLauncher::HasLaunchAction\(sc\) && PopupShortcutLauncher::IsBackgroundExternalLaunch\(sc\)\)' -and
+        $popupInputSource -match 'HideSelf\(PopupShortcutLauncher::HasLaunchAction\(sc\) && PopupShortcutLauncher::IsBackgroundExternalLaunch\(sc\)\)' -and
         $popupSource -match 'void\s+PopupWindow::HideSelf\(bool immediate\)' -and
         $glassWindowSource -match 'void\s+GlassWindow::HideImmediately\(\)' -and
         $glassWindowSource -match 'KillTimer\(m_hWnd, 0x889\)' -and
@@ -932,7 +933,7 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup show grace period is implemented" `
     -Passed (
-        $popupSource -match 'GetTimeInSeconds\(\)\s*-\s*m_showTimeSeconds\s*<\s*0\.5'
+        $popupInputSource -match 'PopupClock::NowSeconds\(\)\s*-\s*m_showTimeSeconds\s*<\s*0\.5'
     ) `
     -Detail "PopupWindow must ignore auto-close triggers within 500ms grace period to prevent cold-startup close race conditions"
 
@@ -1004,6 +1005,33 @@ Add-TestResult `
     -Name "FaviconFetcher Strategy C checks cancellation before each download" `
     -Passed ($hasCancellation) `
     -Detail "FaviconFetcher common-icon-paths loop must check BackgroundTaskService::IsCurrentTaskCancellationRequested()"
+
+# 2000-line red line with ratchet exemptions (REFACTOR_PLAN.md section 10.4).
+# Remove a file from the exemption list in the same slice that brings it under
+# the ceiling; once the list is empty, delete the mechanism entirely.
+$lineCeiling = 2000
+$lineCeilingExemptions = @(
+    "WinLauncher\PopupWindow.cpp",
+    "WinLauncher\GlassWindow.cpp"
+)
+$oversizedFiles = @()
+$sourceRoots = @("WinLauncher", "SDK", "plugins", "tests")
+foreach ($root in $sourceRoots) {
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot $root) -Recurse -File -Include *.cpp, *.h, *.hpp, *.c -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(x64|Release|Debug|Win32|\.vs|dist)\\' } |
+        ForEach-Object {
+            $relative = $_.FullName.Substring($repoRoot.Length + 1)
+            if ($lineCeilingExemptions -contains $relative) { return }
+            $lineCount = (Get-Content -LiteralPath $_.FullName | Measure-Object -Line).Lines
+            if ($lineCount -gt $lineCeiling) {
+                $oversizedFiles += "$relative ($lineCount lines)"
+            }
+        }
+}
+Add-TestResult `
+    -Name "Source files stay under the 2000-line ceiling" `
+    -Passed ($oversizedFiles.Count -eq 0) `
+    -Detail "Oversized files must be split by responsibility (REFACTOR_PLAN 10.0): $($oversizedFiles -join ', ')"
 
 $failed = @($results | Where-Object { -not $_.Passed })
 foreach ($result in $results) {
