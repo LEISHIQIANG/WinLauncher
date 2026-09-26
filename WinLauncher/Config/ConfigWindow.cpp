@@ -15,6 +15,7 @@
 #include "../Services/QuickLauncherConfigImport.h"
 #include "../Services/UpdateService.h"
 #include "ConfigMaintenanceOps.h"
+#include "QuickLauncherImportFlow.h"
 #include "../Services/ConfigPath.h"
 #include "UIStyle.h"
 #include <windowsx.h>
@@ -876,155 +877,9 @@ void ConfigWindow::ClearConfigHistoryData()
 
 void ConfigWindow::ImportJsonConfig()
 {
-    // 1. Open file dialog to select JSON file
-    wchar_t filePath[MAX_PATH] = {};
-    OPENFILENAMEW ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = GetHWND();
-    ofn.lpstrFilter = L"JSON\u6587\u4EF6 (*.json)\0*.json\0\u5168\u90E8\u6587\u4EF6 (*.*)\0*.*\0\0";
-    ofn.lpstrFile = filePath;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrTitle = L"\u9009\u62E9 QuickLauncher \u914D\u7F6E\u6587\u4EF6 (data.json)";
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-
-    if (!GetOpenFileNameW(&ofn))
-        return;
-
-    // 2. Import with waiting spinner (JSON parsing + icon copying on background thread)
-    QuickLauncherConfigImport importer;
-    std::wstring configDir = GetConfigDir();
-    IConfigImportService::ImportResult result;
-
-    WaitWindow::Show(GetHWND(), L"\u8BF7\u7A0D\u5019", L"\u6B63\u5728\u5BFC\u5165 QuickLauncher \u914D\u7F6E\uFF0C\u8BF7\u7A0D\u5019...",
-        [&]() {
-            result = importer.Import(filePath, configDir);
-        }, m_appCtx);
-
-    // 3. Handle errors with project-style UI
-    if (!result.success)
-    {
-        ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u5931\u8D25", result.errorMsg.c_str(), m_appCtx);
-        return;
-    }
-
-    if (result.pages.empty() && !result.hasAutoStartSetting)
-    {
-        ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u7ED3\u679C",
-            L"JSON \u6587\u4EF6\u4E2D\u672A\u627E\u5230\u53EF\u8F6C\u6362\u7684\u5FEB\u6377\u65B9\u5F0F\u3001\u5FEB\u6377\u952E\u6216 URL\u3002", m_appCtx);
-        return;
-    }
-
-    // 4. Count shortcuts BEFORE the move
-    int totalShortcuts = 0;
-    for (const auto& p : result.pages)
-        totalShortcuts += (int)p.shortcuts.size();
-    int totalPages = (int)result.pages.size();
-
-    // 5. Ask merge strategy BEFORE the second wait (user interaction on main thread)
-    bool replaceExisting = false;
-    auto& viewPages = m_viewModel->GetPages();
-    bool hasExisting = false;
-    for (const auto& p : viewPages)
-    {
-        if (!p.shortcuts.empty())
-        {
-            hasExisting = true;
-            break;
-        }
-    }
-
-    if (hasExisting)
-    {
-        replaceExisting = ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u914D\u7F6E",
-            L"\u68C0\u6D4B\u5230\u5F53\u524D\u5DF2\u6709\u5FEB\u6377\u65B9\u5F0F\uFF0C\u662F\u5426\u8981\u6E05\u9664\u5E76\u66FF\u6362\u4E3A\u5BFC\u5165\u7684\u914D\u7F6E\uFF1F\n\u70B9\u201C\u786E\u5B9A\u201D\u66FF\u6362\uFF0C\u70B9\u201C\u53D6\u6D88\u201D\u4FDD\u7559\u5E76\u8FFD\u52A0\u3002",
-            m_appCtx);
-    }
-
-    // 6. Apply merge, settings and save inside WaitWindow
-    WaitWindow::Show(GetHWND(), L"\u8BF7\u7A0D\u5019", L"\u6B63\u5728\u5E94\u7528\u5BFC\u5165\u7684\u914D\u7F6E\uFF0C\u8BF7\u7A0D\u5019...",
-        [&]() {
-            if (m_appCtx && m_appCtx->configService)
-            {
-                if (result.hasAutoStartSetting)
-                    m_appCtx->configService->SetAutoStart(result.autoStart);
-                if (result.popupColumns > 0)
-                    m_appCtx->configService->SetPopupColumns(result.popupColumns);
-                if (result.popupRows > 0)
-                    m_appCtx->configService->SetPopupRows(result.popupRows);
-                if (result.dockHeight >= 0)
-                    m_appCtx->configService->SetDockHeight(result.dockHeight);
-                if (result.popupIconSize > 0)
-                    m_appCtx->configService->SetPopupIconSize(result.popupIconSize);
-                if (result.globalScalePercent > 0)
-                    m_appCtx->configService->SetGlobalScalePercent(result.globalScalePercent);
-                if (result.theme >= 0)
-                    m_appCtx->configService->SetTheme(result.theme);
-                if (result.sortMode >= 0)
-                    m_appCtx->configService->SetSortMode(result.sortMode);
-                if (result.popupAlignMode >= 0)
-                    m_appCtx->configService->SetPopupAlignMode(result.popupAlignMode);
-                if (result.hasHideTrayIcon)
-                    m_appCtx->configService->SetHideTrayIcon(result.hideTrayIcon);
-                if (result.hasHardwareAcceleration)
-                    m_appCtx->configService->SetHardwareAccelerationEnabled(result.hardwareAcceleration);
-                if (result.hasSearchMode)
-                    m_appCtx->configService->SetSearchMode(result.searchMode);
-                if (result.hasPopupAutoClose)
-                    m_appCtx->configService->SetPopupAutoClose(result.popupAutoClose);
-                if (result.hasPopupMultiOpenWhenPinned)
-                    m_appCtx->configService->SetPopupMultiOpenWhenPinned(result.popupMultiOpenWhenPinned);
-                if (result.hoverLeaveDelay >= 0)
-                    m_appCtx->configService->SetHoverLeaveDelay(result.hoverLeaveDelay);
-            }
-
-            if (hasExisting && replaceExisting)
-                viewPages = std::move(result.pages);
-            else if (hasExisting)
-            {
-                for (auto& page : result.pages)
-                {
-                    bool found = false;
-                    for (auto& existingPage : viewPages)
-                    {
-                        if (existingPage.name == page.name)
-                        {
-                            for (auto& sc : page.shortcuts)
-                                existingPage.shortcuts.push_back(std::move(sc));
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                        viewPages.push_back(std::move(page));
-                }
-            }
-            else
-                viewPages = std::move(result.pages);
-
-            bool hasDock = false;
-            for (const auto& p : viewPages)
-                if (p.name == L"DOCK") { hasDock = true; break; }
-            if (!hasDock)
-            {
-                Model::PopupPage dockPage;
-                dockPage.name = L"DOCK";
-                viewPages.insert(viewPages.begin(), std::move(dockPage));
-            }
-
-            m_viewModel->SaveConfig();
-        }, m_appCtx);
-
-    // 7. Reload and apply imported runtime settings on the UI thread.
-    ReloadAfterConfigFileOperation();
-
-    // 8. Show result with project-style UI
-    ConfirmWindow::Show(GetHWND(), L"\u5BFC\u5165\u6210\u529F",
-        (std::wstring(L"\u5BFC\u5165\u5B8C\u6210\uFF01\u5171 ") +
-            std::to_wstring(totalPages) + L" \u4E2A\u5206\u7EC4\uFF0C" +
-            std::to_wstring(totalShortcuts) + L" \u4E2A\u5FEB\u6377\u65B9\u5F0F\uFF0C\u5DF2\u4FDD\u5B58 " +
-            std::to_wstring(result.copiedIcons) + L" \u4E2A\u81EA\u5B9A\u4E49\u56FE\u6807" +
-            (result.skippedItems > 0 ? L"\uFF1B" + std::to_wstring(result.skippedItems) + L" \u4E2A\u5DF2\u7981\u7528\u6216\u6682\u4E0D\u517C\u5BB9\u7684\u9879\u76EE\u672A\u5BFC\u5165\u3002" : L"\u3002")).c_str(),
-        m_appCtx);
+    QuickLauncherImportFlow::Run(GetHWND(), m_appCtx, GetConfigDir(), m_viewModel.get(), [this]() {
+        ReloadAfterConfigFileOperation();
+    });
 }
 
 void ConfigWindow::StartAnimation()

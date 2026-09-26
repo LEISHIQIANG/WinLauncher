@@ -180,6 +180,7 @@
     <ClCompile Include="Config\ConfigWindowSettings.cpp" />
     <ClCompile Include="Config\ShortcutHistoryController.cpp" />
     <ClCompile Include="Config\ConfigMaintenanceOps.cpp" />
+    <ClCompile Include="Config\QuickLauncherImportFlow.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
     <ClCompile Include="Config\SceneSettingsWindow.cpp" />
@@ -339,6 +340,7 @@
     <ClInclude Include="Config\ConfigWindow.h" />
     <ClInclude Include="Config\ShortcutHistoryController.h" />
     <ClInclude Include="Config\ConfigMaintenanceOps.h" />
+    <ClInclude Include="Config\QuickLauncherImportFlow.h" />
     <ClInclude Include="Config\CategoryList.h" />
     <ClInclude Include="Config\ContextMenu.h" />
     <ClInclude Include="Config\SceneSettingsWindow.h" />
