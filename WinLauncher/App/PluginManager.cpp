@@ -4,6 +4,7 @@
 #include "UiDispatcher.h"
 #include "PluginInstaller.h"
 #include "PluginConfigStore.h"
+#include "PluginTextUtil.h"
 #include "../Config/CommandPanelWindow.h"
 #include "../Contracts/IUserInteractionService.h"
 #include "../Services/ConfigPath.h"
@@ -26,6 +27,8 @@
 
 namespace
 {
+    using namespace PluginTextUtil;
+
     thread_local HWND t_currentPluginOutputPanel = nullptr;
 
     struct ScopedPluginOutputPanel
@@ -103,82 +106,6 @@ namespace
         return WINLAUNCHER_VERSION_WSTR;
     }
 
-    std::wstring CopyWide(const wchar_t* text)
-    {
-        return text ? std::wstring(text) : std::wstring();
-    }
-
-    bool ContainsLower(const std::wstring& value, const std::wstring& queryLower)
-    {
-        if (queryLower.empty())
-            return true;
-        std::wstring lower = value;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](wchar_t c) {
-            return (wchar_t)towlower(c);
-        });
-        return lower.find(queryLower) != std::wstring::npos;
-    }
-
-    std::wstring SlashTrimmedQuery(const std::wstring& query)
-    {
-        if (!query.empty() && query.front() == L'/')
-            return query.substr(1);
-        return query;
-    }
-
-    std::wstring SlashCommandNameFromInput(const std::wstring& query)
-    {
-        std::wstring normalized = SlashTrimmedQuery(query);
-        size_t space = normalized.find_first_of(L" \t");
-        if (space != std::wstring::npos)
-            normalized = normalized.substr(0, space);
-        std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](wchar_t c) {
-            return (wchar_t)towlower(c);
-        });
-        return normalized;
-    }
-
-    std::wstring SlashSearchQueryFromInput(const std::wstring& query)
-    {
-        std::wstring normalized = SlashTrimmedQuery(query);
-        std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](wchar_t c) {
-            return (wchar_t)towlower(c);
-        });
-        return normalized;
-    }
-
-    std::wstring SlashArgsFromInput(const std::wstring& query)
-    {
-        std::wstring normalized = SlashTrimmedQuery(query);
-        size_t space = normalized.find_first_of(L" \t");
-        if (space == std::wstring::npos)
-            return L"";
-        size_t firstArg = normalized.find_first_not_of(L" \t", space);
-        return firstArg == std::wstring::npos ? L"" : normalized.substr(firstArg);
-    }
-
-    std::wstring JoinStrings(const std::vector<std::wstring>& values)
-    {
-        std::wstring out;
-        for (const auto& value : values)
-        {
-            if (!out.empty()) out += L", ";
-            out += value;
-        }
-        return out;
-    }
-
-    std::wstring JoinLines(const std::vector<std::wstring>& values)
-    {
-        std::wstring out;
-        for (const auto& value : values)
-        {
-            if (!out.empty()) out += L"\n";
-            out += value;
-        }
-        return out;
-    }
-
 
     bool PluginSupportsSearch(const WLPluginInstanceV1* instance)
     {
@@ -194,193 +121,7 @@ namespace
             instance->executeSlashCommand != nullptr;
     }
 
-    bool ContainsAnyLower(const std::vector<std::wstring>& values, const std::wstring& queryLower)
-    {
-        for (const auto& value : values)
-        {
-            if (ContainsLower(value, queryLower))
-                return true;
-        }
-        return false;
-    }
 
-    bool MatchesSlashCommand(const PluginCommandInfo& command, const std::wstring& queryLower)
-    {
-        return queryLower.empty() ||
-            ContainsLower(command.commandName, queryLower) ||
-            ContainsLower(command.title, queryLower) ||
-            ContainsAnyLower(command.keywords, queryLower) ||
-            ContainsAnyLower(command.aliases, queryLower);
-    }
-
-    std::vector<std::wstring> SplitLines(const std::wstring& value)
-    {
-        std::vector<std::wstring> lines;
-        std::wstring current;
-        for (wchar_t ch : value)
-        {
-            if (ch == L'\r')
-                continue;
-            if (ch == L'\n')
-            {
-                if (!current.empty())
-                    lines.push_back(current);
-                current.clear();
-                continue;
-            }
-            current.push_back(ch);
-        }
-        if (!current.empty())
-            lines.push_back(current);
-        return lines;
-    }
-
-    std::wstring ToLowerCopy(std::wstring value)
-    {
-        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) {
-            return (wchar_t)towlower(c);
-        });
-        return value;
-    }
-
-    std::wstring Utf8ToWide(const std::string& value)
-    {
-        if (value.empty())
-            return {};
-        int len = MultiByteToWideChar(CP_UTF8, 0, value.data(), (int)value.size(), nullptr, 0);
-        if (len <= 0)
-            return {};
-        std::wstring result(len, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, value.data(), (int)value.size(), &result[0], len);
-        return result;
-    }
-
-    std::wstring FormatMessageText(const wchar_t* title, const wchar_t* message)
-    {
-        std::wstring output;
-        if (title && *title)
-        {
-            output += title;
-            output += L"\n";
-        }
-        if (message)
-            output += message;
-        return output;
-    }
-
-    UINT MessageIconFlag(const std::wstring& iconType)
-    {
-        std::wstring icon = ToLowerCopy(iconType);
-        if (icon == L"warning")
-            return MB_ICONWARNING;
-        if (icon == L"error")
-            return MB_ICONERROR;
-        if (icon == L"question")
-            return MB_ICONQUESTION;
-        if (icon == L"none")
-            return 0;
-        return MB_ICONINFORMATION;
-    }
-
-    UINT MessageButtonsFlag(const std::wstring& buttons)
-    {
-        std::wstring value = ToLowerCopy(buttons);
-        if (value == L"okcancel")
-            return MB_OKCANCEL;
-        if (value == L"yesno")
-            return MB_YESNO;
-        if (value == L"yesnocancel")
-            return MB_YESNOCANCEL;
-        if (value == L"retrycancel")
-            return MB_RETRYCANCEL;
-        if (value == L"abortretryignore")
-            return MB_ABORTRETRYIGNORE;
-        return MB_OK;
-    }
-
-    std::wstring MessageResultText(int result)
-    {
-        switch (result)
-        {
-        case IDOK: return L"ok";
-        case IDCANCEL: return L"cancel";
-        case IDYES: return L"yes";
-        case IDNO: return L"no";
-        case IDRETRY: return L"retry";
-        case IDABORT: return L"abort";
-        case IDIGNORE: return L"ignore";
-        default: return L"";
-        }
-    }
-
-    std::wstring BuildFileDialogFilter(const wchar_t* filterPattern)
-    {
-        std::wstring pattern = (filterPattern && *filterPattern) ? filterPattern : L"*.*";
-        std::wstring filter = L"Selected files (";
-        filter += pattern;
-        filter += L")";
-        filter.push_back(L'\0');
-        filter += pattern;
-        filter.push_back(L'\0');
-        filter += L"All files (*.*)";
-        filter.push_back(L'\0');
-        filter += L"*.*";
-        filter.push_back(L'\0');
-        filter.push_back(L'\0');
-        return filter;
-    }
-
-    std::wstring ParseOpenFileResult(const std::vector<wchar_t>& buffer)
-    {
-        const wchar_t* base = buffer.data();
-        if (!base || !*base)
-            return L"";
-
-        std::wstring first = base;
-        const wchar_t* next = base + first.size() + 1;
-        if (!*next)
-            return first;
-
-        std::wstring result;
-        std::wstring directory = first;
-        for (const wchar_t* item = next; *item; item += wcslen(item) + 1)
-        {
-            if (!result.empty())
-                result += L"\n";
-            result += JoinPath(directory, item);
-        }
-        return result;
-    }
-
-    bool PathStartsWithDirectory(const std::wstring& path, const std::wstring& directory)
-    {
-        std::wstring lhs = ToLowerCopy(path);
-        std::wstring rhs = ToLowerCopy(directory);
-        std::replace(lhs.begin(), lhs.end(), L'/', L'\\');
-        std::replace(rhs.begin(), rhs.end(), L'/', L'\\');
-        if (!rhs.empty() && rhs.back() != L'\\')
-            rhs += L"\\";
-        return lhs.rfind(rhs, 0) == 0;
-    }
-
-    DWORD WaitForProcessWithTimeout(HANDLE process, uint32_t timeoutMs)
-    {
-        DWORD timeout = timeoutMs == 0 ? INFINITE : timeoutMs;
-        return WaitForSingleObject(process, timeout);
-    }
-
-    bool IsHttpMethodAllowed(const std::wstring& method)
-    {
-        std::wstring upper = method;
-        std::transform(upper.begin(), upper.end(), upper.begin(), [](wchar_t c) { return (wchar_t)towupper(c); });
-        static const wchar_t* kAllowed[] = { L"GET", L"POST", L"PUT", L"DELETE", L"PATCH", L"HEAD" };
-        for (const wchar_t* allowed : kAllowed)
-        {
-            if (upper == allowed)
-                return true;
-        }
-        return false;
-    }
 }
 
 void PluginManager::SetCurrentPluginOutputPanel(HWND hwnd)
