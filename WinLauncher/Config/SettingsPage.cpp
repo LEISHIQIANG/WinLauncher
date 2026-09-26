@@ -24,6 +24,8 @@
 #include "SettingsPresetMenus.h"
 #include "SettingsPluginView.h"
 #include "SettingsPluginActions.h"
+#include "SettingsBackupView.h"
+#include "SettingsAboutView.h"
 
 using namespace SettingsPageLayout;
 
@@ -1140,95 +1142,30 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     {
         if (tfDefault)
         {
-            const D2D1_RECT_F pathCardRect = D2D1::RectF(CONTENT_LEFT, 82.0f, CONTENT_RIGHT, 154.0f);
-            const D2D1_RECT_F dirLabelRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 92.0f, CONTENT_RIGHT - 20.0f, 110.0f);
-            const D2D1_RECT_F dirValueRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 112.0f, CONTENT_RIGHT - 20.0f, 146.0f);
-            const D2D1_RECT_F historyCardRect = D2D1::RectF(CONTENT_LEFT, 164.0f, CONTENT_RIGHT, 214.0f);
-            const D2D1_RECT_F historyLabelRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 172.0f, CONTENT_RIGHT - 20.0f, 190.0f);
-            const D2D1_RECT_F historyValueRect = D2D1::RectF(CONTENT_LEFT + 20.0f, 192.0f, CONTENT_RIGHT - 20.0f, 210.0f);
-            const D2D1_RECT_F openLogFileRect = TwoColumnRect(0, 226.0f);
-            const D2D1_RECT_F backupRect = TwoColumnRect(1, 226.0f);
-            const D2D1_RECT_F restoreRect = TwoColumnRect(0, 268.0f);
-            const D2D1_RECT_F historyDirRect = TwoColumnRect(1, 268.0f);
-            const D2D1_RECT_F diagnosticRect = TwoColumnRect(0, 310.0f);
-            const D2D1_RECT_F exportMigrationRect = TwoColumnRect(1, 310.0f);
-            const D2D1_RECT_F importMigrationRect = TwoColumnRect(0, 352.0f);
-            const D2D1_RECT_F importJsonRect = TwoColumnRect(1, 352.0f);
-            const D2D1_RECT_F clearUsageRect = TwoColumnRect(0, 394.0f);
-            const D2D1_RECT_F clearCacheRect = TwoColumnRect(1, 394.0f);
-            const D2D1_RECT_F clearConfigRect = TwoColumnRect(0, 436.0f);
-            const D2D1_RECT_F clearHistoryRect = TwoColumnRect(1, 436.0f);
-
             ID2D1SolidColorBrush* tbNormal = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tbNormal);
             ID2D1SolidColorBrush* tbMuted = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &tbMuted);
-            ID2D1SolidColorBrush* cardBg = nullptr;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.026f), &cardBg);
-            ID2D1SolidColorBrush* cardBorder = nullptr;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.065f), &cardBorder);
 
-            D2D1_ROUNDED_RECT pathCard = D2D1::RoundedRect(pathCardRect, 6.0f, 6.0f);
-            if (cardBg) rt->FillRoundedRectangle(pathCard, cardBg);
-            if (cardBorder) rt->DrawRoundedRectangle(pathCard, cardBorder, UIStyle::Metrics::ControlStroke());
-            D2D1_ROUNDED_RECT historyCard = D2D1::RoundedRect(historyCardRect, 6.0f, 6.0f);
-            if (cardBg) rt->FillRoundedRectangle(historyCard, cardBg);
-            if (cardBorder) rt->DrawRoundedRectangle(historyCard, cardBorder, UIStyle::Metrics::ControlStroke());
+            SettingsBackupHoverState hover;
+            hover.openLogFile = m_hoveredOpenLogFile;
+            hover.createConfigBackup = m_hoveredCreateConfigBackup;
+            hover.restoreConfigBackup = m_hoveredRestoreConfigBackup;
+            hover.openConfigHistoryDir = m_hoveredOpenConfigHistoryDir;
+            hover.diagnosticPackage = m_hoveredDiagnosticPackage;
+            hover.exportMigration = m_hoveredExportMigration;
+            hover.importMigration = m_hoveredImportMigration;
+            hover.importJson = m_hoveredImportJson;
+            hover.clearUsageHistory = m_hoveredClearUsageHistory;
+            hover.clearCache = m_hoveredClearCache;
+            hover.clearConfig = m_hoveredClearConfig;
+            hover.clearConfigHistory = m_hoveredClearConfigHistory;
+            hover.configDirText = m_hoveredConfigDirText;
 
-            if (tbNormal && tbMuted)
-            {
-                DWRITE_WORD_WRAPPING oldWrapping = tfDefault->GetWordWrapping();
-                DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                tfDefault->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-                tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-
-                std::wstring dirLabel = L"配置文件夹";
-                rt->DrawTextW(dirLabel.c_str(), (UINT32)dirLabel.size(), tfDefault, dirLabelRect, tbMuted);
-
-                std::wstring configDir = ConfigPath::GetUserDataDirectory();
-                ID2D1SolidColorBrush* textBrush = tbNormal;
-                if (m_hoveredConfigDirText)
-                {
-                    rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &textBrush);
-                }
-                rt->DrawTextW(configDir.c_str(), (UINT32)configDir.size(), tfDefault, dirValueRect, textBrush);
-                if (m_hoveredConfigDirText && textBrush)
-                {
-                    textBrush->Release();
-                }
-
-                tfDefault->SetWordWrapping(oldWrapping);
-                tfDefault->SetTextAlignment(oldAlignment);
-            }
-
-            if (tbNormal && tbMuted)
-            {
-                DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                std::wstring historyLabel = L"配置历史";
-                std::wstring historySummary = m_owner->GetConfigHistorySummary();
-                rt->DrawTextW(historyLabel.c_str(), (UINT32)historyLabel.size(), tfDefault, historyLabelRect, tbMuted);
-                rt->DrawTextW(historySummary.c_str(), (UINT32)historySummary.size(), tfDefault, historyValueRect, tbNormal);
-                tfDefault->SetTextAlignment(oldAlignment);
-            }
-
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, openLogFileRect, L"打开日志文件", m_hoveredOpenLogFile, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, backupRect, L"立即备份", m_hoveredCreateConfigBackup, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, restoreRect, L"回滚最近历史", m_hoveredRestoreConfigBackup, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, historyDirRect, L"打开历史目录", m_hoveredOpenConfigHistoryDir, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, diagnosticRect, L"生成诊断包", m_hoveredDiagnosticPackage, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, exportMigrationRect, L"导出迁移备份", m_hoveredExportMigration, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, importMigrationRect, L"导入迁移备份", m_hoveredImportMigration, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, importJsonRect, L"导入 QuickLauncher", m_hoveredImportJson, false);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearUsageRect, L"清除使用记录", m_hoveredClearUsageHistory, true);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearCacheRect, L"清理缓存", m_hoveredClearCache, true);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearConfigRect, L"清除配置", m_hoveredClearConfig, true);
-            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearHistoryRect, L"清除历史", m_hoveredClearConfigHistory, true);
+            SettingsBackupView::RenderBackupSection(rt, m_owner, tfDefault, tbNormal, tbMuted, baseClr, hover);
 
             if (tbNormal) tbNormal->Release();
             if (tbMuted) tbMuted->Release();
-            if (cardBg) cardBg->Release();
-            if (cardBorder) cardBorder->Release();
         }
     }
     else if (m_categoryIndex == 4) // 插件管理
@@ -1263,48 +1200,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             ID2D1SolidColorBrush* tbMuted = nullptr;
             rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextMuted().d2d, &tbMuted);
 
-            if (tbNormal && tbMuted)
-            {
-                if (tfTitle)
-                    rt->DrawTextW(L"WinLauncher", 11, tfTitle, D2D1::RectF(160, 82, 510, 107), tbNormal);
-                std::wstring verText = std::wstring(L"版本: v") + WINLAUNCHER_VERSION_WSTR;
-                rt->DrawTextW(verText.c_str(), (UINT32)verText.size(), tfDefault, D2D1::RectF(160, 112, 510, 130), tbMuted);
-                const wchar_t* tagline = L"原生 Windows 桌面启动器 · 快速、轻量、本地优先";
-                rt->DrawTextW(tagline, (UINT32)wcslen(tagline), tfDefault,
-                    D2D1::RectF(160, 132, CONTENT_RIGHT, 150), tbMuted);
-
-                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(0, 164.0f, 68.0f), L"快速启动", L"通过鼠标手势或快捷键\n在光标处唤出快捷方式面板");
-                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(1, 164.0f, 68.0f), L"搜索与分类", L"分页管理常用项目，支持\n即时搜索、智能排序与场景筛选");
-                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(0, 242.0f, 68.0f), L"命令与自动化", L"运行自定义命令、批量启动与宏；\n可使用已选文件作为命令输入");
-                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(1, 242.0f, 68.0f), L"外观与扩展", L"可调主题、材质、布局与动画；\n支持 DLL 插件、/ 命令与搜索源");
-                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, D2D1::RectF(CONTENT_LEFT, 320.0f, CONTENT_RIGHT, 400.0f), L"本地优先与诊断", L"配置、使用记录、日志和崩溃诊断均保留在本机，不会自动上传。\n可在“配置管理”中生成脱敏诊断包、创建备份或迁移到新设备。");
-
-                const D2D1_RECT_F sourceLinkRect = AboutOpenSourceLinkRect();
-                const D2D1_ROUNDED_RECT roundedSourceLink = D2D1::RoundedRect(sourceLinkRect, 5.0f, 5.0f);
-                ID2D1SolidColorBrush* sourceBrush = nullptr;
-                const D2D1_COLOR_F accent = UIStyle::ThemeColor::Accent().d2d;
-                rt->CreateSolidColorBrush(D2D1::ColorF(accent.r, accent.g, accent.b, m_hoveredOpenSourceUrl ? 0.16f : 0.075f), &sourceBrush);
-                if (sourceBrush)
-                {
-                    rt->FillRoundedRectangle(roundedSourceLink, sourceBrush);
-                    sourceBrush->Release();
-                }
-                rt->CreateSolidColorBrush(D2D1::ColorF(accent.r, accent.g, accent.b, m_hoveredOpenSourceUrl ? 0.62f : 0.36f), &sourceBrush);
-                if (sourceBrush)
-                {
-                    rt->DrawRoundedRectangle(roundedSourceLink, sourceBrush, UIStyle::Metrics::ControlStroke());
-                    sourceBrush->Release();
-                }
-                const wchar_t* sourceLabel = L"开源地址  github.com/LEISHIQIANG/WinLauncher";
-                rt->CreateSolidColorBrush(accent, &sourceBrush);
-                if (sourceBrush)
-                {
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    rt->DrawTextW(sourceLabel, (UINT32)wcslen(sourceLabel), tfDefault, sourceLinkRect, sourceBrush);
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-                    sourceBrush->Release();
-                }
-            }
+            SettingsAboutView::RenderAboutSection(rt, tfDefault, tfTitle, tbNormal, tbMuted, baseClr, m_hoveredOpenSourceUrl);
 
             if (tbNormal) tbNormal->Release();
             if (tbMuted) tbMuted->Release();

@@ -170,6 +170,7 @@
     <ClCompile Include="Config\SettingsPluginActions.cpp" />
     <ClCompile Include="Config\SettingsAppearanceView.cpp" />
     <ClCompile Include="Config\SettingsBackupView.cpp" />
+    <ClCompile Include="Config\SettingsAboutView.cpp" />
     <ClCompile Include="Config\ShortcutGridViewHelper.cpp" />
     <ClCompile Include="App\PluginDllLoader.cpp" />
     <ClCompile Include="TrayMenuWindow.cpp" />
@@ -297,6 +298,7 @@
     <ClInclude Include="Config\SettingsPluginActions.h" />
     <ClInclude Include="Config\SettingsAppearanceView.h" />
     <ClInclude Include="Config\SettingsBackupView.h" />
+    <ClInclude Include="Config\SettingsAboutView.h" />
     <ClInclude Include="Config\ShortcutGridViewHelper.h" />
     <ClInclude Include="App\PluginDllLoader.h" />
     <ClInclude Include="Services\FolderWatcher.h" />
