@@ -150,7 +150,7 @@
 - [x] 阶段 1 PopupWindow：P1-1 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅ P1-5 ✅ P1-6 ✅ P1-7 ✅ P1-8 ✅（4104 → 3403 行）
 - [x] 阶段 2 SettingsPage：S1 ✅ S2 ✅ S3 ✅ S4 ✅ S5 ✅ S6 ✅（3370 → 1919 行）
 - [x] 阶段 3 ConfigWindow：C1 ✅ C2 ✅ C3 ✅ C4 ✅ C5 ✅ C6 ✅（2869 → 1384 行）
-- [ ] 阶段 4 ShortcutPage：K1 ☐ K2 ☐ K3 ☐ K4 ☐ K5 ☐ K6 ☐
+- [x] 阶段 4 ShortcutPage：K1 ✅ K2 ✅ K3 ✅ K4 ✅ K5 ✅ K6 ✅（2531 → 1119 行）
 - [ ] 阶段 5 PluginManager：M1 ☐ M2 ☐ M3 ☐ M4 ☐ M5 ☐ M6 ☐
 - [ ] 阶段 6 GlassWindow：G1 ☐ G2 ☐ G3 ☐ G4 ☐ G5 ☐ G6 ☐
 

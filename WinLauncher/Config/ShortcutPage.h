@@ -4,6 +4,7 @@
 #include "ShortcutGridViewHelper.h"
 #include "ShortcutSelectionModel.h"
 #include "FaviconBatchFetcher.h"
+#include "ShortcutDragController.h"
 #include "../ShortcutManager.h"
 #include "../App/BackgroundTaskService.h"
 #include <vector>
@@ -47,7 +48,9 @@ public:
     virtual bool IsAnimating() const override { return m_animating; }
     virtual void UpdateAnimation(float dt, bool& repaint) override;
     void UpdateTheme();
-    bool IsDragging() const { return m_dragActive; }
+    bool IsDragging() const { return m_dragController.IsActive(); }
+
+    using ShortcutVisualState = ::ShortcutVisualState;
 
 private:
     IIconService* SharedIconService() const;
@@ -58,12 +61,8 @@ private:
     void EnsureIcons(ID2D1HwndRenderTarget* rt);
     void EnsureShortcutStates();
     bool HasDragExceededThreshold(POINT pt) const;
-    bool StartShortcutDrag(POINT pt);
-    void UpdateDragAndSortState(POINT clientPt);
     int CountVisibleShortcuts() const;
     void UpdateAddShortcutTarget(bool compactPendingDelete = false, bool snap = false);
-    void UpdateDragDeleteCursor(POINT pt);
-    HCURSOR GetDeleteCursor();
     bool IsShortcutPendingDelete(int index) const;
     std::vector<int> GetSelectedShortcutIndices() const;
     std::vector<int> NormalizeShortcutIndices(const std::vector<int>& indices) const;
@@ -96,35 +95,14 @@ private:
     float m_scrollVelocity;
     bool m_animating;
 
-    // Drag-and-drop sorting states
-    struct ShortcutVisualState
-    {
-        float currentX = 0.0f;
-        float currentY = 0.0f;
-        float targetX = 0.0f;
-        float targetY = 0.0f;
-        bool selected = false;
-        float dragOffsetX = 0.0f;
-        float dragOffsetY = 0.0f;
-        // 0..1 fade-in progress for a late-arriving icon; 1 means fully
-        // shown (the steady state for every initially rendered icon).
-        float iconReveal = 1.0f;
-    };
-
-    int m_dragIndex;
-    int m_dragCurrentInsertIndex;
-    bool m_dragActive;
-    bool m_dragDeleteCursorShown;
-    HCURSOR m_deleteCursor;
-    float m_grabOffsetX;
-    float m_grabOffsetY;
+    // Drag-and-drop controller and selection states
     std::vector<ShortcutVisualState> m_shortcutStates;
     std::vector<int> m_pendingDeleteIndices;
 
     std::unique_ptr<FaviconBatchFetcher> m_faviconFetcher;
+    ShortcutDragController m_dragController;
 
     int m_selectionAnchorIndex;
-    POINT m_dragStartPt;
     float m_addCardCurrentX = 0.0f;
     float m_addCardCurrentY = 0.0f;
     float m_addCardTargetX = 0.0f;

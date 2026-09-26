@@ -38,15 +38,7 @@ ShortcutPage::ShortcutPage(IConfigWindow* owner)
     , m_targetScrollY(0.0f)
     , m_scrollVelocity(0.0f)
     , m_animating(false)
-    , m_dragIndex(-1)
-    , m_dragCurrentInsertIndex(-1)
-    , m_dragActive(false)
-    , m_dragDeleteCursorShown(false)
-    , m_deleteCursor(nullptr)
-    , m_grabOffsetX(0.0f)
-    , m_grabOffsetY(0.0f)
     , m_selectionAnchorIndex(-1)
-    , m_dragStartPt{ 0, 0 }
     , m_lastRt(nullptr)
     , m_trackMouse(false)
 {
@@ -61,11 +53,6 @@ ShortcutPage::~ShortcutPage()
         m_faviconFetcher->Detach();
     }
     m_brushCache.Clear();
-    if (m_deleteCursor)
-    {
-        DestroyCursor(m_deleteCursor);
-        m_deleteCursor = nullptr;
-    }
 }
 
 void ShortcutPage::CancelPointerInteractionThunk(void* context)
@@ -76,11 +63,8 @@ void ShortcutPage::CancelPointerInteractionThunk(void* context)
 
 void ShortcutPage::CancelPointerInteraction()
 {
-    const bool changed = m_dragIndex >= 0 || m_dragActive;
-    UpdateDragDeleteCursor(POINT{ 0, 0 });
-    m_dragIndex = -1;
-    m_dragCurrentInsertIndex = -1;
-    m_dragActive = false;
+    const bool changed = m_dragController.HasCandidate() || m_dragController.IsActive();
+    m_dragController.Reset();
     ResetShortcutTargets(false);
     if (changed && m_owner)
     {
@@ -109,10 +93,7 @@ void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
     }
     m_shortcutStates.clear();
     m_selectionAnchorIndex = -1;
-    m_dragIndex = -1;
-    m_dragCurrentInsertIndex = -1;
-    m_dragActive = false;
-    m_dragDeleteCursorShown = false;
+    m_dragController.Reset();
     m_pendingDeleteIndices.clear();
     m_addCardInitialized = false;
     m_hoveredShortcut = -1;
@@ -227,46 +208,22 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     int n = (int)m_pageData->shortcuts.size();
 
     // 1. Draw placeholder outlines at the target insert slots if dragging
-    if (m_dragActive && m_dragIndex >= 0 && m_dragCurrentInsertIndex >= 0 && m_dragCurrentInsertIndex < n)
+    if (m_dragController.IsActive())
     {
-        std::vector<int> selectedIndices;
-        int leaderSelIdx = -1;
-        for (int i = 0; i < n; i++)
-        {
-            if (m_shortcutStates[i].selected)
-            {
-                if (i == m_dragIndex) leaderSelIdx = (int)selectedIndices.size();
-                selectedIndices.push_back(i);
-            }
-        }
-
-        int k = (int)selectedIndices.size();
-        int startSlot = m_dragCurrentInsertIndex - leaderSelIdx;
-        if (startSlot < 0) startSlot = 0;
-        if (startSlot > n - k) startSlot = n - k;
-
-        for (int j = 0; j < k; j++)
-        {
-            int targetSlot = startSlot + j;
-            int col = targetSlot % 5;
-            int row = targetSlot / 5;
-            float X_insert = (float)(160 + col * 72);
-            float Y_insert = std::roundf(72.0f + row * 72.0f - m_scrollY);
-            ShortcutGridViewHelper::RenderInsertionSlot(rt, m_brushCache, X_insert, Y_insert);
-        }
+        m_dragController.RenderInsertionSlots(rt, m_brushCache, m_shortcutStates, n, m_scrollY);
     }
 
     // 2. Draw all non-dragged shortcut cards
     for (int i = 0; i < n; i++)
     {
-        if (m_dragActive && m_shortcutStates[i].selected) continue;
+        if (m_dragController.IsActive() && m_shortcutStates[i].selected) continue;
         if (IsShortcutPendingDelete(i)) continue;
         if (i >= (int)m_shortcutStates.size()) continue;
 
         float X = std::roundf(m_shortcutStates[i].currentX);
         float Y = std::roundf(m_shortcutStates[i].currentY - m_scrollY);
 
-        bool isHovered = (i == m_hoveredShortcut) && !m_dragActive;
+        bool isHovered = (i == m_hoveredShortcut) && !m_dragController.IsActive();
         bool isSelected = m_shortcutStates[i].selected;
         ID2D1Bitmap* iconBmp = (i < (int)m_pageData->iconBitmaps.size()) ? m_pageData->iconBitmaps[i] : nullptr;
         float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
@@ -287,7 +244,7 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     rt->PopAxisAlignedClip();
 
     // 4. Draw the dragged items on top of everything (drawn after PopAxisAlignedClip to avoid clipping when dragging to the left panel)
-    if (m_dragActive && m_dragIndex >= 0)
+    if (m_dragController.IsActive() && m_dragController.GetDragIndex() >= 0)
     {
         for (int i = 0; i < n; i++)
         {
@@ -315,20 +272,20 @@ void ShortcutPage::OnMouseMove(POINT pt, bool& repaint)
         m_trackMouse = true;
     }
 
-    if (m_dragIndex >= 0)
+    if (m_dragController.HasCandidate())
     {
-        if (!m_dragActive)
+        if (!m_dragController.IsActive())
         {
-            if (HasDragExceededThreshold(pt))
+            if (m_dragController.HasExceededThreshold(pt))
             {
-                if (StartShortcutDrag(pt))
-                    UpdateDragDeleteCursor(pt);
+                if (m_dragController.StartDrag(m_owner, m_pageData, m_shortcutStates, m_scrollY, pt))
+                    m_dragController.UpdateCursor(m_owner ? m_owner->GetWindowHWND() : nullptr, pt);
             }
         }
         else
         {
-            UpdateDragAndSortState(pt);
-            UpdateDragDeleteCursor(pt);
+            m_dragController.UpdateDragAndSortState(pt, m_scrollY, m_shortcutStates);
+            m_dragController.UpdateCursor(m_owner ? m_owner->GetWindowHWND() : nullptr, pt);
             if (m_owner) m_owner->StartAnimation();
         }
         repaint = true;
@@ -383,15 +340,11 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
 
         if (m_shortcutStates[hs].selected)
         {
-            m_dragIndex = hs;
-            m_dragCurrentInsertIndex = hs;
-            m_dragActive = false;
-            m_dragStartPt = pt;
+            m_dragController.BeginCandidate(hs, pt);
             if (!MouseCaptureController::CaptureGesture(
                     hWnd, VK_LBUTTON, this, &ShortcutPage::CancelPointerInteractionThunk))
             {
-                m_dragIndex = -1;
-                m_dragCurrentInsertIndex = -1;
+                m_dragController.Reset();
             }
         }
 
@@ -422,200 +375,25 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
 
 void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
 {
-    if (m_dragIndex >= 0)
+    if (m_dragController.HasCandidate())
     {
         MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
-        UpdateDragDeleteCursor(POINT{ 0, 0 });
 
-        POINT mousePt = pt;
-        int dx = mousePt.x - m_dragStartPt.x;
-        int dy = mousePt.y - m_dragStartPt.y;
-        bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-        bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-
-        if (!m_dragActive && HasDragExceededThreshold(pt))
-        {
-            StartShortcutDrag(pt);
-        }
-
-        if (!m_dragActive)
-        {
-            if (std::abs(dx) <= 3 && std::abs(dy) <= 3 && !ctrlPressed && !shiftPressed)
-            {
-                // Simple click without modifiers.
-                // Clear all selections except the one that was clicked.
-                ShortcutSelectionModel::SelectSingle(m_shortcutStates, m_selectionAnchorIndex, m_dragIndex);
-            }
-
-            m_dragIndex = -1;
-            m_dragCurrentInsertIndex = -1;
-            m_dragActive = false;
-            repaint = true;
-            return;
-        }
-
-        if (IsPointOutsideWindow(pt))
-        {
-            std::vector<int> selectedIndices = GetSelectedShortcutIndices();
-            if (selectedIndices.empty())
-            {
-                selectedIndices.push_back(m_dragIndex);
-            }
-
-            ConfirmPendingDeleteShortcuts(selectedIndices, repaint);
-            return;
-        }
-
-        // Check if dropped on the category list area on the left
-        int targetCatIdx = -1;
-        bool droppedOnLeft = (pt.x < 150);
-        if (droppedOnLeft && !m_owner->IsSettingsMode())
-        {
-            size_t count = m_owner->GetCategoryCount();
-            for (int i = 0; i < (int)count; i++)
-            {
-                int y = 72 + i * 40;
-                if (pt.y >= y && pt.y < y + 40)
-                {
-                    targetCatIdx = i;
-                    break;
-                }
-            }
-        }
-
-        if (targetCatIdx >= 0 && targetCatIdx < (int)m_owner->GetCategoryCount() && targetCatIdx != m_owner->GetCurrentCategoryIndex())
-        {
-            RendPopupPage* destPage = m_owner->GetPageByIndex(targetCatIdx);
-            if (destPage && m_pageData)
-            {
-                if (!destPage->isSyncFolder && !m_pageData->isSyncFolder)
-                {
-                    std::vector<int> selectedIndices;
-                    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-                    {
-                        if (m_shortcutStates[i].selected)
-                        {
-                            selectedIndices.push_back(i);
-                        }
-                    }
-
-                    if (!selectedIndices.empty())
-                    {
-                        m_owner->RecordShortcutHistoryCheckpoint();
-
-                        // Move to destination category
-                        for (int idx : selectedIndices)
-                        {
-                            destPage->shortcuts.push_back(m_pageData->shortcuts[idx]);
-                            destPage->iconBitmaps.push_back(m_pageData->iconBitmaps[idx]);
-                        }
-
-                        // Remove from source category
-                        for (auto it = selectedIndices.rbegin(); it != selectedIndices.rend(); ++it)
-                        {
-                            m_pageData->shortcuts.erase(m_pageData->shortcuts.begin() + *it);
-                            m_pageData->iconBitmaps.erase(m_pageData->iconBitmaps.begin() + *it);
-                            m_shortcutStates.erase(m_shortcutStates.begin() + *it);
-                        }
-
-                        ResetShortcutTargets(false);
-
-                        m_selectionAnchorIndex = -1;
-                        m_owner->NotifyConfigChanged();
-
-                        m_animating = true;
-                        m_owner->StartAnimation();
-                    }
-                }
-            }
-
-            m_dragIndex = -1;
-            m_dragCurrentInsertIndex = -1;
-            m_dragActive = false;
-            repaint = true;
-            return;
-        }
-
-        if (m_dragCurrentInsertIndex >= 0 && m_pageData)
-        {
-            // Gather selected indices in sorted order
-            std::vector<int> selectedIndices;
-            int leaderSelIdx = -1;
-            for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-            {
-                if (m_shortcutStates[i].selected)
-                {
-                    if (i == m_dragIndex) leaderSelIdx = (int)selectedIndices.size();
-                    selectedIndices.push_back(i);
-                }
-            }
-
-            if (!selectedIndices.empty())
-            {
-                int k = (int)selectedIndices.size();
-                int n = (int)m_shortcutStates.size();
-                int startSlot = m_dragCurrentInsertIndex - leaderSelIdx;
-                if (startSlot < 0) startSlot = 0;
-                if (startSlot > n - k) startSlot = n - k;
-
-                bool orderChanged = false;
-                if (startSlot != selectedIndices[0])
-                {
-                    orderChanged = true;
-                }
-                else
-                {
-                    // Check if selection is non-contiguous
-                    for (int j = 0; j < k; j++)
-                    {
-                        if (selectedIndices[j] != startSlot + j)
-                        {
-                            orderChanged = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (orderChanged && !droppedOnLeft)
-                {
-                    m_owner->RecordShortcutHistoryCheckpoint();
-
-                    // Extract selected elements
-                    std::vector<RendShortcutInfo> selShortcuts;
-                    std::vector<ID2D1Bitmap*> selBitmaps;
-                    std::vector<ShortcutVisualState> selStates;
-                    for (int idx : selectedIndices)
-                    {
-                        selShortcuts.push_back(m_pageData->shortcuts[idx]);
-                        selBitmaps.push_back(m_pageData->iconBitmaps[idx]);
-                        selStates.push_back(m_shortcutStates[idx]);
-                    }
-
-                    // Remove selected elements from high to low indices
-                    for (auto it = selectedIndices.rbegin(); it != selectedIndices.rend(); ++it)
-                    {
-                        m_pageData->shortcuts.erase(m_pageData->shortcuts.begin() + *it);
-                        m_pageData->iconBitmaps.erase(m_pageData->iconBitmaps.begin() + *it);
-                        m_shortcutStates.erase(m_shortcutStates.begin() + *it);
-                    }
-
-                    // Insert them back at startSlot
-                    m_pageData->shortcuts.insert(m_pageData->shortcuts.begin() + startSlot, selShortcuts.begin(), selShortcuts.end());
-                    m_pageData->iconBitmaps.insert(m_pageData->iconBitmaps.begin() + startSlot, selBitmaps.begin(), selBitmaps.end());
-                    m_shortcutStates.insert(m_shortcutStates.begin() + startSlot, selStates.begin(), selStates.end());
-
-                    m_owner->NotifyConfigChanged();
-                }
-
+        m_dragController.HandleLButtonUp(
+            pt,
+            m_owner,
+            m_pageData,
+            m_shortcutStates,
+            m_scrollY,
+            m_selectionAnchorIndex,
+            [this](const std::vector<int>& indices, bool& rep) {
+                return ConfirmPendingDeleteShortcuts(indices, rep);
+            },
+            [this](bool snap) {
                 ResetShortcutTargets(false);
-                if (m_owner) m_owner->StartAnimation();
-            }
-        }
-
-        m_dragIndex = -1;
-        m_dragCurrentInsertIndex = -1;
-        m_dragActive = false;
-        repaint = true;
+            },
+            repaint
+        );
     }
 }
 
@@ -781,7 +559,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         m_scrollVelocity = 0.0f;
 
         // If dragging, we still need to update drag position and sort state
-        if (m_dragActive && m_dragIndex >= 0)
+        if (m_dragController.IsActive())
         {
             POINT mousePt;
             GetCursorPos(&mousePt);
@@ -789,7 +567,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
             float scale = DpiHelper::GetWindowScale(hWnd);
             mousePt.x = (int)(mousePt.x / scale);
             mousePt.y = (int)(mousePt.y / scale);
-            UpdateDragAndSortState(mousePt);
+            m_dragController.UpdateDragAndSortState(mousePt, m_scrollY, m_shortcutStates);
         }
 
         for (auto& state : m_shortcutStates)
@@ -802,7 +580,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         m_addCardCurrentY = m_addCardTargetY;
 
         bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
-        bool dragging = m_dragActive;
+        bool dragging = m_dragController.IsActive();
         if (!scrollAnimating && !dragging)
         {
             m_animating = false;
@@ -812,32 +590,9 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     }
 
     // 1. Drag auto-scroll logic
-    if (m_dragActive && m_dragIndex >= 0 && m_pageData)
+    if (m_dragController.IsActive() && m_pageData)
     {
-        POINT mousePt;
-        GetCursorPos(&mousePt);
-        ScreenToClient(hWnd, &mousePt);
-        float scale = DpiHelper::GetWindowScale(hWnd);
-        mousePt.x = (int)(mousePt.x / scale);
-        mousePt.y = (int)(mousePt.y / scale);
-
-        int n = (int)m_pageData->shortcuts.size();
-        int rows = m_pageData->isSyncFolder ? ((n + 4) / 5) : ((n + 1 + 4) / 5);
-        float maxScrollY = std::max(0.0f, (rows * 72) - 368.0f);
-
-        if (mousePt.x >= 150 && mousePt.x <= 520)
-        {
-            if (mousePt.y >= 72 && mousePt.y < 117)
-            {
-                float speed = (117.0f - mousePt.y) * 2.0f;
-                m_targetScrollY = std::max(0.0f, m_targetScrollY - speed * dt);
-            }
-            else if (mousePt.y > 395 && mousePt.y <= 440)
-            {
-                float speed = (mousePt.y - 395.0f) * 2.0f;
-                m_targetScrollY = std::min(maxScrollY, m_targetScrollY + speed * dt);
-            }
-        }
+        m_dragController.UpdateAutoScroll(hWnd, dt, m_pageData, m_targetScrollY);
     }
 
     // 2. Scroll animation physics update
@@ -849,7 +604,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     m_scrollY += m_scrollVelocity * dt;
 
     // 3. Update dragged item position after scroll has changed
-    if (m_dragActive && m_dragIndex >= 0)
+    if (m_dragController.IsActive())
     {
         POINT mousePt;
         GetCursorPos(&mousePt);
@@ -857,7 +612,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         float scale = DpiHelper::GetWindowScale(hWnd);
         mousePt.x = (int)(mousePt.x / scale);
         mousePt.y = (int)(mousePt.y / scale);
-        UpdateDragAndSortState(mousePt);
+        m_dragController.UpdateDragAndSortState(mousePt, m_scrollY, m_shortcutStates);
     }
 
     // 4. Update visual positions of other shortcuts using smooth decay
@@ -899,7 +654,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
 
     // 5. Determine whether we still need the animation loop
     bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
-    bool dragging = m_dragActive;
+    bool dragging = m_dragController.IsActive();
 
     // Late-arriving icons fade in over ~0.22s instead of popping in.
     bool anyIconRevealing = false;
@@ -1174,9 +929,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
 {
     if (!m_pageData || m_pageData->isSyncFolder)
     {
-        m_dragIndex = -1;
-        m_dragCurrentInsertIndex = -1;
-        m_dragActive = false;
+        m_dragController.Reset();
         ResetShortcutTargets();
         repaint = true;
         return false;
@@ -1185,9 +938,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
     std::vector<int> normalized = NormalizeShortcutIndices(indices);
     if (normalized.empty())
     {
-        m_dragIndex = -1;
-        m_dragCurrentInsertIndex = -1;
-        m_dragActive = false;
+        m_dragController.Reset();
         ResetShortcutTargets();
         repaint = true;
         return false;
@@ -1195,11 +946,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
 
     HWND hWnd = m_owner->GetWindowHWND();
     m_pendingDeleteIndices = normalized;
-    m_dragIndex = -1;
-    m_dragCurrentInsertIndex = -1;
-    m_dragActive = false;
-    m_dragDeleteCursorShown = false;
-    SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+    m_dragController.Reset();
     ResetShortcutTargets(true);
 
     m_animating = true;
@@ -1233,185 +980,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
 
 bool ShortcutPage::HasDragExceededThreshold(POINT pt) const
 {
-    return ShortcutSelectionModel::HasDragExceededThreshold(m_dragStartPt, pt);
-}
-
-void ShortcutPage::UpdateDragDeleteCursor(POINT pt)
-{
-    bool showDeleteCursor = m_dragActive && IsPointOutsideWindow(pt);
-    if (showDeleteCursor)
-    {
-        SetCursor(GetDeleteCursor());
-        m_dragDeleteCursorShown = true;
-    }
-    else if (m_dragDeleteCursorShown)
-    {
-        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
-        m_dragDeleteCursorShown = false;
-    }
-}
-
-HCURSOR ShortcutPage::GetDeleteCursor()
-{
-    if (m_deleteCursor) return m_deleteCursor;
-    m_deleteCursor = DeleteCursorFactory::CreateDeleteCursor();
-    return m_deleteCursor ? m_deleteCursor : LoadCursorW(nullptr, IDC_ARROW);
-}
-
-bool ShortcutPage::StartShortcutDrag(POINT pt)
-{
-    if (!m_pageData || m_dragIndex < 0 || m_dragIndex >= (int)m_shortcutStates.size()) return false;
-    if (!m_shortcutStates[m_dragIndex].selected) return false;
-
-    if (m_owner && m_owner->GetSortMode() == 1)
-    {
-        const bool switchToCustom = ConfirmWindow::Show(
-            m_owner->GetWindowHWND(),
-            L"智能排序已启用",
-            L"当前为智能排序，不能拖动图标。是否切换到自定义排序？",
-            m_owner->GetAppContext());
-        if (!switchToCustom)
-        {
-            MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
-            m_dragIndex = -1;
-            m_dragCurrentInsertIndex = -1;
-            m_dragActive = false;
-            return false;
-        }
-
-        m_owner->SetSortMode(0);
-        m_owner->NotifyConfigChanged();
-    }
-
-    m_dragActive = true;
-    m_dragCurrentInsertIndex = m_dragIndex;
-
-    float leaderCurrentX = m_shortcutStates[m_dragIndex].currentX;
-    float leaderCurrentY = m_shortcutStates[m_dragIndex].currentY;
-    m_grabOffsetX = (float)m_dragStartPt.x - leaderCurrentX;
-    m_grabOffsetY = (float)(m_dragStartPt.y + m_scrollY) - leaderCurrentY;
-
-    for (auto& s : m_shortcutStates)
-    {
-        if (s.selected)
-        {
-            s.dragOffsetX = s.currentX - leaderCurrentX;
-            s.dragOffsetY = s.currentY - leaderCurrentY;
-        }
-    }
-
-    UpdateDragAndSortState(pt);
-    m_animating = true;
-    m_owner->StartAnimation();
-    return true;
-}
-
-void ShortcutPage::UpdateDragAndSortState(POINT clientPt)
-{
-    if (!m_dragActive || m_dragIndex < 0) return;
-
-    // 1. Get list of selected indices in sorted order
-    std::vector<int> selectedIndices;
-    int leaderSelIdx = -1;
-    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-    {
-        if (m_shortcutStates[i].selected)
-        {
-            if (i == m_dragIndex)
-            {
-                leaderSelIdx = (int)selectedIndices.size();
-            }
-            selectedIndices.push_back(i);
-        }
-    }
-
-    // Safety fallback
-    if (leaderSelIdx == -1)
-    {
-        m_shortcutStates[m_dragIndex].selected = true;
-        leaderSelIdx = 0;
-        selectedIndices.clear();
-        selectedIndices.push_back(m_dragIndex);
-    }
-
-    int k = (int)selectedIndices.size();
-    int n = (int)m_shortcutStates.size();
-
-    // 2. Update all selected items' visual positions to follow the mouse
-    float unscrolledMouseX = (float)clientPt.x;
-    float unscrolledMouseY = (float)(clientPt.y + m_scrollY);
-
-    float leaderCurrentX = unscrolledMouseX - m_grabOffsetX;
-    float leaderCurrentY = unscrolledMouseY - m_grabOffsetY;
-
-    for (int idx : selectedIndices)
-    {
-        m_shortcutStates[idx].currentX = leaderCurrentX + m_shortcutStates[idx].dragOffsetX;
-        m_shortcutStates[idx].currentY = leaderCurrentY + m_shortcutStates[idx].dragOffsetY;
-        m_shortcutStates[idx].targetX = m_shortcutStates[idx].currentX;
-        m_shortcutStates[idx].targetY = m_shortcutStates[idx].currentY;
-    }
-
-    // 3. Find closest slot based on leader's center with hysteresis to eliminate boundary jitter
-    float centerX = m_shortcutStates[m_dragIndex].currentX + 31.0f;
-    float centerY = m_shortcutStates[m_dragIndex].currentY + 31.0f;
-
-    int currentSlot = m_dragCurrentInsertIndex;
-    int closestSlot = currentSlot;
-
-    float currentDistSq = -1.0f;
-    if (currentSlot >= 0 && currentSlot < n)
-    {
-        float curX = (float)(160 + (currentSlot % 5) * 72 + 31);
-        float curY = (float)(72 + (currentSlot / 5) * 72 + 31);
-        float dx = centerX - curX;
-        float dy = centerY - curY;
-        currentDistSq = dx * dx + dy * dy;
-    }
-
-    float minDistSq = currentDistSq;
-
-    for (int j = 0; j < n; j++)
-    {
-        float slotX = (float)(160 + (j % 5) * 72 + 31);
-        float slotY = (float)(72 + (j / 5) * 72 + 31);
-        float dx = centerX - slotX;
-        float dy = centerY - slotY;
-        float distSq = dx * dx + dy * dy;
-
-        // Candidate slot must be noticeably closer than current slot to switch
-        if (currentDistSq < 0.0f || distSq < currentDistSq * 0.72f)
-        {
-            if (minDistSq < 0.0f || distSq < minDistSq)
-            {
-                minDistSq = distSq;
-                closestSlot = j;
-            }
-        }
-    }
-
-    if (closestSlot != m_dragCurrentInsertIndex)
-    {
-        m_dragCurrentInsertIndex = closestSlot;
-    }
-
-    // 4. Calculate startSlot for the contiguous selected block
-    int startSlot = closestSlot - leaderSelIdx;
-    if (startSlot < 0) startSlot = 0;
-    if (startSlot > n - k) startSlot = n - k;
-
-    // 5. Update target positions for all items (non-selected items will animate to make room)
-
-    int m = 0;
-    for (int i = 0; i < n; i++)
-    {
-        if (m_shortcutStates[i].selected) continue;
-
-        int targetSlot = (m < startSlot) ? m : (m + k);
-        m_shortcutStates[i].targetX = (float)(160 + (targetSlot % 5) * 72);
-        m_shortcutStates[i].targetY = (float)(72 + (targetSlot / 5) * 72);
-        m++;
-    }
+    return m_dragController.HasExceededThreshold(pt);
 }
 
 void ShortcutPage::AddShortcutFromPath(const std::wstring& filePath)

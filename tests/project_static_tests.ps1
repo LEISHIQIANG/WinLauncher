@@ -86,6 +86,7 @@ Add-TestResult `
 $popupSource = Read-RepoFile "WinLauncher\PopupWindow.cpp"
 $privilegeLaunchSource = Read-RepoFile "WinLauncher\Services\PrivilegeLaunchService.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
+$shortcutDragControllerSource = Read-RepoFile "WinLauncher\Config\ShortcutDragController.cpp"
 $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
 $popupSorterSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutSorter.cpp"
 $popupLauncherSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutLauncher.cpp"
@@ -124,9 +125,9 @@ Add-TestResult `
         $popupSource -match 'RecordShortcutUsage\(sc\)' -and
         $popupSearchServiceSource -match 'item\.shortcut\.name, queryLower,\s*\{\}' -and
         $popupSearchServiceSource -notmatch 'usageHistory|sortMode' -and
-        $shortcutPageSource -match 'm_owner->GetSortMode\(\)\s*==\s*1' -and
-        $shortcutPageSource -match 'm_owner->SetSortMode\(0\)' -and
-        $shortcutPageSource -match 'ConfirmWindow::Show'
+        ($shortcutPageSource -match 'm_owner->GetSortMode\(\)\s*==\s*1' -or $shortcutDragControllerSource -match 'owner->GetSortMode\(\)\s*==\s*1') -and
+        ($shortcutPageSource -match 'm_owner->SetSortMode\(0\)' -or $shortcutDragControllerSource -match 'owner->SetSortMode\(0\)') -and
+        ($shortcutPageSource -match 'ConfirmWindow::Show' -or $shortcutDragControllerSource -match 'ConfirmWindow::Show')
     ) `
     -Detail "Smart mode must sort popup icons by recorded clicks, preserve IDs, and require an explicit switch before configuration drag sorting"
 

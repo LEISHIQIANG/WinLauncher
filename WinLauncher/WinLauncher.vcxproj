@@ -187,6 +187,7 @@
     <ClCompile Include="Config\ShortcutDialogController.cpp" />
     <ClCompile Include="Config\ShortcutSelectionModel.cpp" />
     <ClCompile Include="Config\FaviconBatchFetcher.cpp" />
+    <ClCompile Include="Config\ShortcutDragController.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
     <ClCompile Include="Config\SceneSettingsWindow.cpp" />
@@ -353,6 +354,7 @@
     <ClInclude Include="Config\ShortcutDialogController.h" />
     <ClInclude Include="Config\ShortcutSelectionModel.h" />
     <ClInclude Include="Config\FaviconBatchFetcher.h" />
+    <ClInclude Include="Config\ShortcutDragController.h" />
     <ClInclude Include="Config\CategoryList.h" />
     <ClInclude Include="Config\ContextMenu.h" />
     <ClInclude Include="Config\SceneSettingsWindow.h" />
