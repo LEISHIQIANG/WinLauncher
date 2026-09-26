@@ -56,7 +56,6 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
     , m_lastRt(nullptr)
 {
     m_appCtx = ctx;
-    m_iconBackfill = std::make_shared<IconBackfillState>();
     m_settingsPage.OnImportJsonClicked = [this]() { ImportJsonConfig(); };
     if (ctx)
     {
@@ -86,8 +85,7 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
 
 ConfigWindow::~ConfigWindow()
 {
-    if (m_iconBackfill)
-        m_iconBackfill->generation.fetch_add(1); // Invalidate in-flight icon backfill work.
+    m_iconBackfill.Invalidate();
     if (m_appCtx && m_appCtx->eventBus)
     {
         if (m_themeChangedToken)
@@ -203,172 +201,15 @@ void ConfigWindow::CountLoadedIcons()
 
 void ConfigWindow::ScheduleIconBackfill()
 {
-    if (!GetHWND() || !IsWindow(GetHWND()))
-        return;
-    if (!m_appCtx || !m_appCtx->backgroundTasks || !m_appCtx->uiDispatcher)
-        return;
-
-    auto state = m_iconBackfill;
-
-    struct BackfillItem
-    {
-        size_t pageIndex;
-        std::wstring targetPath;
-        Model::ShortcutInfo info;
-    };
-    std::vector<BackfillItem> items;
-    {
-        const ULONGLONG now = GetTickCount64();
-        std::lock_guard<std::mutex> lock(state->failedMutex);
-        for (size_t p = 0; p < m_pages.size(); ++p)
-        {
-            for (const auto& sc : m_pages[p].shortcuts)
-            {
-                if (sc.hIcon)
-                    continue;
-                auto failed = state->failedUntil.find(sc.targetPath);
-                if (failed != state->failedUntil.end())
-                {
-                    if (now < failed->second)
-                        continue;
-                    state->failedUntil.erase(failed);
-                }
-                Model::ShortcutInfo info;
-                info.id = sc.id;
-                info.name = sc.name;
-                info.targetPath = sc.targetPath;
-                info.arguments = sc.arguments;
-                info.iconPath = sc.iconPath;
-                info.runAsAdmin = sc.runAsAdmin;
-                info.type = sc.type;
-                info.targetKind = sc.targetKind;
-                info.iconSource = sc.iconSource;
-                info.builtinIconId = sc.builtinIconId;
-                info.iconInvertLight = sc.iconInvertLight;
-                info.iconInvertDark = sc.iconInvertDark;
-                items.push_back({ p, sc.targetPath, std::move(info) });
-            }
-        }
-    }
-    if (items.empty())
-        return;
-
-    const uint64_t generation = state->generation.load();
-    auto iconService = m_appCtx->iconService;
-    LOG_G_INFO_NODE(L"ui.config", L"icon_backfill",
-        L"status=scheduled items=%d generation=%llu",
-        static_cast<int>(items.size()),
-        static_cast<unsigned long long>(generation));
-
-    m_appCtx->backgroundTasks->Submit(L"config.icon_backfill", BackgroundTaskService::Priority::Normal,
-        [state, generation, items = std::move(items), iconService](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
-            std::vector<IconBackfillResult> results;
-            const ULONGLONG start = GetTickCount64();
-            for (const auto& item : items)
-            {
-                if (cancellation->IsCancellationRequested() ||
-                    state->generation.load(std::memory_order_relaxed) != generation)
-                    break;
-                RendShortcutInfo probe;
-                probe.id = item.info.id;
-                probe.name = item.info.name;
-                probe.targetPath = item.info.targetPath;
-                probe.arguments = item.info.arguments;
-                probe.iconPath = item.info.iconPath;
-                probe.runAsAdmin = item.info.runAsAdmin;
-                probe.type = item.info.type;
-                probe.targetKind = item.info.targetKind;
-                probe.iconSource = item.info.iconSource;
-                probe.builtinIconId = item.info.builtinIconId;
-                probe.iconInvertLight = item.info.iconInvertLight;
-                probe.iconInvertDark = item.info.iconInvertDark;
-                HICON hIcon = ShortcutManager::GetShortcutIcon(probe, /*fastOnly=*/false, iconService.get());
-                if (hIcon)
-                {
-                    IconBackfillResult result;
-                    result.pageIndex = item.pageIndex;
-                    result.shortcutId = std::move(item.info.id);
-                    result.targetPath = std::move(item.targetPath);
-                    result.hIcon = hIcon;
-                    results.push_back(std::move(result));
-                }
-                else
-                {
-                    // Negative cache: skip re-extracting known-unresolvable
-                    // targets on every subsequent config reload.
-                    std::lock_guard<std::mutex> lock(state->failedMutex);
-                    state->failedUntil[item.targetPath] = GetTickCount64() + 5 * 60 * 1000;
-                }
-            }
-            if (results.empty())
-                return;
-            if (state->generation.load(std::memory_order_relaxed) != generation)
-                return; // Results are RAII; dropping the vector destroys the icons.
-            const ULONGLONG elapsed = GetTickCount64() - start;
-            ConfigWindow* self = s_instance;
-            if (!self || self->m_iconBackfill.get() != state.get())
-                return;
-            if (!self->m_appCtx || !self->m_appCtx->uiDispatcher)
-                return;
-            auto posted = std::make_shared<std::vector<IconBackfillResult>>(std::move(results));
-            if (!self->m_appCtx->uiDispatcher->IsStopping() &&
-                self->m_appCtx->uiDispatcher->Post(L"config.icon_backfill.apply",
-                    [state, generation, posted, elapsed]() {
-                        ConfigWindow* uiSelf = s_instance;
-                        if (!uiSelf || uiSelf->m_iconBackfill.get() != state.get() ||
-                            state->generation.load() != generation)
-                            return; // RAII results destroy any unapplied icons.
-                        uiSelf->ApplyIconBackfill(generation, *posted, elapsed);
-                    }))
-            {
-                return;
-            }
-            // The dispatcher rejected the post while stopping; the shared
-            // vector is released and its RAII results destroy the icons.
+    m_iconBackfill.Schedule(GetHWND(), m_appCtx, m_pages,
+        [this](uint64_t generation, std::vector<IconBackfillResult>& results, ULONGLONG elapsedMs) {
+            ApplyIconBackfill(generation, results, elapsedMs);
         });
 }
 
 void ConfigWindow::ApplyIconBackfill(uint64_t generation, std::vector<IconBackfillResult>& results, ULONGLONG elapsedMs)
 {
-    int applied = 0;
-    int skipped = 0;
-    for (auto& r : results)
-    {
-        bool matched = false;
-        if (r.pageIndex < m_pages.size() && r.hIcon)
-        {
-            auto& shortcuts = m_pages[r.pageIndex].shortcuts;
-            for (auto it = shortcuts.begin(); it != shortcuts.end(); ++it)
-            {
-                if (it->id != r.shortcutId || it->targetPath != r.targetPath)
-                    continue;
-                matched = true;
-                if (it->hIcon)
-                {
-                    ++skipped; // Slot was filled by a user edit; the RAII result keeps the new icon.
-                    break;
-                }
-                it->hIcon = r.hIcon; // Transfer ownership out of the result.
-                r.hIcon = nullptr;
-                ++applied;
-                auto& bmps = m_pages[r.pageIndex].iconBitmaps;
-                const size_t idx = static_cast<size_t>(it - shortcuts.begin());
-                if (idx < bmps.size() && bmps[idx])
-                {
-                    bmps[idx]->Release();
-                    bmps[idx] = nullptr;
-                }
-                break;
-            }
-        }
-        if (!matched)
-            ++skipped;
-    }
-    LOG_G_INFO_NODE(L"ui.config", L"icon_backfill",
-        L"status=applied applied=%d skipped=%d elapsed_ms=%llu generation=%llu",
-        applied, skipped,
-        static_cast<unsigned long long>(elapsedMs),
-        static_cast<unsigned long long>(generation));
+    int applied = IconBackfillCoordinator::ApplyResults(m_pages, results, elapsedMs, generation);
     if (applied > 0 && GetHWND() && IsWindow(GetHWND()))
         InvalidateRect(GetHWND(), nullptr, FALSE);
 }

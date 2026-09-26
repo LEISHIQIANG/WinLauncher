@@ -102,6 +102,9 @@
     <ClCompile Include="Config\QuickLauncherImportFlow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\IconBackfillCoordinator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\CategoryList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -311,6 +314,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\QuickLauncherImportFlow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\IconBackfillCoordinator.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\CategoryList.h">
