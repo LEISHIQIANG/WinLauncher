@@ -21,6 +21,9 @@ Debug/
 PLUGIN_SYSTEM_PLAN.md
 PLUGIN_API_PLAN.md
 
+# Local analysis / audit notes
+tmp/
+
 # OS files
 Thumbs.db
 *.DS_Store
