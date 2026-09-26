@@ -63,6 +63,17 @@ protected:
     virtual void OnVisibilityTransitionCompleted(AnimState state) override;
 
 private:
+    // Message-pump branch handlers: the WM bodies in HandleMessage delegate
+    // here so the switch stays a routing table.
+    void OnDropFiles(HWND hWnd, WPARAM wParam);
+    LRESULT OnDpiChanged(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    bool OnTimer(HWND hWnd, WPARAM wParam);
+    void OnMouseMove(HWND hWnd, LPARAM lParam);
+    void OnLButtonDown(HWND hWnd, LPARAM lParam);
+    void OnLButtonDblClk(HWND hWnd, LPARAM lParam);
+    void OnLButtonUp(HWND hWnd, LPARAM lParam);
+    void OnKeyDown(HWND hWnd, WPARAM wParam, LPARAM lParam);
+    void OnChar(HWND hWnd, WPARAM wParam);
     struct HeaderLayout
     {
         int topBarHeight;
