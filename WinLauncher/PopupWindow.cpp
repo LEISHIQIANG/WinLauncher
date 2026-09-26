@@ -16,6 +16,7 @@
 #include "Popup/PopupRenderHelper.h"
 #include "Popup/PopupShortcutSorter.h"
 #include "Popup/PopupShortcutLauncher.h"
+#include "Popup/PopupScrollAnimator.h"
 #include "Popup/PopupTimeZoneAction.h"
 #include "Contracts/ICommandExecutionService.h"
 #include "Contracts/IUserInteractionService.h"
@@ -69,10 +70,6 @@ static const UINT_PTR PLUGIN_SEARCH_TIMER_ID = 5;
 static const UINT_PTR FILE_SELECTION_TIMER_ID = 6;
 static const UINT TIMELINE_ANIMATION_FRAME_MS = 16;
 static const UINT PLUGIN_SEARCH_REFRESH_MS = 120;
-// Only snap after the spring has become visually stationary.  A larger
-// threshold makes the last visible pixels jump instead of settling smoothly.
-static constexpr float POPUP_PAGE_SETTLE_DISTANCE_PX = 0.75f;
-static constexpr float POPUP_PAGE_SETTLE_VELOCITY_PX_PER_SECOND = 36.0f;
 static const UINT WM_USER_ANIMATE = WM_USER + 100;
 static const UINT WM_USER_REFRESH_ICONS = WM_USER + 101;
 static const UINT WM_USER_SELECTION_UPDATED = WM_USER + 102;
@@ -2344,9 +2341,6 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
     float dt = (float)(now - m_animLastTime);
     m_animLastTime = now;
 
-    if (dt > 0.1f) dt = 0.1f;
-    if (dt <= 0.0f) dt = 0.001f;
-
     if (m_wheel.AdvanceQueued(m_scrollPosition))
     {
         m_currentPage = PopupWheelState::Page(m_wheel.target, static_cast<int>(m_pages.size()));
@@ -2354,35 +2348,17 @@ void PopupWindow::StepPageAnimationFrame(HWND hWnd)
     }
     float target = m_wheel.active ? static_cast<float>(m_wheel.target) : static_cast<float>(m_currentPage);
     int numPages = (int)m_pages.size();
-    float stiffness = 400.0f;
-    float damping = 40.0f;
 
-    // Physics sub-stepping for stability and smoothness
-    float remainingTime = dt;
-    const float stepSize = 0.002f; // 2ms steps
-    while (remainingTime > 0.0f)
-    {
-        float currentStep = (std::min)(remainingTime, stepSize);
-        if (currentStep <= 0.0f) break;
+    PopupScrollAnimator::SpringState spring{ m_scrollPosition, m_scrollVelocity };
+    spring = PopupScrollAnimator::Integrate(spring, target, dt);
+    m_scrollPosition = spring.position;
+    m_scrollVelocity = spring.velocity;
 
-        float error = target - m_scrollPosition;
-
-        float force = error * stiffness - m_scrollVelocity * damping;
-        m_scrollVelocity += force * currentStep;
-        m_scrollPosition += m_scrollVelocity * currentStep;
-
-        remainingTime -= currentStep;
-    }
-
-    float finalError = target - m_scrollPosition;
     RECT clientRect{};
     GetClientRect(hWnd, &clientRect);
     const float pageWidthPx = (std::max)(1.0f, static_cast<float>(clientRect.right - clientRect.left));
-    const float remainingDistancePx = std::abs(finalError) * pageWidthPx;
-    const float remainingVelocityPx = std::abs(m_scrollVelocity) * pageWidthPx;
 
-    if (remainingDistancePx <= POPUP_PAGE_SETTLE_DISTANCE_PX &&
-        remainingVelocityPx <= POPUP_PAGE_SETTLE_VELOCITY_PX_PER_SECOND)
+    if (PopupScrollAnimator::IsSettled(spring, target, pageWidthPx))
     {
         m_scrollPosition = target;
         m_scrollVelocity = 0.0f;

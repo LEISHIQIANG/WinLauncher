@@ -282,6 +282,7 @@
     <ClInclude Include="Popup\PopupShortcutSorter.h" />
     <ClInclude Include="Popup\PopupIconCache.h" />
     <ClInclude Include="Popup\PopupShortcutLauncher.h" />
+    <ClInclude Include="Popup\PopupScrollAnimator.h" />
     <ClInclude Include="Popup\PinyinHelper.h" />
     <ClInclude Include="Config\SettingsTabHelper.h" />
     <ClInclude Include="Config\SettingsGeneralView.h" />
