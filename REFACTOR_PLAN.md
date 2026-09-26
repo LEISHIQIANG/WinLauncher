@@ -157,3 +157,77 @@
 > 执行注记（2026-09-26）：P1-1~P1-5 已按计划落地，每片独立提交并通过 Release 构建、`maintenance_check.ps1` 与 `tests\run_tests.ps1`。
 > 期间同步更新了 `tests\project_static_tests.ps1` 中盯源码位置的断言（指向新的 Popup/ 文件）。
 > 本机 MSBuild 实际路径为 `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe`（MAINTENANCE.md 中 E 盘路径失效）。
+
+## 10. 第三轮：2000 行红线（2026-09-26 制定）
+
+### 10.0 拆分原则（本轮红线，优先级高于行数目标）
+
+**按功能分工拆分，不做行数驱动的随意切割。** 每个切片必须满足：
+
+1. 新文件对应一个**可一句话命名的职责**（如"图标位图呈现""桌面背景捕获""输入交互路由"），并在提交说明中写明该职责；
+2. 优先拆出**协作者**（拥有自己的状态与最小接口，如 `PopupIconCache`），其次才是"同一职责整体成文件"的成员函数第二 TU（如 `SettingsPageHitTest.cpp` 先例——命中测试本就是一个职责）；
+3. **禁止**为了凑行数把无关联函数混进同一个新文件；一个切片只承载一个职责；
+4. 职责边界与 `MAINTENANCE.md` 的所有权规则一致：`Application` 是组合根、UI 线程约束、异步必须有取消点。
+
+### 10.1 现状扫描（2026-09-26，含主工程/插件/SDK/测试全部 .cpp/.h）
+
+| 文件 | 行数 | 超标 |
+|---|---|---|
+| `WinLauncher/PopupWindow.cpp` | 3403 | **需 -1404** |
+| `WinLauncher/GlassWindow.cpp` | 2351 | **需 -352** |
+| `WinLauncher/Config/SettingsPage.cpp` | 1919 | 达标（仅余 81 行余量，见 10.5） |
+| 其余全部文件 | ≤1608 | 达标 |
+
+### 10.2 PopupWindow.cpp 拆分（3403 → 目标 ≤1950）
+
+按职责从低风险到高风险排序：
+
+| 切片 | 新文件 | 职责 | 移出内容（当前行号快照） | 行数 | 风险 |
+|---|---|---|---|---|---|
+| P2-1 | `Popup/PopupWindowMessages.h` | 弹窗消息与定时器契约：Timer ID、`WM_USER` 码、帧间隔常量的唯一定义 | 顶部常量 64–81 | 0（净） | 极低（TU 拆分前置） |
+| P2-2 | `Popup/PopupWindowInput.cpp` | **输入交互路由**：九个 OnXxx 处理器 + `HandleMessage` 分发表整体成文件（同一职责的第二 TU，方法签名与类定义不变） | 2413–3335 | ~923 | 低（纯搬移） |
+| P2-3 | `Popup/PopupWindowRender.cpp` | **绘制呈现**：`UpdateTextFormat` + `DrawTopBar/DrawSearchResults/DrawShortcutIcon/DrawPage/OnPaintContent/DrawDock` 整体成文件 | 1267–1302、1467–2254 | ~540 | 低（纯搬移） |
+| P2-4 | `Popup/PopupIconPresenter.h/.cpp` | **图标位图呈现管线**（协作者，按值持有）：`EnsureIcons/RefreshIcons/OnIconPreloadCompleted/CancelIconRefresh/ApplyRefreshedIcons` 与 `m_lastRt/m_lastDpi/m_lastIconBitmapSize/m_bmpBrushCache/m_iconFlash*/m_iconRefreshTasks/m_iconLayoutGeneration` 状态 | 1715–2025 + 头部状态 | ~311 | 中（异步取消与代数失效点需原样保留） |
+| P2-5（可选） | `Popup/PopupPlacement.h/.cpp` | **弹出位置策略**：`ShowAt` 中 10 种对齐模式的纯定位数学（输入=触发点/工作区/尺寸/模式，输出=窗口左上角），可单测 | ShowAt 内 10 模式分支 | ~150 | 中 |
+
+行数推演：P2-2 + P2-3 = -1463 → 1940（达标但余量仅 59）；加 P2-4 → ~1630（推荐，留足余量）；P2-5 视架构整洁度可选。
+
+### 10.3 GlassWindow.cpp 拆分（2351 → 目标 ≤1950）
+
+沿用阶段 6 已论证的切片，只需前三个即可达标：
+
+| 切片 | 新文件 | 职责 | 移出内容 | 行数 | 风险 |
+|---|---|---|---|---|---|
+| G1 | `GlassBackgroundCapture.h/.cpp` | **桌面背景捕获**（协作者）：GDI 截屏→D2D 位图、尺寸/DPI 复用、失败节流日志 | `CaptureBackground` 677–894 + `m_bgCap/m_pixbuf/错误状态` | ~218 | 低 |
+| G2 | `GlassThemeTransition.h/.cpp` | **主题过渡覆盖**：旧主题快照、淡出绘制、过渡期材质切换编排 | 文件尾 `CaptureTransitionSnapshot/DrawThemeTransitionOverlay/StartThemeTransition` + 对应状态 | ~90 | 低-中（与 0x889 定时器共享 tick） |
+| G3 | `GlassBackdrop.h/.cpp` | **DWM 材质与强调色策略**：`SetAccent`/`ApplySystemBackdrop`/圆角与区域 | 32–45、222–276、278–406 + `m_lastAppliedAccentState` | ~130 | 中（accent 过渡恢复顺序敏感，逐字搬移集中评审） |
+
+行数推演：G1+G2+G3 ≈ -438 → 1913 ✓。G4–G6（材质合成管线/渲染设备/显隐动画）为可选后续，达标不依赖。
+
+### 10.4 守门机制（防回弹）
+
+新增静态回归检查（`tests/project_static_tests.ps1`）：**扫描全部源文件，任何 .cpp/.h 超过 2000 行即 FAIL**。落地方式采用棘轮：
+
+- 首次随 P2-2 提交时，豁免清单包含 `PopupWindow.cpp`、`GlassWindow.cpp` 两个未达标文件；
+- 每个文件降到线下后，同一切片内把它从豁免清单移除；
+- 全部达标后删除豁免机制，红线永久生效。
+- `ci_check.ps1` 在 GitHub Actions 上同步拦截，防止绕过本地检查合入超限文件。
+
+### 10.5 附注
+
+- `SettingsPage.cpp`（1919）余量仅 81 行：后续向其加功能时若触线，优先做原 S2 遗留的"动画时长/全局缩放两张滑杆卡片去重"（约 -90 行）而非新拆。
+- 阶段 5 遗留的 M5（`Services/PluginProcessRunner`）/M6（`Services/PluginHttpClient`）与本红线无关（PluginManager 已 1608），按原计划择机执行。
+- 每片仍走统一流程：搬移 → vcxproj/filters 注册 → Release 构建 → `maintenance_check.ps1` → `tests\run_tests.ps1` → `RELEASE_NOTES.md` → 独立提交。
+
+### 10.6 执行顺序与进度
+
+P2-1 → P2-2 → 守门测试上线（豁免 2 文件） → P2-3 → G1 → G2 → P2-4 → G3 →（可选 P2-5 / G4–G6） → 移除豁免，红线生效。
+
+- [ ] P2-1 消息契约头 ☐
+- [ ] P2-2 输入交互 TU ☐ + 守门棘轮 ☐
+- [ ] P2-3 绘制呈现 TU ☐
+- [ ] G1 背景捕获 ☐
+- [ ] G2 主题过渡 ☐
+- [ ] P2-4 图标呈现管线 ☐
+- [ ] G3 DWM 材质策略 ☐
+- [ ] 移除豁免、红线生效 ☐
