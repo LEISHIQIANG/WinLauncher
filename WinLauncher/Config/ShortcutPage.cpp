@@ -381,44 +381,15 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
 
         if (shiftPressed)
         {
-            if (m_selectionAnchorIndex == -1)
-            {
-                m_selectionAnchorIndex = hs;
-            }
-            // Clear all selections first
-            for (auto& s : m_shortcutStates)
-            {
-                s.selected = false;
-            }
-            // Select range
-            int start = std::min(m_selectionAnchorIndex, hs);
-            int end = std::max(m_selectionAnchorIndex, hs);
-            for (int i = start; i <= end; i++)
-            {
-                m_shortcutStates[i].selected = true;
-            }
+            ShortcutSelectionModel::SelectRange(m_shortcutStates, m_selectionAnchorIndex, hs);
         }
         else if (ctrlPressed)
         {
-            m_shortcutStates[hs].selected = !m_shortcutStates[hs].selected;
-            if (m_shortcutStates[hs].selected)
-            {
-                m_selectionAnchorIndex = hs;
-            }
+            ShortcutSelectionModel::ToggleSelection(m_shortcutStates, m_selectionAnchorIndex, hs);
         }
         else
         {
-            // Click without modifiers
-            if (!m_shortcutStates[hs].selected)
-            {
-                // Clear others and select this
-                for (auto& s : m_shortcutStates)
-                {
-                    s.selected = false;
-                }
-                m_shortcutStates[hs].selected = true;
-            }
-            m_selectionAnchorIndex = hs;
+            ShortcutSelectionModel::SelectSingle(m_shortcutStates, m_selectionAnchorIndex, hs);
         }
 
         if (m_shortcutStates[hs].selected)
@@ -447,11 +418,7 @@ void ShortcutPage::OnLButtonDown(POINT pt, bool& repaint)
         if (clickedShortcut == -1 && !clickedAdd)
         {
             EnsureShortcutStates();
-            for (auto& s : m_shortcutStates)
-            {
-                s.selected = false;
-            }
-            m_selectionAnchorIndex = -1;
+            ShortcutSelectionModel::ClearSelection(m_shortcutStates, m_selectionAnchorIndex);
             repaint = true;
         }
     }
@@ -488,10 +455,7 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
             {
                 // Simple click without modifiers.
                 // Clear all selections except the one that was clicked.
-                for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-                {
-                    m_shortcutStates[i].selected = (i == m_dragIndex);
-                }
+                ShortcutSelectionModel::SelectSingle(m_shortcutStates, m_selectionAnchorIndex, m_dragIndex);
             }
 
             m_dragIndex = -1;
@@ -1070,55 +1034,32 @@ void ShortcutPage::EnsureShortcutStates()
 
 std::vector<int> ShortcutPage::GetSelectedShortcutIndices() const
 {
-    std::vector<int> indices;
-    for (int i = 0; i < (int)m_shortcutStates.size(); i++)
-    {
-        if (m_shortcutStates[i].selected)
-        {
-            indices.push_back(i);
-        }
-    }
-    return indices;
+    return ShortcutSelectionModel::GetSelectedIndices(m_shortcutStates);
 }
 
 std::vector<int> ShortcutPage::NormalizeShortcutIndices(const std::vector<int>& indices) const
 {
-    std::vector<int> normalized = indices;
-    std::sort(normalized.begin(), normalized.end());
-    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
-
     int shortcutCount = m_pageData ? (int)m_pageData->shortcuts.size() : 0;
-    normalized.erase(
-        std::remove_if(normalized.begin(), normalized.end(),
-            [shortcutCount](int index) { return index < 0 || index >= shortcutCount; }),
-        normalized.end());
-    return normalized;
+    return ShortcutSelectionModel::NormalizeIndices(indices, shortcutCount);
 }
 
 bool ShortcutPage::IsShortcutPendingDelete(int index) const
 {
-    return std::binary_search(m_pendingDeleteIndices.begin(), m_pendingDeleteIndices.end(), index);
+    return ShortcutSelectionModel::IsPendingDelete(m_pendingDeleteIndices, index);
 }
 
 int ShortcutPage::CountVisibleShortcuts() const
 {
     if (!m_pageData) return 0;
-    int count = 0;
-    for (int i = 0; i < (int)m_pageData->shortcuts.size(); i++)
-    {
-        if (!IsShortcutPendingDelete(i))
-        {
-            count++;
-        }
-    }
-    return count;
+    return ShortcutSelectionModel::CountVisible((int)m_pageData->shortcuts.size(), m_pendingDeleteIndices);
 }
 
 void ShortcutPage::UpdateAddShortcutTarget(bool compactPendingDelete, bool snap)
 {
     int slot = compactPendingDelete ? CountVisibleShortcuts() : (m_pageData ? (int)m_pageData->shortcuts.size() : 0);
-    m_addCardTargetX = (float)(160 + (slot % 5) * 72);
-    m_addCardTargetY = (float)(72 + (slot / 5) * 72);
+    D2D1_POINT_2F pt = ShortcutSelectionModel::ComputeSlotPosition(slot);
+    m_addCardTargetX = pt.x;
+    m_addCardTargetY = pt.y;
 
     if (snap || !m_addCardInitialized)
     {
@@ -1130,17 +1071,7 @@ void ShortcutPage::UpdateAddShortcutTarget(bool compactPendingDelete, bool snap)
 
 bool ShortcutPage::IsPointOutsideWindow(POINT pt) const
 {
-    HWND hWnd = m_owner ? m_owner->GetWindowHWND() : nullptr;
-    if (!hWnd) return false;
-
-    RECT cr{};
-    if (!GetClientRect(hWnd, &cr)) return false;
-
-    float scale = DpiHelper::GetWindowScale(hWnd);
-    float w = (float)(cr.right - cr.left) / scale;
-    float h = (float)(cr.bottom - cr.top) / scale;
-
-    return pt.x < 0 || pt.y < 0 || (float)pt.x >= w || (float)pt.y >= h;
+    return ShortcutSelectionModel::IsPointOutsideWindow(m_owner ? m_owner->GetWindowHWND() : nullptr, pt);
 }
 
 void ShortcutPage::ResetShortcutTargets(bool compactPendingDelete)
@@ -1158,8 +1089,9 @@ void ShortcutPage::ResetShortcutTargets(bool compactPendingDelete)
         {
             slot = visibleSlot++;
         }
-        m_shortcutStates[i].targetX = (float)(160 + (slot % 5) * 72);
-        m_shortcutStates[i].targetY = (float)(72 + (slot / 5) * 72);
+        D2D1_POINT_2F pt = ShortcutSelectionModel::ComputeSlotPosition(slot);
+        m_shortcutStates[i].targetX = pt.x;
+        m_shortcutStates[i].targetY = pt.y;
     }
     UpdateAddShortcutTarget(compactPendingDelete, false);
 }
@@ -1209,9 +1141,7 @@ bool ShortcutPage::ConfirmAndDeleteShortcuts(const std::vector<int>& indices, bo
     std::vector<int> normalized = NormalizeShortcutIndices(indices);
     if (normalized.empty()) return false;
 
-    std::wstring prompt = normalized.size() == 1
-        ? L"确定要删除该快捷方式吗？"
-        : L"确定要删除选中的 " + std::to_wstring(normalized.size()) + L" 个快捷方式吗？";
+    std::wstring prompt = ShortcutSelectionModel::BuildDeletePrompt(normalized.size());
 
     HWND hWnd = m_owner->GetWindowHWND();
     if (!ConfirmWindow::Show(hWnd, L"确认删除", prompt.c_str(), m_owner->GetAppContext()))
@@ -1411,9 +1341,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
     InvalidateRect(hWnd, nullptr, FALSE);
     UpdateWindow(hWnd);
 
-    std::wstring prompt = normalized.size() == 1
-        ? L"确定要删除该快捷方式吗？"
-        : L"确定要删除选中的 " + std::to_wstring(normalized.size()) + L" 个快捷方式吗？";
+    std::wstring prompt = ShortcutSelectionModel::BuildDeletePrompt(normalized.size());
 
     bool confirmed = ConfirmWindow::Show(hWnd, L"确认删除", prompt.c_str(), m_owner->GetAppContext());
     if (confirmed)
@@ -1438,9 +1366,7 @@ bool ShortcutPage::ConfirmPendingDeleteShortcuts(const std::vector<int>& indices
 
 bool ShortcutPage::HasDragExceededThreshold(POINT pt) const
 {
-    int dx = pt.x - m_dragStartPt.x;
-    int dy = pt.y - m_dragStartPt.y;
-    return std::abs(dx) > 4 || std::abs(dy) > 4;
+    return ShortcutSelectionModel::HasDragExceededThreshold(m_dragStartPt, pt);
 }
 
 void ShortcutPage::UpdateDragDeleteCursor(POINT pt)
@@ -1729,34 +1655,14 @@ void ShortcutPage::NotifyShortcutListChanged(bool snap)
 int ShortcutPage::HitTestShortcut(POINT pt)
 {
     if (!m_pageData) return -1;
-    if (pt.x < 160 || pt.x > 510 || pt.y < 72 || pt.y > 440) return -1;
-
-    float scrolledY = pt.y - 72 + m_scrollY;
-    int n = (int)m_pageData->shortcuts.size();
-    for (int i = 0; i < n; i++)
-    {
-        int col = i % 5, row = i / 5;
-        float X = (float)(160 + col * 72);
-        float Y = (float)(row * 72);
-        if (pt.x >= X && pt.x <= X + 62 && scrolledY >= Y && scrolledY <= Y + 62)
-            return i;
-    }
-    return -1;
+    return ShortcutSelectionModel::HitTestGrid(pt, m_scrollY, (int)m_pageData->shortcuts.size());
 }
-
-
 
 bool ShortcutPage::HitTestAddShortcut(POINT pt)
 {
-    if (!m_pageData) return false;
-    if (m_pageData->isSyncFolder) return false;
-    if (pt.x < 160 || pt.x > 510 || pt.y < 72 || pt.y > 440) return false;
-
-    float scrolledY = pt.y - 72 + m_scrollY;
+    if (!m_pageData || m_pageData->isSyncFolder) return false;
     UpdateAddShortcutTarget(!m_pendingDeleteIndices.empty(), !m_addCardInitialized);
-    float localAddY = m_addCardCurrentY - 72.0f;
-    return (pt.x >= m_addCardCurrentX && pt.x <= m_addCardCurrentX + 62 &&
-        scrolledY >= localAddY && scrolledY <= localAddY + 62);
+    return ShortcutSelectionModel::HitTestAddCard(pt, m_scrollY, m_addCardCurrentX, m_addCardCurrentY);
 }
 
 void ShortcutPage::EditShortcut(int index, bool& repaint)

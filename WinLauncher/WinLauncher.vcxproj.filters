@@ -114,6 +114,9 @@
     <ClCompile Include="Config\ShortcutDialogController.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\ShortcutSelectionModel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\CategoryList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -335,6 +338,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\ShortcutDialogController.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\ShortcutSelectionModel.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\CategoryList.h">

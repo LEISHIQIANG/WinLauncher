@@ -2,6 +2,7 @@
 #include "ConfigPage.h"
 #include "ShortcutDialogController.h"
 #include "ShortcutGridViewHelper.h"
+#include "ShortcutSelectionModel.h"
 #include "../ShortcutManager.h"
 #include "../App/BackgroundTaskService.h"
 #include <vector>
