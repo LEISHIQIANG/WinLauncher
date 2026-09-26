@@ -443,7 +443,7 @@ void ConfigWindow::ResizeToCurrentScale()
         float dpi = scale * 96.0f;
         m_rt->SetDpi(dpi, dpi);
         UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
-        m_bgCap.Reset();
+        m_backgroundCapture.Reset();
         m_bgFinal.Reset();
         m_compositeRt.Reset();
         m_effectWinSize = {};

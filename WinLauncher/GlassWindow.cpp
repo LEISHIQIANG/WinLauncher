@@ -525,7 +525,7 @@ void GlassWindow::ReleaseD2D()
 void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRenderTarget)
 {
     bool hadResources =
-        m_bgCap.Get() || m_bgFinal.Get() || m_compositeRt.Get() ||
+        m_backgroundCapture.Bitmap() || m_bgFinal.Get() || m_compositeRt.Get() ||
         m_blurEffect.Get() || m_satEffect.Get() || m_sheenBlurEffect.Get() ||
         m_sheenGsc.Get() || m_sheenBrush.Get() || m_sheenLayerRt.Get() ||
         m_sheenLayerBitmap.Get() || m_roundedClipLayer.Get() ||
@@ -543,7 +543,7 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
     }
 
     m_brushCache.clear();
-    m_bgCap.Reset();
+    m_backgroundCapture.Reset();
     m_bgFinal.Reset();
     m_compositeRt.Reset();
     m_blurEffect.Reset();
@@ -558,7 +558,6 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
     m_effectWinSize = {};
     m_effectCornerRadius = -1.0f;
     m_themeTransitionStopCollection.Reset();
-    m_pixbuf.clear();
     if (includeRenderTarget)
     {
         m_rt.Reset();
@@ -676,225 +675,12 @@ void GlassWindow::UpdateBackgroundStyle()
 
 bool GlassWindow::CaptureBackground()
 {
-    if (!m_rt)
-    {
-        LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=no_render_target hwnd=%p", m_hWnd);
-        return false;
-    }
-
-    double captureStartMs = PerfNowMs();
-    D2D1_SIZE_U pixelSize = m_rt->GetPixelSize();
-    POINT clientOrigin{ 0, 0 };
-    if (!ClientToScreen(m_hWnd, &clientOrigin))
-    {
-        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_client_to_screen_failed", L"error=%lu hwnd=%p", GetLastError(), m_hWnd);
-        return false;
-    }
-    int w = (int)pixelSize.width;
-    int h = (int)pixelSize.height;
-    if (w <= 0 || h <= 0)
-    {
-        LOG_G_WARNING_NODE(L"ui.glass", L"background_capture_skipped", L"reason=invalid_size size=%dx%d hwnd=%p", w, h, m_hWnd);
-        return false;
-    }
-
-    HDC sdc = GetDC(nullptr);
-    if (!sdc)
-    {
-        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_getdc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
-        return false;
-    }
-    HDC mdc = CreateCompatibleDC(sdc);
-    if (!mdc)
-    {
-        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_dc_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
-        ReleaseDC(nullptr, sdc);
-        return false;
-    }
-    HBITMAP bmp = CreateCompatibleBitmap(sdc, w, h);
-    if (!bmp)
-    {
-        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_create_bitmap_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
-        DeleteDC(mdc);
-        ReleaseDC(nullptr, sdc);
-        return false;
-    }
-    HGDIOBJ oldBitmap = SelectObject(mdc, bmp);
-    if (!oldBitmap)
-    {
-        LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_select_bitmap_failed", L"error=%lu size=%dx%d hwnd=%p", GetLastError(), w, h, m_hWnd);
-        DeleteObject(bmp);
-        DeleteDC(mdc);
-        ReleaseDC(nullptr, sdc);
-        return false;
-    }
-    if (!BitBlt(mdc, 0, 0, w, h, sdc, clientOrigin.x, clientOrigin.y, SRCCOPY))
-    {
-        const DWORD error = GetLastError();
-        const ULONGLONG now = GetTickCount64();
-        if (error != m_lastBackgroundCaptureError ||
-            m_lastBackgroundCaptureLogTick == 0 ||
-            now - m_lastBackgroundCaptureLogTick >= 30000)
-        {
-            LOG_G_WARNING_NODE(
-                L"ui.glass",
-                L"background_capture_bitblt_failed",
-                L"error=%lu size=%dx%d origin=(%d,%d) hwnd=%p fallback=last_valid_cache",
-                error,
-                w,
-                h,
-                clientOrigin.x,
-                clientOrigin.y,
-                m_hWnd);
-            m_lastBackgroundCaptureError = error;
-            m_lastBackgroundCaptureLogTick = now;
-        }
-        SelectObject(mdc, oldBitmap);
-        DeleteObject(bmp);
-        DeleteDC(mdc);
-        ReleaseDC(nullptr, sdc);
-        return false;
-    }
-
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = w;
-    bi.bmiHeader.biHeight = -h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    m_pixbuf.resize(w * h);
-    int scanLines = GetDIBits(mdc, bmp, 0, h, m_pixbuf.data(), &bi, DIB_RGB_COLORS);
-    if (scanLines != h)
-    {
-        LOG_G_ERROR_NODE(
-            L"ui.glass",
-            L"background_capture_getdibits_failed",
-            L"error=%lu scanLines=%d expected=%d size=%dx%d hwnd=%p",
-            GetLastError(),
-            scanLines,
-            h,
-            w,
-            h,
-            m_hWnd);
-        m_pixbuf.clear();
-        SelectObject(mdc, oldBitmap);
-        DeleteObject(bmp);
-        DeleteDC(mdc);
-        ReleaseDC(nullptr, sdc);
-        return false;
-    }
-    for (int i = 0; i < w * h; i++)
-        m_pixbuf[i] |= 0xFF000000;
-
-    SelectObject(mdc, oldBitmap);
-    DeleteObject(bmp);
-    DeleteDC(mdc);
-    ReleaseDC(nullptr, sdc);
-
-    if (m_bgCap)
-    {
-        D2D1_SIZE_U size = m_bgCap->GetPixelSize();
-        if (size.width != (UINT32)w || size.height != (UINT32)h)
-        {
-            LOG_G_DEBUG_NODE(
-                L"ui.glass",
-                L"background_capture_bitmap_recreated",
-                L"reason=size_changed old=%ux%u new=%dx%d hwnd=%p",
-                size.width,
-                size.height,
-                w,
-                h,
-                m_hWnd);
-            m_bgCap.Reset();
-        }
-        else
-        {
-            FLOAT bmpDpiX = 96.0f;
-            FLOAT bmpDpiY = 96.0f;
-            FLOAT rtDpiX = 96.0f;
-            FLOAT rtDpiY = 96.0f;
-            m_bgCap->GetDpi(&bmpDpiX, &bmpDpiY);
-            m_rt->GetDpi(&rtDpiX, &rtDpiY);
-            if (fabsf(bmpDpiX - rtDpiX) > 0.5f || fabsf(bmpDpiY - rtDpiY) > 0.5f)
-            {
-                LOG_G_DEBUG_NODE(
-                    L"ui.glass",
-                    L"background_capture_bitmap_recreated",
-                    L"reason=dpi_changed bitmapDpi=%.1fx%.1f rtDpi=%.1fx%.1f hwnd=%p",
-                    bmpDpiX,
-                    bmpDpiY,
-                    rtDpiX,
-                    rtDpiY,
-                    m_hWnd);
-                m_bgCap.Reset();
-            }
-        }
-    }
-
-    if (m_bgCap)
-    {
-        HRESULT copyHr = m_bgCap->CopyFromMemory(nullptr, m_pixbuf.data(), w * 4);
-        if (FAILED(copyHr))
-        {
-            LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_copy_failed", L"hr=0x%08X size=%dx%d hwnd=%p", copyHr, w, h, m_hWnd);
-            m_bgCap.Reset();
-        }
-    }
-    if (!m_bgCap)
-    {
-        float dx = 96.0f, dy = 96.0f;
-        m_rt->GetDpi(&dx, &dy);
-        D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dx, dy);
-        HRESULT createHr = m_rt->CreateBitmap(D2D1::SizeU(w, h), m_pixbuf.data(), w * 4, &props, &m_bgCap);
-        if (FAILED(createHr))
-        {
-            LOG_G_ERROR_NODE(
-                L"ui.glass",
-                L"background_capture_create_d2d_bitmap_failed",
-                L"hr=0x%08X size=%dx%d dpi=%.1fx%.1f hwnd=%p",
-                createHr,
-                w,
-                h,
-                dx,
-                dy,
-                m_hWnd);
-        }
-    }
-    m_pixbuf.clear();
-    if (m_bgCap)
-    {
-        m_lastBackgroundCaptureError = ERROR_SUCCESS;
-        m_lastBackgroundCaptureLogTick = 0;
-    }
-    double elapsedMs = PerfNowMs() - captureStartMs;
-    static ULONGLONG s_lastCaptureLogTick = 0;
-    if (ShouldLogPerf(s_lastCaptureLogTick, elapsedMs, 12.0))
-    {
-        FLOAT dpiX = 96.0f;
-        FLOAT dpiY = 96.0f;
-        m_rt->GetDpi(&dpiX, &dpiY);
-        LOG_G_WARNING_NODE(
-            L"ui.glass",
-            L"background_capture_slow",
-            L"elapsedMs=%.2f thresholdMs=12.00 size=%dx%d dpi=%.1fx%.1f origin=(%d,%d) hasBitmap=%d hwnd=%p",
-            elapsedMs,
-            w,
-            h,
-            dpiX,
-            dpiY,
-            clientOrigin.x,
-            clientOrigin.y,
-            m_bgCap ? 1 : 0,
-            m_hWnd);
-    }
-    return m_bgCap != nullptr;
+    return m_backgroundCapture.Capture(m_hWnd, m_rt.Get());
 }
 
 void GlassWindow::CompositeBackgroundToCache()
 {
-    if (!m_rt || !m_bgCap) return;
+    if (!m_rt || !m_backgroundCapture.Bitmap()) return;
 
     double compositeStartMs = PerfNowMs();
     D2D1_SIZE_F rtSize = m_rt->GetSize();
@@ -1032,7 +818,7 @@ void GlassWindow::CompositeBackgroundToCache()
 
         if (m_blurEffect && m_satEffect)
         {
-            m_blurEffect->SetInput(0, m_bgCap.Get());
+            m_blurEffect->SetInput(0, m_backgroundCapture.Bitmap());
             m_blurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, cfg.blur);
             m_blurEffect->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_HARD);
 
@@ -1047,13 +833,13 @@ void GlassWindow::CompositeBackgroundToCache()
         }
         else
         {
-            dc->DrawImage(m_bgCap.Get());
+            dc->DrawImage(m_backgroundCapture.Bitmap());
         }
         dc->Release();
     }
     else
     {
-        bmpRt->DrawBitmap(m_bgCap.Get(), D2D1::RectF(0, 0, w, h));
+        bmpRt->DrawBitmap(m_backgroundCapture.Bitmap(), D2D1::RectF(0, 0, w, h));
     }
 
     // B. Diagonal Specular Radial Glow (Part A of Layer 3)
@@ -1447,9 +1233,9 @@ void GlassWindow::DoPaint()
         {
             DrawBackgroundFullTarget(m_bgFinal.Get());
         }
-        else if (m_bgCap)
+        else if (m_backgroundCapture.Bitmap())
         {
-            DrawBackgroundFullTarget(m_bgCap.Get());
+            DrawBackgroundFullTarget(m_backgroundCapture.Bitmap());
         }
         else
         {
@@ -1497,7 +1283,7 @@ void GlassWindow::DoPaint()
             (int)m_bgCaptureDirty,
             (int)m_bgCompositeDirty,
             m_bgFinal ? 1 : 0,
-            m_bgCap ? 1 : 0,
+            m_backgroundCapture.Bitmap() ? 1 : 0,
             (int)m_themeTransitionActive,
             (int)m_animState,
             m_hWnd);

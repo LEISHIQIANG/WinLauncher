@@ -1,5 +1,6 @@
 #pragma once
 #include "BaseWindow.h"
+#include "GlassBackgroundCapture.h"
 #include "App/AppContext.h"
 #include "UI/Render/Compositor.h"
 #include "ShadowWindow.h"
@@ -99,14 +100,11 @@ protected:
     bool                          m_d2dHardwareAccelerationEnabled = true;
 
     // Background capture
-    ComPtr<ID2D1Bitmap>       m_bgCap;    // raw screen capture
+    GlassBackgroundCapture    m_backgroundCapture;  // raw screen capture (owned collaborator)
     ComPtr<ID2D1Bitmap>       m_bgFinal;  // pre-composited (blur + sheen + tint + border)
     ComPtr<ID2D1BitmapRenderTarget> m_compositeRt;  // cached composite RT
-    std::vector<DWORD>        m_pixbuf;
     bool                      m_bgCaptureDirty = true;
     bool                      m_bgCompositeDirty = true;
-    DWORD                     m_lastBackgroundCaptureError = ERROR_SUCCESS;
-    ULONGLONG                 m_lastBackgroundCaptureLogTick = 0;
 
     // Cached effects and resources for CompositeBackgroundToCache
     ComPtr<ID2D1Effect>       m_blurEffect;

@@ -225,6 +225,7 @@ $pluginAbiSource = Read-RepoFile "WinLauncher\SDK\include\WinLauncher\WinLaunche
 $networkPluginSource = Read-RepoFile "plugins\network_tools\network_tools.cpp"
 $commandVariableSource = Read-RepoFile "WinLauncher\Services\CommandVariableService.cpp"
 $glassWindowSource = Read-RepoFile "WinLauncher\GlassWindow.cpp"
+$glassCaptureSource = Read-RepoFile "WinLauncher\GlassBackgroundCapture.cpp"
 $shadowWindowSource = Read-RepoFile "WinLauncher\ShadowWindow.cpp"
 $shortcutDialogSource = Read-RepoFile "WinLauncher\Config\ShortcutDialog.cpp"
 $confirmWindowSource = Read-RepoFile "WinLauncher\Config\ConfirmWindow.cpp"
@@ -863,9 +864,9 @@ Add-TestResult `
     -Passed (
         $glassWindowSource -match 'bool GlassWindow::CaptureBackground\(\)' -and
         $glassWindowSource -match 'bool GlassWindow::RefreshBackgroundCache\(\)' -and
-        $glassWindowSource -match 'fallback=last_valid_cache' -and
+        $glassCaptureSource -match 'fallback=last_valid_cache' -and
         $glassWindowSource -match 'm_bgCompositeDirty = captured' -and
-        $glassWindowSource -match 'now - m_lastBackgroundCaptureLogTick >= 30000' -and
+        $glassCaptureSource -match 'now - m_lastLogTick >= 30000' -and
         $glassWindowSource -match 'dwm_backdrop_disable_unsupported'
     ) `
     -Detail "Transient desktop capture failures must not rebuild from stale pixels or flood warning logs"
