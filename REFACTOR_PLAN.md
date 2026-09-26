@@ -147,9 +147,13 @@
 
 ## 9. 进度跟踪
 
-- [ ] 阶段 1 PopupWindow：P1-1 ☐ P1-2 ☐ P1-3 ☐ P1-4 ☐ P1-5 ☐ P1-6 ☐ P1-7 ☐ P1-8 ☐
+- [ ] 阶段 1 PopupWindow：P1-1 ✅ P1-2 ✅ P1-3 ✅ P1-4 ✅ P1-5 ✅ P1-6 ☐ P1-7 ☐ P1-8 ☐（4104 → 3433 行）
 - [ ] 阶段 2 SettingsPage：S1 ☐ S2 ☐ S3 ☐ S4 ☐ S5 ☐ S6 ☐
 - [ ] 阶段 3 ConfigWindow：C1 ☐ C2 ☐ C3 ☐ C4 ☐ C5 ☐ C6 ☐
 - [ ] 阶段 4 ShortcutPage：K1 ☐ K2 ☐ K3 ☐ K4 ☐ K5 ☐ K6 ☐
 - [ ] 阶段 5 PluginManager：M1 ☐ M2 ☐ M3 ☐ M4 ☐ M5 ☐ M6 ☐
 - [ ] 阶段 6 GlassWindow：G1 ☐ G2 ☐ G3 ☐ G4 ☐ G5 ☐ G6 ☐
+
+> 执行注记（2026-09-26）：P1-1~P1-5 已按计划落地，每片独立提交并通过 Release 构建、`maintenance_check.ps1` 与 `tests\run_tests.ps1`。
+> 期间同步更新了 `tests\project_static_tests.ps1` 中盯源码位置的断言（指向新的 Popup/ 文件）。
+> 本机 MSBuild 实际路径为 `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe`（MAINTENANCE.md 中 E 盘路径失效）。
