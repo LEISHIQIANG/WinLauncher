@@ -74,6 +74,7 @@
     <ClCompile Include="Config\SettingsTabHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsPageHitTest.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsControlKit.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsPresetMenus.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsGeneralView.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsPluginView.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsAppearanceView.cpp"><Filter>源文件</Filter></ClCompile>
@@ -491,6 +492,7 @@
     <ClInclude Include="Config\SettingsTabHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsPageLayout.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsControlKit.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsPresetMenus.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsGeneralView.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsPluginView.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsAppearanceView.h"><Filter>头文件</Filter></ClInclude>
