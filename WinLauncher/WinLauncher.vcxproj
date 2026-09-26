@@ -178,6 +178,7 @@
     <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="Config\ConfigWindow.cpp" />
     <ClCompile Include="Config\ConfigWindowSettings.cpp" />
+    <ClCompile Include="Config\ShortcutHistoryController.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
     <ClCompile Include="Config\SceneSettingsWindow.cpp" />
@@ -335,6 +336,7 @@
     <ClInclude Include="UI\Render\Compositor.h" />
     <!-- Config UI -->
     <ClInclude Include="Config\ConfigWindow.h" />
+    <ClInclude Include="Config\ShortcutHistoryController.h" />
     <ClInclude Include="Config\CategoryList.h" />
     <ClInclude Include="Config\ContextMenu.h" />
     <ClInclude Include="Config\SceneSettingsWindow.h" />

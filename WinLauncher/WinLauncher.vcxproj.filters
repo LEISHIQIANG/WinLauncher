@@ -93,6 +93,9 @@
     <ClCompile Include="Config\ConfigWindowSettings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\ShortcutHistoryController.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\CategoryList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -293,6 +296,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\ConfigWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Config\ShortcutHistoryController.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Config\CategoryList.h">

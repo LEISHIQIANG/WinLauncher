@@ -5,6 +5,7 @@
 #include "../Contracts/IIconService.h"
 #include "IConfigWindow.h"
 #include "CategoryList.h"
+#include "ShortcutHistoryController.h"
 #include "ShortcutPage.h"
 #include "SettingsPage.h"
 #include "DropDownMenu.h"
@@ -212,24 +213,6 @@ private:
     bool UndoShortcutHistory();
     bool RedoShortcutHistory();
 
-    struct ShortcutHistoryPageState
-    {
-        int pageIndex = -1;
-        std::wstring pageName;
-        std::vector<Model::ShortcutInfo> shortcuts;
-    };
-
-    struct ShortcutHistorySnapshot
-    {
-        std::vector<ShortcutHistoryPageState> pages;
-        int currentCategory = 0;
-    };
-    ShortcutHistorySnapshot CaptureShortcutHistorySnapshot() const;
-    void ApplyShortcutHistorySnapshot(const ShortcutHistorySnapshot& snapshot);
-    int ResolveShortcutHistoryPageIndex(const ShortcutHistoryPageState& pageState, std::vector<bool>& usedPages) const;
-    void RestoreShortcutHistoryPage(RendPopupPage& page, const std::vector<Model::ShortcutInfo>& shortcuts);
-    static bool ShortcutHistorySnapshotsEqual(const ShortcutHistorySnapshot& a, const ShortcutHistorySnapshot& b);
-
     int m_lastLoadShortcutCount = 0;
     int m_lastLoadMissingIcons = 0;
     std::shared_ptr<IconBackfillState> m_iconBackfill;
@@ -276,7 +259,5 @@ private:
     double GetTimeInSeconds();
 
     int m_ignoreConfigChangedCount = 0;
-    std::deque<ShortcutHistorySnapshot> m_undoShortcutHistory;
-    std::deque<ShortcutHistorySnapshot> m_redoShortcutHistory;
-    bool m_applyingShortcutHistory = false;
+    ShortcutHistoryController m_shortcutHistory;
 };
