@@ -21,7 +21,7 @@ class PopupIconPresenter
 {
 public:
     PopupIconPresenter() = default;
-    ~PopupIconPresenter() = default;
+    ~PopupIconPresenter() { CancelRefresh(nullptr, false); }
 
     void EnsureIcons(PopupWindow* window);
     void RefreshIcons(PopupWindow* window, bool forceRefresh, bool showFeedback);
