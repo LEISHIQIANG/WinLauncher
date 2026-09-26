@@ -1,6 +1,7 @@
 #pragma once
 #include "ConfigPage.h"
 #include "ShortcutDialogController.h"
+#include "ShortcutGridViewHelper.h"
 #include "../ShortcutManager.h"
 #include "../App/BackgroundTaskService.h"
 #include <vector>
@@ -145,13 +146,9 @@ private:
     bool m_trackMouse;
 
     // Cached D2D brushes for OnPaint
-    struct BrushCacheEntry
+    ShortcutBrushCache m_brushCache;
+    ComPtr<ID2D1SolidColorBrush> GetOrCreateBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color)
     {
-        D2D1_COLOR_F color;
-        ComPtr<ID2D1SolidColorBrush> brush;
-    };
-    std::vector<BrushCacheEntry> m_brushCache;
-    std::unordered_map<ID2D1Bitmap*, ComPtr<ID2D1BitmapBrush>> m_bmpBrushCache;
-    ComPtr<ID2D1SolidColorBrush> GetOrCreateBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color);
-    ComPtr<ID2D1BitmapBrush> GetOrCreateBitmapBrush(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bmp);
+        return m_brushCache.GetOrCreateSolidBrush(rt, color);
+    }
 };

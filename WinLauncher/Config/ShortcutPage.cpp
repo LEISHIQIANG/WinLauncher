@@ -71,7 +71,7 @@ ShortcutPage::~ShortcutPage()
         m_batchFaviconState->owner = nullptr;
         ++m_batchFaviconState->generation;
     }
-    m_bmpBrushCache.clear();
+    m_brushCache.Clear();
     if (m_deleteCursor)
     {
         DestroyCursor(m_deleteCursor);
@@ -129,8 +129,7 @@ void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
     m_hoveredShortcut = -1;
     m_hoveredAddShortcut = false;
     m_lastRt = nullptr;
-    m_brushCache.clear();
-    m_bmpBrushCache.clear();
+    m_brushCache.Clear();
 }
 
 ShortcutDialogController::DialogHostContext ShortcutPage::BuildDialogHostContext() const
@@ -183,7 +182,7 @@ void ShortcutPage::ShowBuiltinIconDialog()
 
 void ShortcutPage::UpdateTheme()
 {
-    m_brushCache.clear();
+    m_brushCache.Clear();
     if (m_pageData)
     {
         for (auto* bmp : m_pageData->iconBitmaps)
@@ -257,23 +256,14 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         if (startSlot < 0) startSlot = 0;
         if (startSlot > n - k) startSlot = n - k;
 
-        D2D1_COLOR_F phClr = UIStyle::ThemeColor::Accent().d2d;
-        phClr.a = 0.18f;
-        auto placeholderBrush = GetOrCreateBrush(rt, phClr);
-        if (placeholderBrush)
+        for (int j = 0; j < k; j++)
         {
-            for (int j = 0; j < k; j++)
-            {
-                int targetSlot = startSlot + j;
-                int col = targetSlot % 5;
-                int row = targetSlot / 5;
-                float X_insert = (float)(160 + col * 72);
-                float Y_insert = std::roundf(72.0f + row * 72.0f - m_scrollY);
-
-                D2D1_RECT_F insertRect = D2D1::RectF(X_insert, Y_insert, X_insert + 62, Y_insert + 62);
-                D2D1_ROUNDED_RECT roundedInsert = D2D1::RoundedRect(insertRect, 8.0f, 8.0f);
-                rt->DrawRoundedRectangle(roundedInsert, placeholderBrush.Get(), UIStyle::Metrics::EmphasisStroke());
-            }
+            int targetSlot = startSlot + j;
+            int col = targetSlot % 5;
+            int row = targetSlot / 5;
+            float X_insert = (float)(160 + col * 72);
+            float Y_insert = std::roundf(72.0f + row * 72.0f - m_scrollY);
+            ShortcutGridViewHelper::RenderInsertionSlot(rt, m_brushCache, X_insert, Y_insert);
         }
     }
 
@@ -288,60 +278,12 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         float Y = std::roundf(m_shortcutStates[i].currentY - m_scrollY);
 
         bool isHovered = (i == m_hoveredShortcut) && !m_dragActive;
-        D2D1_RECT_F cardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
-        D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 8.0f, 8.0f);
-
         bool isSelected = m_shortcutStates[i].selected;
-        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
-        float alphaBg = isHovered ? 0.105f : 0.035f;
-        float alphaBorder = isHovered ? 0.18f : 0.065f;
+        ID2D1Bitmap* iconBmp = (i < (int)m_pageData->iconBitmaps.size()) ? m_pageData->iconBitmaps[i] : nullptr;
+        float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
 
-        D2D1_COLOR_F selBg = UIStyle::ThemeColor::Accent().d2d;
-        selBg.a = isHovered ? 0.20f : 0.13f;
-        D2D1_COLOR_F normBg = baseClr;
-        normBg.a = alphaBg;
-
-        auto bgBrush = GetOrCreateBrush(rt, isSelected ? selBg : normBg);
-        if (bgBrush)
-        {
-            rt->FillRoundedRectangle(roundedCard, bgBrush.Get());
-        }
-
-        D2D1_COLOR_F selBorder = UIStyle::ThemeColor::Accent().d2d;
-        selBorder.a = isHovered ? 0.42f : 0.30f;
-        D2D1_COLOR_F normBorder = baseClr;
-        normBorder.a = alphaBorder;
-
-        auto borderBrush = GetOrCreateBrush(rt, isSelected ? selBorder : normBorder);
-        if (borderBrush)
-        {
-            rt->DrawRoundedRectangle(roundedCard, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
-        }
-
-        // Draw Icon (Preview)
-        if (i < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[i])
-        {
-            float iconX = X + 19;
-            float iconY = Y + 8;
-            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)ICON_SIZE, (float)ICON_SIZE);
-            const float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
-            rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, revealAlpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-        }
-
-        // Label
-        if (tfDefault)
-        {
-            D2D1_COLOR_F tbClr = UIStyle::ThemeColor::TextNormal().d2d;
-            tbClr.a = 0.9f;
-            auto tb = GetOrCreateBrush(rt, tbClr);
-            if (tb)
-            {
-                std::wstring dispName = m_pageData->shortcuts[i].name;
-                if (dispName.length() > 6) dispName = dispName.substr(0, 6) + L"…";
-                rt->DrawTextW(dispName.c_str(), (UINT32)dispName.size(), tfDefault,
-                    D2D1::RectF(X + 1, Y + 36, X + 61, Y + 58), tb.Get());
-            }
-        }
+        ShortcutGridViewHelper::RenderCardItem(rt, m_brushCache, X, Y, isSelected, isHovered, false,
+            iconBmp, revealAlpha, m_pageData->shortcuts[i].name, tfDefault);
     }
 
     // 3. Draw "+ 添加" Card
@@ -350,43 +292,7 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         UpdateAddShortcutTarget(!m_pendingDeleteIndices.empty(), !m_addCardInitialized);
         float X = std::roundf(m_addCardCurrentX);
         float Y = std::roundf(m_addCardCurrentY - m_scrollY);
-
-        D2D1_RECT_F addCardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
-        D2D1_ROUNDED_RECT roundedAdd = D2D1::RoundedRect(addCardRect, 8.0f, 8.0f);
-
-        D2D1_COLOR_F baseClr = UIStyle::ThemeColor::ThemeBase().d2d;
-        float alphaBg = m_hoveredAddShortcut ? 0.09f : 0.02f;
-        float alphaBorder = m_hoveredAddShortcut ? 0.16f : 0.065f;
-
-        auto bgBrush = GetOrCreateBrush(rt, D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg));
-        if (bgBrush)
-        {
-            rt->FillRoundedRectangle(roundedAdd, bgBrush.Get());
-        }
-
-        auto borderBrush = GetOrCreateBrush(rt, D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder));
-        if (borderBrush)
-        {
-            rt->DrawRoundedRectangle(roundedAdd, borderBrush.Get(), UIStyle::Metrics::ControlStroke());
-        }
-
-        // Draw Plus sign
-        auto plBrush = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextMuted().d2d);
-        if (plBrush)
-        {
-            rt->DrawLine(D2D1::Point2F(X + 31, Y + 14), D2D1::Point2F(X + 31, Y + 26), plBrush.Get(), UIStyle::Metrics::IconStroke());
-            rt->DrawLine(D2D1::Point2F(X + 25, Y + 20), D2D1::Point2F(X + 37, Y + 20), plBrush.Get(), UIStyle::Metrics::IconStroke());
-        }
-
-        // Label
-        if (tfDefault)
-        {
-            auto tb = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextMuted().d2d);
-            if (tb)
-            {
-                rt->DrawTextW(L"添加", 2, tfDefault, D2D1::RectF(X + 1, Y + 36, X + 61, Y + 58), tb.Get());
-            }
-        }
+        ShortcutGridViewHelper::RenderAddCard(rt, m_brushCache, X, Y, m_hoveredAddShortcut, tfDefault);
     }
 
     rt->PopAxisAlignedClip();
@@ -402,48 +308,11 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
             float X = std::roundf(m_shortcutStates[i].currentX);
             float Y = std::roundf(m_shortcutStates[i].currentY - m_scrollY);
+            ID2D1Bitmap* iconBmp = (i < (int)m_pageData->iconBitmaps.size()) ? m_pageData->iconBitmaps[i] : nullptr;
+            float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
 
-            D2D1_RECT_F cardRect = D2D1::RectF(X, Y, X + 62, Y + 62);
-            D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 8.0f, 8.0f);
-
-            D2D1_COLOR_F dragBg = UIStyle::ThemeColor::Accent().d2d;
-            dragBg.a = 0.20f;
-            auto bgBrush = GetOrCreateBrush(rt, dragBg);
-            if (bgBrush)
-            {
-                rt->FillRoundedRectangle(roundedCard, bgBrush.Get());
-            }
-
-            D2D1_COLOR_F dragBorder = UIStyle::ThemeColor::Accent().d2d;
-            dragBorder.a = 0.42f;
-            auto borderBrush = GetOrCreateBrush(rt, dragBorder);
-            if (borderBrush)
-            {
-                rt->DrawRoundedRectangle(roundedCard, borderBrush.Get(), UIStyle::Metrics::EmphasisStroke());
-            }
-
-            // Draw Icon (Preview)
-            if (i < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[i])
-            {
-                float iconX = X + 19;
-                float iconY = Y + 8;
-                D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)ICON_SIZE, (float)ICON_SIZE);
-                const float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
-                rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, revealAlpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-            }
-
-            // Label
-            if (tfDefault)
-            {
-                auto tb = GetOrCreateBrush(rt, UIStyle::ThemeColor::TextNormal().d2d);
-                if (tb)
-                {
-                    std::wstring dispName = m_pageData->shortcuts[i].name;
-                    if (dispName.length() > 6) dispName = dispName.substr(0, 6) + L"…";
-                    rt->DrawTextW(dispName.c_str(), (UINT32)dispName.size(), tfDefault,
-                        D2D1::RectF(X + 1, Y + 36, X + 61, Y + 58), tb.Get());
-                }
-            }
+            ShortcutGridViewHelper::RenderCardItem(rt, m_brushCache, X, Y, true, false, true,
+                iconBmp, revealAlpha, m_pageData->shortcuts[i].name, tfDefault);
         }
     }
 }
@@ -1105,49 +974,6 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     repaint = true;
 }
 
-ComPtr<ID2D1SolidColorBrush> ShortcutPage::GetOrCreateBrush(ID2D1HwndRenderTarget* rt, const D2D1_COLOR_F& color)
-{
-    for (auto& entry : m_brushCache)
-    {
-        if (entry.color.r == color.r && entry.color.g == color.g &&
-            entry.color.b == color.b && entry.color.a == color.a)
-        {
-            return entry.brush;
-        }
-    }
-
-    ComPtr<ID2D1SolidColorBrush> brush;
-    if (rt)
-    {
-        rt->CreateSolidColorBrush(color, &brush);
-        if (brush)
-        {
-            m_brushCache.push_back({ color, brush });
-        }
-    }
-    return brush;
-}
-
-ComPtr<ID2D1BitmapBrush> ShortcutPage::GetOrCreateBitmapBrush(ID2D1HwndRenderTarget* rt, ID2D1Bitmap* bmp)
-{
-    auto it = m_bmpBrushCache.find(bmp);
-    if (it != m_bmpBrushCache.end())
-    {
-        return it->second;
-    }
-
-    ComPtr<ID2D1BitmapBrush> brush;
-    if (rt && bmp)
-    {
-        rt->CreateBitmapBrush(bmp, &brush);
-        if (brush)
-        {
-            m_bmpBrushCache[bmp] = brush;
-        }
-    }
-    return brush;
-}
-
 void ShortcutPage::EnsureIcons(ID2D1HwndRenderTarget* rt)
 {
     if (!m_pageData) return;
@@ -1165,8 +991,7 @@ void ShortcutPage::EnsureIcons(ID2D1HwndRenderTarget* rt)
         m_lastRt = rt;
         m_lastDpi = currentDpi;
         m_lastIconBitmapSize = iconBitmapSize;
-        m_brushCache.clear();
-        m_bmpBrushCache.clear();
+        m_brushCache.Clear();
     }
 
     int n = (int)m_pageData->shortcuts.size();
