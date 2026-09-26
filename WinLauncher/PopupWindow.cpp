@@ -567,26 +567,28 @@ void PopupWindow::RebuildRenderPagesForScene(bool configurationReloaded)
         RefreshIcons(false);
 }
 
+PopupLayout::WindowMetrics PopupWindow::ComputeWindowMetrics() const
+{
+    PopupLayout::WindowMetricsInputs inputs;
+    inputs.columns = GetColumns();
+    inputs.rows = GetRows();
+    inputs.dockRows = GetDockHeight();
+    inputs.cellWidth = CellWidth();
+    inputs.cellHeight = CellHeight();
+    inputs.wndPadding = GetWndPadding();
+    inputs.iconGap = GetIconGap();
+    inputs.topBarHeight = GetHeaderLayout().topBarHeight;
+    return PopupLayout::ComputeWindowMetrics(inputs);
+}
+
 void PopupWindow::UpdateWindowSize()
 {
     HWND hwnd = GetHWND();
     if (!hwnd) return;
 
-    int cols = GetColumns();
-    int rows = GetRows();
-    int w = cols * CellWidth() + GetWndPadding() * 2 - GetIconGap();
-    int indicatorHeight = 0;
-    int topBarHeight = GetHeaderLayout().topBarHeight;
-    int dockRows = GetDockHeight();
-    int ch = CellHeight();
-    int wndPad = GetWndPadding();
-    int iconGap = GetIconGap();
-    int mainGridCardBottom = wndPad + rows * ch - iconGap + topBarHeight;
-    int lineY = mainGridCardBottom + wndPad;
-    int dockTopY = lineY + wndPad;
-    int h = dockTopY + dockRows * ch - iconGap + wndPad;
-    if (w > 900) w = 900;
-    if (h > 900) h = 900;
+    const PopupLayout::WindowMetrics metrics = ComputeWindowMetrics();
+    int w = metrics.width;
+    int h = metrics.height;
 
     HMONITOR hm = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{ sizeof(mi) };
@@ -813,21 +815,10 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         ApplyRefreshedIcons(m_iconRefresh.WaitForCompletion(state, 0));
 
     // 2. Calculate window dimensions using user settings
-    int cols = this->GetColumns();
-    int rows = this->GetRows();
-    int w = cols * this->CellWidth() + this->GetWndPadding() * 2 - this->GetIconGap();
-    int indicatorHeight = 0;
-    int topBarHeight = this->GetHeaderLayout().topBarHeight;
-    int dockRows = this->GetDockHeight();
-    int ch = this->CellHeight();
+    const PopupLayout::WindowMetrics metrics = ComputeWindowMetrics();
+    int w = metrics.width;
+    int h = metrics.height;
     int wndPad = this->GetWndPadding();
-    int iconGap = this->GetIconGap();
-    int mainGridCardBottom = wndPad + rows * ch - iconGap + topBarHeight;
-    int lineY = mainGridCardBottom + wndPad;
-    int dockTopY = lineY + wndPad;
-    int h = dockTopY + dockRows * ch - iconGap + wndPad;
-    if (w > 900) w = 900;
-    if (h > 900) h = 900;
 
     HMONITOR hm = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{ sizeof(mi) };
@@ -2258,13 +2249,11 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
     int cellMarginY = GetCellMarginY();
     float iconRad = (float)GetIconRadius();
     float cardRad = iconRad + 2.0f;
-    int topBarHeight = GetHeaderLayout().topBarHeight;
 
     // Gap between upper section and dock = 2 * wndPad, dividing line in the middle
-    int mainRows = GetRows();
-    int mainGridCardBottom = wndPad + mainRows * ch - iconGap + topBarHeight;
-    int lineY = mainGridCardBottom + wndPad;
-    int dockTopY = lineY + wndPad;
+    const PopupLayout::WindowMetrics windowMetrics = ComputeWindowMetrics();
+    const int lineY = windowMetrics.lineY;
+    const int dockTopY = windowMetrics.dockTopY;
 
     // Separator line
     RECT cr2; GetClientRect(GetHWND(), &cr2);
@@ -2590,21 +2579,10 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         if (prcNewWindow)
         {
             float newDpiScale = UIStyle::Scaling::EffectiveScaleFactor(LOWORD(wParam) / 96.0f);
-            
-            int cols = GetColumns();
-            int rows = GetRows();
-            int w = cols * CellWidth() + GetWndPadding() * 2 - GetIconGap();
-            int topBarHeight = GetHeaderLayout().topBarHeight;
-            int dockRows = GetDockHeight();
-            int ch = CellHeight();
-            int wndPad = GetWndPadding();
-            int iconGap = GetIconGap();
-            int mainGridCardBottom = wndPad + rows * ch - iconGap + topBarHeight;
-            int lineY = mainGridCardBottom + wndPad;
-            int dockTopY = lineY + wndPad;
-            int h = dockTopY + dockRows * ch - iconGap + wndPad;
-            if (w > 900) w = 900;
-            if (h > 900) h = 900;
+
+            const PopupLayout::WindowMetrics metrics = ComputeWindowMetrics();
+            int w = metrics.width;
+            int h = metrics.height;
 
             int w_px = (int)(w * newDpiScale);
             int h_px = (int)(h * newDpiScale);

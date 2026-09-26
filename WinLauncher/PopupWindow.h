@@ -12,6 +12,7 @@
 #include "Popup/PopupFileSelectionController.h"
 #include "Popup/PopupIconRefreshController.h"
 #include "Popup/PopupIconCache.h"
+#include "Popup/PopupLayout.h"
 #include "Popup/PopupWheelState.h"
 #include "Popup/PopupSearchService.h"
 #include <mutex>
@@ -50,6 +51,7 @@ public:
     int GetHeaderSizeLevel() const;
 
     void UpdateWindowSize();
+    PopupLayout::WindowMetrics ComputeWindowMetrics() const;
 
 protected:
     virtual const wchar_t* ClassName() const override { return L"WinLauncherPopup"; }
