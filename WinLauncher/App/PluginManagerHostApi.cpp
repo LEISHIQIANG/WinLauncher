@@ -652,12 +652,7 @@ bool WL_CALL PluginManager::HostIsDialogCancelled(void* hostContext, uint64_t ha
     auto* ctx = reinterpret_cast<HostContext*>(hostContext);
     if (!ctx || !ctx->manager || !ctx->manager->HasPermission(ctx->pluginId, L"ui.notify") || !outCancelled)
         return false;
-    std::lock_guard<std::mutex> lock(ctx->manager->m_dialogMutex);
-    auto it = ctx->manager->m_dialogStates.find(handle);
-    if (it == ctx->manager->m_dialogStates.end())
-        return false;
-    *outCancelled = it->second.cancelled;
-    return true;
+    return ctx->manager->IsDialogCancelled(handle, outCancelled);
 }
 
 bool WL_CALL PluginManager::HostShowResultInPanel(void* hostContext, const wchar_t* title, const wchar_t* content, const wchar_t*)

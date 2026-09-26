@@ -141,6 +141,7 @@
     <ClCompile Include="App\PluginInstaller.cpp" />
     <ClCompile Include="App\PluginConfigStore.cpp" />
     <ClCompile Include="App\PluginTextUtil.cpp" />
+    <ClCompile Include="App\PluginDialogRegistry.cpp" />
     <ClCompile Include="App\PluginManager.cpp" />
     <ClCompile Include="App\PluginManagerHostApi.cpp" />
     <ClCompile Include="App\PluginManifest.cpp" />
@@ -271,6 +272,7 @@
     <ClInclude Include="App\PluginInstaller.h" />
     <ClInclude Include="App\PluginConfigStore.h" />
     <ClInclude Include="App\PluginTextUtil.h" />
+    <ClInclude Include="App\PluginDialogRegistry.h" />
     <ClInclude Include="App\PluginManager.h" />
     <ClInclude Include="App\PluginManifest.h" />
     <ClInclude Include="App\PluginStateStore.h" />

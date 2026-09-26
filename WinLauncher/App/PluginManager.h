@@ -5,6 +5,7 @@
 #include "BackgroundTaskService.h"
 #include "PluginManifest.h"
 #include "PluginStateStore.h"
+#include "PluginDialogRegistry.h"
 #include "../Model/ShortcutInfo.h"
 #include "../SDK/include/WinLauncher/WinLauncherPluginABI.h"
 #include <Windows.h>
@@ -210,16 +211,6 @@ private:
         bool slashMode = false;
     };
 
-    struct PluginDialogState
-    {
-        std::wstring pluginId;
-        std::wstring message;
-        bool cancelable = false;
-        bool cancelled = false;
-        uint64_t total = 0;
-        uint64_t current = 0;
-    };
-
     void ScanInstalled();
     bool LoadPlugin(const std::wstring& pluginId);
     void UnloadPlugin(const std::wstring& pluginId);
@@ -247,6 +238,7 @@ private:
     uint64_t RegisterDialogState(const std::wstring& pluginId, const std::wstring& message, bool cancelable, uint64_t total = 0);
     bool UpdateDialogState(uint64_t handle, const std::wstring& message, uint64_t current = 0);
     bool RemoveDialogState(uint64_t handle);
+    bool IsDialogCancelled(uint64_t handle, bool* outCancelled) const;
     static bool CopyStringResult(const std::wstring& value, WLStringResultV1* outResult);
     static bool CopyStringBuffer(const std::wstring& value, wchar_t* buffer, uint32_t bufferLength, uint32_t* requiredLength);
     static std::wstring PermissionSummary(const std::vector<std::wstring>& permissions);
@@ -308,9 +300,7 @@ private:
     bool m_searchRunning = false;
     bool m_searchCacheReady = false;
     std::vector<PluginCommandInfo> m_cachedSearchResults;
-    mutable std::mutex m_dialogMutex;
-    std::map<uint64_t, PluginDialogState> m_dialogStates;
-    uint64_t m_nextDialogHandle = 1;
+    PluginDialogRegistry m_dialogRegistry;
     bool m_initialized = false;
     std::atomic_bool m_shuttingDown = false;
     std::atomic_bool m_shutdownRequested = false;

@@ -1491,33 +1491,22 @@ bool PluginManager::WritePluginConfigValue(const std::wstring& pluginId, const s
 
 uint64_t PluginManager::RegisterDialogState(const std::wstring& pluginId, const std::wstring& message, bool cancelable, uint64_t total)
 {
-    std::lock_guard<std::mutex> lock(m_dialogMutex);
-    uint64_t handle = m_nextDialogHandle++;
-    PluginDialogState state;
-    state.pluginId = pluginId;
-    state.message = message;
-    state.cancelable = cancelable;
-    state.total = total;
-    m_dialogStates[handle] = std::move(state);
-    return handle;
+    return m_dialogRegistry.Register(pluginId, message, cancelable, total);
 }
 
 bool PluginManager::UpdateDialogState(uint64_t handle, const std::wstring& message, uint64_t current)
 {
-    std::lock_guard<std::mutex> lock(m_dialogMutex);
-    auto it = m_dialogStates.find(handle);
-    if (it == m_dialogStates.end())
-        return false;
-    if (!message.empty())
-        it->second.message = message;
-    it->second.current = current;
-    return true;
+    return m_dialogRegistry.Update(handle, message, current);
 }
 
 bool PluginManager::RemoveDialogState(uint64_t handle)
 {
-    std::lock_guard<std::mutex> lock(m_dialogMutex);
-    return m_dialogStates.erase(handle) > 0;
+    return m_dialogRegistry.Remove(handle);
+}
+
+bool PluginManager::IsDialogCancelled(uint64_t handle, bool* outCancelled) const
+{
+    return m_dialogRegistry.IsCancelled(handle, outCancelled);
 }
 
 bool PluginManager::CopyStringResult(const std::wstring& value, WLStringResultV1* outResult)
