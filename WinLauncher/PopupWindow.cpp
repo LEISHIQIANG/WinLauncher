@@ -1608,38 +1608,31 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
     float cardRad = iconRad + 2.0f;
 
     // Card backgrounds
-    for (int i = 0; i < n; i++)
-    {
-        float ix = (float)(wndPad + (i % cols) * cw);
-        float iy = (float)(wndPad + (i / cols) * ch + topBarHeight);
-        bool isSelected = (i == m_selectedSearchResult);
-        bool isHovered = (i == m_hovered);
+    D2D1_COLOR_F selectedBorderColor = UIStyle::ThemeColor::AccentHover().d2d;
+    selectedBorderColor.a = 0.42f;
 
-        D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + cw - iconGap, iy + ch - iconGap);
-        D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, cardRad, cardRad);
+    PopupRenderHelper::ShortcutCellMetrics cellMetrics;
+    cellMetrics.count = n;
+    cellMetrics.columns = cols;
+    cellMetrics.cellWidth = cw;
+    cellMetrics.cellHeight = ch;
+    cellMetrics.padding = wndPad;
+    cellMetrics.gridTop = wndPad + topBarHeight;
+    cellMetrics.gap = iconGap;
+    cellMetrics.cardCornerRadius = cardRad;
 
-        ComPtr<ID2D1SolidColorBrush> bg;
-        if (isSelected)
-        {
-            bg = GetOrCreateBrush(UIStyle::ThemeColor::AccentSubtle().d2d);
-        }
-        else if (isHovered)
-        {
-            bg = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d);
-        }
-        else
-        {
-            bg = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgNormal().d2d);
-        }
+    PopupRenderHelper::ShortcutCellBrushes cellBrushes;
+    cellBrushes.bgSelected = GetOrCreateBrush(UIStyle::ThemeColor::AccentSubtle().d2d).Get();
+    cellBrushes.bgHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d).Get();
+    cellBrushes.bgNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgNormal().d2d).Get();
+    cellBrushes.borderSelected = GetOrCreateBrush(selectedBorderColor).Get();
+    cellBrushes.borderHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderHover().d2d).Get();
+    cellBrushes.borderNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderNormal().d2d).Get();
+    cellBrushes.stroke = UIStyle::Metrics::ControlStroke();
 
-        if (bg) rt->FillRoundedRectangle(roundedCard, bg.Get());
-
-        D2D1_COLOR_F borderColor = isSelected ? UIStyle::ThemeColor::AccentHover().d2d :
-            (isHovered ? UIStyle::ThemeColor::ButtonBorderHover().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-        if (isSelected) borderColor.a = 0.42f;
-        auto border = GetOrCreateBrush(borderColor);
-        if (border) rt->DrawRoundedRectangle(roundedCard, border.Get(), UIStyle::Metrics::ControlStroke());
-    }
+    PopupRenderHelper::RenderShortcutCards(rt, cellMetrics, cellBrushes,
+        [this](int i) { return i == m_hovered; },
+        [this](int i) { return i == m_selectedSearchResult; });
 
     // Icons
     int cellMarginX = GetCellMarginX();
@@ -2068,59 +2061,45 @@ void PopupWindow::DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex)
     float cardRad = iconRad + 2.0f;
     int topBarHeight = GetHeaderLayout().topBarHeight;
 
-    // Card backgrounds
-    for (int i = 0; i < n; i++)
-    {
-        float ix = (float)(wndPad + (i % cols) * cw);
-        float iy = (float)(wndPad + (i / cols) * ch + topBarHeight);
-        bool isHovered = (pageIndex == m_currentPage && i == m_hovered);
-
-        D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + cw - iconGap, iy + ch - iconGap);
-        D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, cardRad, cardRad);
-
-        auto bg = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBgHover().d2d : UIStyle::ThemeColor::ButtonBgNormal().d2d);
-        if (bg) rt->FillRoundedRectangle(roundedCard, bg.Get());
-
-        auto border = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBorderHover().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-        if (border) rt->DrawRoundedRectangle(roundedCard, border.Get(), UIStyle::Metrics::ControlStroke());
-    }
-
-    // Icons
+    // Card backgrounds / icons / labels via the shared grid helpers
     int cellMarginX = GetCellMarginX();
     int cellMarginY = GetCellMarginY();
     int iconSize = GetIconSize();
 
-    for (int i = 0; i < n; i++)
-    {
-        float ix = (float)(wndPad + (i % cols) * cw);
-        float iy = (float)(wndPad + (i / cols) * ch + topBarHeight);
-        if (i < (int)page.iconBitmaps.size() && page.iconBitmaps[i])
-        {
-            float iconX = ix + cellMarginX;
-            float iconY = iy + cellMarginY;
-            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
+    PopupRenderHelper::ShortcutCellMetrics cellMetrics;
+    cellMetrics.count = n;
+    cellMetrics.columns = cols;
+    cellMetrics.cellWidth = cw;
+    cellMetrics.cellHeight = ch;
+    cellMetrics.padding = wndPad;
+    cellMetrics.gridTop = wndPad + topBarHeight;
+    cellMetrics.gap = iconGap;
+    cellMetrics.cardCornerRadius = cardRad;
 
-            auto* bmp = page.iconBitmaps[i];
-            DrawShortcutIcon(rt, bmp, iconRect, page.shortcuts[i].name);
-        }
-    }
+    PopupRenderHelper::ShortcutCellBrushes cellBrushes;
+    cellBrushes.bgHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d).Get();
+    cellBrushes.bgNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgNormal().d2d).Get();
+    cellBrushes.borderHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderHover().d2d).Get();
+    cellBrushes.borderNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderNormal().d2d).Get();
+    cellBrushes.stroke = UIStyle::Metrics::ControlStroke();
 
-    // Labels
+    PopupRenderHelper::RenderShortcutCards(rt, cellMetrics, cellBrushes,
+        [this, pageIndex](int i) { return pageIndex == m_currentPage && i == m_hovered; });
+
+    PopupRenderHelper::RenderCellIcons(rt, cellMetrics, cellMarginX, cellMarginY, iconSize,
+        [&page](int i) { return (i < (int)page.iconBitmaps.size()) ? page.iconBitmaps[i] : nullptr; },
+        [this, rt, &page](int i, const D2D1_RECT_F& iconRect) {
+            DrawShortcutIcon(rt, page.iconBitmaps[i], iconRect, page.shortcuts[i].name);
+        });
+
     if (m_popupTextFormat)
     {
         auto tb = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
         if (tb)
         {
-            for (int i = 0; i < n; i++)
-            {
-                int col = i % cols, row = i / cols;
-                float lx = (float)(wndPad + col * cw);
-                float ly = (float)(wndPad + row * ch + cellMarginY + iconSize + 2 + topBarHeight);
-                auto& nm = page.shortcuts[i].name;
-                rt->DrawTextW(nm.c_str(), (UINT32)nm.size(), m_popupTextFormat.Get(),
-                    D2D1::RectF(lx + 2, ly, lx + cw - iconGap - 2, ly + GetLabelHeight()),
-                    tb.Get());
-            }
+            PopupRenderHelper::RenderShortcutLabels(rt, cellMetrics, m_popupTextFormat.Get(), tb.Get(),
+                cellMarginY, iconSize, GetLabelHeight(),
+                [&page](int i) -> const std::wstring& { return page.shortcuts[i].name; });
         }
     }
 }
@@ -2237,56 +2216,41 @@ void PopupWindow::DrawDock(ID2D1HwndRenderTarget* rt)
     int maxCells = cols * dockRows;
     if (n > maxCells) n = maxCells;
 
-    // Card backgrounds — identical to DrawPage
-    for (int i = 0; i < n; i++)
-    {
-        float ix = (float)(wndPad + (i % cols) * cw);
-        float iy = (float)(dockTopY + (i / cols) * ch);
-        bool isHovered = (i == m_hoveredDock);
+    // Card backgrounds / icons / labels via the shared grid helpers
+    PopupRenderHelper::ShortcutCellMetrics cellMetrics;
+    cellMetrics.count = n;
+    cellMetrics.columns = cols;
+    cellMetrics.cellWidth = cw;
+    cellMetrics.cellHeight = ch;
+    cellMetrics.padding = wndPad;
+    cellMetrics.gridTop = dockTopY;
+    cellMetrics.gap = iconGap;
+    cellMetrics.cardCornerRadius = cardRad;
 
-        D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + cw - iconGap, iy + ch - iconGap);
-        D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, cardRad, cardRad);
+    PopupRenderHelper::ShortcutCellBrushes cellBrushes;
+    cellBrushes.bgHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgHover().d2d).Get();
+    cellBrushes.bgNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBgNormal().d2d).Get();
+    cellBrushes.borderHover = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderHover().d2d).Get();
+    cellBrushes.borderNormal = GetOrCreateBrush(UIStyle::ThemeColor::ButtonBorderNormal().d2d).Get();
+    cellBrushes.stroke = UIStyle::Metrics::ControlStroke();
 
-        auto bg = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBgHover().d2d : UIStyle::ThemeColor::ButtonBgNormal().d2d);
-        if (bg) rt->FillRoundedRectangle(roundedCard, bg.Get());
+    PopupRenderHelper::RenderShortcutCards(rt, cellMetrics, cellBrushes,
+        [this](int i) { return i == m_hoveredDock; });
 
-        auto border = GetOrCreateBrush(isHovered ? UIStyle::ThemeColor::ButtonBorderHover().d2d : UIStyle::ThemeColor::ButtonBorderNormal().d2d);
-        if (border) rt->DrawRoundedRectangle(roundedCard, border.Get(), UIStyle::Metrics::ControlStroke());
-    }
+    PopupRenderHelper::RenderCellIcons(rt, cellMetrics, cellMarginX, cellMarginY, iconSize,
+        [this](int i) { return (i < (int)m_dockPage.iconBitmaps.size()) ? m_dockPage.iconBitmaps[i] : nullptr; },
+        [this, rt](int i, const D2D1_RECT_F& iconRect) {
+            DrawShortcutIcon(rt, m_dockPage.iconBitmaps[i], iconRect, m_dockPage.shortcuts[i].name);
+        });
 
-    // Icons — identical to DrawPage
-    for (int i = 0; i < n; i++)
-    {
-        float ix = (float)(wndPad + (i % cols) * cw);
-        float iy = (float)(dockTopY + (i / cols) * ch);
-
-        if (i < (int)m_dockPage.iconBitmaps.size() && m_dockPage.iconBitmaps[i])
-        {
-            float iconX = ix + cellMarginX;
-            float iconY = iy + cellMarginY;
-            D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)iconSize, (float)iconSize);
-
-            auto* bmp = m_dockPage.iconBitmaps[i];
-            DrawShortcutIcon(rt, bmp, iconRect, m_dockPage.shortcuts[i].name);
-        }
-    }
-
-    // Labels — identical to DrawPage
     if (m_popupTextFormat)
     {
         auto tb = GetOrCreateBrush(UIStyle::ThemeColor::TextNormal().d2d);
         if (tb)
         {
-            for (int i = 0; i < n; i++)
-            {
-                int col = i % cols, row = i / cols;
-                float lx = (float)(wndPad + col * cw);
-                float ly = (float)(dockTopY + row * ch + cellMarginY + iconSize + 2);
-                auto& nm = m_dockPage.shortcuts[i].name;
-                rt->DrawTextW(nm.c_str(), (UINT32)nm.size(), m_popupTextFormat.Get(),
-                    D2D1::RectF(lx + 2, ly, lx + cw - iconGap - 2, ly + GetLabelHeight()),
-                    tb.Get());
-            }
+            PopupRenderHelper::RenderShortcutLabels(rt, cellMetrics, m_popupTextFormat.Get(), tb.Get(),
+                cellMarginY, iconSize, GetLabelHeight(),
+                [this](int i) -> const std::wstring& { return m_dockPage.shortcuts[i].name; });
         }
     }
 }

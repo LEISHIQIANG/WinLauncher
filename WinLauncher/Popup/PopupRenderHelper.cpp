@@ -1,4 +1,5 @@
 #include "PopupRenderHelper.h"
+#include "../UI/Controls/IconRenderer.h"
 
 void PopupRenderHelper::DrawSearchPlaceholder(
     ID2D1HwndRenderTarget* rt,
@@ -84,5 +85,81 @@ void PopupRenderHelper::RenderFileSelectionTimeline(
         {
             rt->DrawLine(startPt, endPt, gradientBrush.Get(), 1.5f);
         }
+    }
+}
+
+void PopupRenderHelper::RenderShortcutCards(
+    ID2D1HwndRenderTarget* rt,
+    const ShortcutCellMetrics& metrics,
+    const ShortcutCellBrushes& brushes,
+    const std::function<bool(int)>& hovered,
+    const std::function<bool(int)>& selected)
+{
+    if (!rt) return;
+    for (int i = 0; i < metrics.count; ++i)
+    {
+        const float ix = (float)(metrics.padding + (i % metrics.columns) * metrics.cellWidth);
+        const float iy = (float)(metrics.gridTop + (i / metrics.columns) * metrics.cellHeight);
+        const bool isSelected = selected && selected(i);
+        const bool isHovered = hovered && hovered(i);
+
+        const D2D1_RECT_F cardRect = D2D1::RectF(ix, iy,
+            ix + metrics.cellWidth - metrics.gap, iy + metrics.cellHeight - metrics.gap);
+        const D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, metrics.cardCornerRadius, metrics.cardCornerRadius);
+
+        ID2D1SolidColorBrush* bg = isSelected ? brushes.bgSelected
+            : (isHovered ? brushes.bgHover : brushes.bgNormal);
+        if (bg) rt->FillRoundedRectangle(roundedCard, bg);
+
+        ID2D1SolidColorBrush* border = isSelected ? brushes.borderSelected
+            : (isHovered ? brushes.borderHover : brushes.borderNormal);
+        if (border) rt->DrawRoundedRectangle(roundedCard, border, brushes.stroke);
+    }
+}
+
+void PopupRenderHelper::RenderCellIcons(
+    ID2D1HwndRenderTarget* rt,
+    const ShortcutCellMetrics& metrics,
+    int cellMarginX,
+    int cellMarginY,
+    int iconSize,
+    const std::function<ID2D1Bitmap*(int)>& bitmapFor,
+    const std::function<void(int, const D2D1_RECT_F&)>& paintIcon)
+{
+    if (!rt || !bitmapFor || !paintIcon) return;
+    for (int i = 0; i < metrics.count; ++i)
+    {
+        ID2D1Bitmap* bmp = bitmapFor(i);
+        if (!bmp) continue;
+
+        const float ix = (float)(metrics.padding + (i % metrics.columns) * metrics.cellWidth);
+        const float iy = (float)(metrics.gridTop + (i / metrics.columns) * metrics.cellHeight);
+        const D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt,
+            ix + cellMarginX, iy + cellMarginY, (float)iconSize, (float)iconSize);
+        paintIcon(i, iconRect);
+    }
+}
+
+void PopupRenderHelper::RenderShortcutLabels(
+    ID2D1HwndRenderTarget* rt,
+    const ShortcutCellMetrics& metrics,
+    IDWriteTextFormat* textFormat,
+    ID2D1SolidColorBrush* textBrush,
+    int cellMarginY,
+    int iconSize,
+    int labelHeight,
+    const std::function<const std::wstring&(int)>& textFor)
+{
+    if (!rt || !textFormat || !textBrush || !textFor) return;
+    for (int i = 0; i < metrics.count; ++i)
+    {
+        const int col = i % metrics.columns;
+        const int row = i / metrics.columns;
+        const float lx = (float)(metrics.padding + col * metrics.cellWidth);
+        const float ly = (float)(metrics.gridTop + row * metrics.cellHeight + cellMarginY + iconSize + 2);
+        const std::wstring& text = textFor(i);
+        rt->DrawTextW(text.c_str(), (UINT32)text.size(), textFormat,
+            D2D1::RectF(lx + 2, ly, lx + metrics.cellWidth - metrics.gap - 2, ly + labelHeight),
+            textBrush);
     }
 }
