@@ -91,6 +91,7 @@ $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.
 $popupSorterSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutSorter.cpp"
 $popupLauncherSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutLauncher.cpp"
 $popupInputSource = Read-RepoFile "WinLauncher\Popup\PopupWindowInput.cpp"
+$popupRenderSource = Read-RepoFile "WinLauncher\Popup\PopupWindowRender.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
@@ -421,8 +422,8 @@ Add-TestResult `
     -Passed (
         $popupSource -notmatch 'QueueShowUntilIconsReady|POPUP_ICON_PRELOAD_MAX_WAIT_MS|m_iconFallbackGeneration' -and
         $popupSource -match 'PopupWindowMessages::IconProgressTimer, 16' -and
-        $popupSource -match 'DrawShortcutIcon' -and
-        $popupSource -match 'm_iconFlashStart < 120' -and
+        $popupRenderSource -match 'DrawShortcutIcon' -and
+        $popupRenderSource -match 'm_iconFlashStart < 120' -and
         $popupSource -match 'result\.identity\s*!=\s*PopupIconCache::Key' -and
         $popupSource -match 'TakePendingForce' -and
         $popupSource -match 'if \(preservePreload\) return' -and
@@ -1011,7 +1012,6 @@ Add-TestResult `
 # the ceiling; once the list is empty, delete the mechanism entirely.
 $lineCeiling = 2000
 $lineCeilingExemptions = @(
-    "WinLauncher\PopupWindow.cpp",
     "WinLauncher\GlassWindow.cpp"
 )
 $oversizedFiles = @()

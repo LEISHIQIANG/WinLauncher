@@ -84,6 +84,7 @@
     <ClCompile Include="Popup\PopupIconCache.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupShortcutLauncher.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Popup\PopupWindowInput.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Popup\PopupWindowRender.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsTabHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsPageHitTest.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsControlKit.cpp"><Filter>源文件</Filter></ClCompile>
