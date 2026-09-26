@@ -90,6 +90,9 @@
     <ClCompile Include="Config\ConfigWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Config\ConfigWindowSettings.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Config\CategoryList.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

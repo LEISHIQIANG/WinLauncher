@@ -177,6 +177,7 @@
     <ClCompile Include="TrayMenuWindow.cpp" />
     <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="Config\ConfigWindow.cpp" />
+    <ClCompile Include="Config\ConfigWindowSettings.cpp" />
     <ClCompile Include="Config\CategoryList.cpp" />
     <ClCompile Include="Config\ContextMenu.cpp" />
     <ClCompile Include="Config\SceneSettingsWindow.cpp" />
