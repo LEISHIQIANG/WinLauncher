@@ -87,6 +87,7 @@ $popupSource = Read-RepoFile "WinLauncher\PopupWindow.cpp"
 $privilegeLaunchSource = Read-RepoFile "WinLauncher\Services\PrivilegeLaunchService.cpp"
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
+$popupSorterSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutSorter.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
@@ -112,7 +113,9 @@ Add-TestResult `
 Add-TestResult `
     -Name "Smart shortcut sorting tracks clicks without overwriting custom order" `
     -Passed (
-        $popupSource -match 'static\s+void\s+SortPageByUsage' -and
+        $popupSorterSource -match 'void\s+PopupShortcutSorter::SortPageByUsage' -and
+        $popupSorterSource -match 'usageHistory->Get\(L"shortcut:"\s*\+\s*id\)\.launchCount' -and
+        $popupSource -match 'PopupShortcutSorter::SortPageByUsage' -and
         $popupSource -match 'si\.id\s*=\s*vs\.id' -and
         $popupSource -match 'void\s+PopupWindow::ApplyShortcutSortMode' -and
         $popupSource -match 'm_appCtx->configService->GetSortMode\(\)\s*!=\s*1' -and
