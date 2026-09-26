@@ -167,6 +167,7 @@
     <ClCompile Include="Config\SettingsPresetMenus.cpp" />
     <ClCompile Include="Config\SettingsGeneralView.cpp" />
     <ClCompile Include="Config\SettingsPluginView.cpp" />
+    <ClCompile Include="Config\SettingsPluginActions.cpp" />
     <ClCompile Include="Config\SettingsAppearanceView.cpp" />
     <ClCompile Include="Config\SettingsBackupView.cpp" />
     <ClCompile Include="Config\ShortcutGridViewHelper.cpp" />
@@ -293,6 +294,7 @@
     <ClInclude Include="Config\SettingsPresetMenus.h" />
     <ClInclude Include="Config\SettingsGeneralView.h" />
     <ClInclude Include="Config\SettingsPluginView.h" />
+    <ClInclude Include="Config\SettingsPluginActions.h" />
     <ClInclude Include="Config\SettingsAppearanceView.h" />
     <ClInclude Include="Config\SettingsBackupView.h" />
     <ClInclude Include="Config\ShortcutGridViewHelper.h" />

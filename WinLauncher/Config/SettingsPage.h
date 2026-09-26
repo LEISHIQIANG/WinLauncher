@@ -26,6 +26,7 @@ public:
     std::function<void()> OnImportJsonClicked;
 
 private:
+    friend class SettingsPluginActions;
     static void CancelPointerInteractionThunk(void* context);
     void CancelPointerInteraction();
     bool HitTestAutoStart(POINT pt);
