@@ -48,6 +48,8 @@ public:
 private:
     struct BatchFaviconState;
 
+    IIconService* SharedIconService() const;
+
     static void CancelPointerInteractionThunk(void* context);
     void CancelPointerInteraction();
 
@@ -104,6 +106,9 @@ private:
         bool selected = false;
         float dragOffsetX = 0.0f;
         float dragOffsetY = 0.0f;
+        // 0..1 fade-in progress for a late-arriving icon; 1 means fully
+        // shown (the steady state for every initially rendered icon).
+        float iconReveal = 1.0f;
     };
 
     int m_dragIndex;

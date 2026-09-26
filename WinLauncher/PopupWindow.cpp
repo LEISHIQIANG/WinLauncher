@@ -193,6 +193,45 @@ static bool IsSameSceneApp(const AppScene::AppIdentity& left, const AppScene::Ap
            _wcsicmp(left.exeName.c_str(), right.exeName.c_str()) == 0;
 }
 
+static DWORD TriggerProcessIdAtPoint(POINT point)
+{
+    HWND window = WindowFromPoint(point);
+    HWND root = window ? GetAncestor(window, GA_ROOT) : nullptr;
+    if (root)
+        window = root;
+
+    DWORD pid = 0;
+    if (window)
+        GetWindowThreadProcessId(window, &pid);
+    if (pid == GetCurrentProcessId())
+    {
+        HWND foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, &pid);
+    }
+    return pid;
+}
+
+static AppScene::AppIdentity CachedSceneIdentity(AppContext* context, POINT point)
+{
+    AppScene::AppIdentity result;
+    if (!context || !context->triggerProcessResolver)
+        return result;
+
+    const DWORD pid = TriggerProcessIdAtPoint(point);
+    TriggerProcessResolver::Identity identity;
+    if (context->triggerProcessResolver->TryGetIdentity(pid, identity))
+    {
+        result.exePath = std::move(identity.exePath);
+        result.exeName = std::move(identity.exeName);
+        result.valid = true;
+    }
+    else
+    {
+        context->triggerProcessResolver->Prefetch(pid);
+    }
+    return result;
+}
+
 static std::wstring PopupIconCacheKey(const RendShortcutInfo& shortcut)
 {
     constexpr wchar_t Separator = L'\x1f';
@@ -629,7 +668,23 @@ void PopupWindow::OnConfigChanged()
     if (m_viewModel)
     {
         m_viewModel->ReloadPages();
+        m_hasSceneRules = std::any_of(
+            m_viewModel->GetPages().begin(),
+            m_viewModel->GetPages().end(),
+            [](const auto& page) { return !page.sceneApps.empty(); });
     }
+    else
+    {
+        m_hasSceneRules = false;
+    }
+    m_configurationLoaded = true;
+    if (!m_hasSceneRules)
+        m_sceneApp = {};
+    RebuildRenderPagesForScene(true);
+}
+
+void PopupWindow::RebuildRenderPagesForScene(bool configurationReloaded)
+{
 
     // A slow Shell target may still keep one preload worker busy when a scene
     // change rebuilds the render pages. Harvest every result already produced
@@ -742,9 +797,6 @@ void PopupWindow::OnConfigChanged()
     if (GetHWND() && IsWindowVisible(GetHWND()))
     {
         UpdateWindowSize();
-        m_bgCaptureDirty = true;
-        m_bgCompositeDirty = true;
-        RefreshBackgroundCache();
     }
 
     if (GetHWND()) InvalidateRect(GetHWND(), nullptr, FALSE);
@@ -752,7 +804,8 @@ void PopupWindow::OnConfigChanged()
     // Start Shell extraction while the popup remains hidden.  The first show
     // will consume this work before painting, so transient generated icons
     // never become a visible intermediate frame.
-    RefreshIcons(false);
+    if (configurationReloaded)
+        RefreshIcons(false);
 }
 
 void PopupWindow::UpdateWindowSize()
@@ -944,6 +997,10 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     double windowReadyMs = 0.0;
     double iconReadyMs = 0.0;
     double firstFrameMs = 0.0;
+    m_visibilityRequestTick = GetTickCount64();
+
+    if (GetHWND())
+        CancelVisibilityTransitionForShow();
 
     if (prevActive && prevActive != this->GetHWND())
     {
@@ -951,16 +1008,21 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
     }
 
     POINT clickPt = pt; // Store the original click position
-    AppScene::AppIdentity previousSceneApp = this->m_sceneApp;
-    this->m_sceneApp = AppScene::IdentifyTriggerApp(clickPt);
-    const bool sceneAppChanged = !IsSameSceneApp(previousSceneApp, this->m_sceneApp);
+    bool sceneAppChanged = false;
+    if (m_hasSceneRules)
+    {
+        AppScene::AppIdentity nextSceneApp = CachedSceneIdentity(m_appCtx, clickPt);
+        sceneAppChanged = !IsSameSceneApp(m_sceneApp, nextSceneApp);
+        if (sceneAppChanged)
+        {
+            m_sceneApp = std::move(nextSceneApp);
+            if (m_configurationLoaded)
+                RebuildRenderPagesForScene(false);
+        }
+    }
 
     // 1. Load configuration and page data if not already loaded
-    if (this->m_viewModel && (this->m_pages.empty() || sceneAppChanged))
-    {
-        this->OnConfigChanged();
-    }
-    else if (this->m_pages.empty())
+    if (!m_configurationLoaded)
     {
         this->OnConfigChanged();
     }
@@ -1206,7 +1268,9 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
         this->StartAutoHideTimer();
         windowReadyMs = (GetTimeInSeconds() - windowReadyStart) * 1000.0;
 
-        const bool backgroundRefreshNeeded = this->m_bgCaptureDirty || this->m_bgCompositeDirty || !this->m_bgFinal;
+        const bool usesCapturedBackground = UIStyle::GetWindowMode() != 1;
+        const bool backgroundRefreshNeeded = usesCapturedBackground &&
+            (this->m_bgCaptureDirty || this->m_bgCompositeDirty || !this->m_bgFinal);
         double bgElapsedMs = 0.0;
         if (backgroundRefreshNeeded)
         {
@@ -1215,7 +1279,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             {
                 this->RefreshBackgroundCache();
             }
-            if (this->m_bgCompositeDirty)
+            else if (this->m_bgCompositeDirty)
             {
                 this->CompositeBackgroundToCache();
                 this->m_bgCompositeDirty = false;
@@ -1259,6 +1323,14 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
             L"ui.popup", L"show_timing",
             L"total_ms=%.2f data_ms=%.2f window_ms=%.2f icon_ms=%.2f background_ms=%.2f first_frame_ms=%.2f cold=%d",
             showElapsedMs, dataReadyMs, windowReadyMs, iconReadyMs, bgElapsedMs, firstFrameMs, needsShow ? 1 : 0);
+        if (!UIStyle::Animation::IsEnabled() && m_visibilityRequestTick != 0)
+        {
+            LOG_G_INFO_NODE(
+                L"ui.popup", L"fully_visible",
+                L"elapsed_ms=%llu",
+                static_cast<unsigned long long>(GetTickCount64() - m_visibilityRequestTick));
+            m_visibilityRequestTick = 0;
+        }
         if (showElapsedMs >= POPUP_SLOW_SHOW_MS)
         {
             LOG_G_WARNING_NODE(
@@ -1271,6 +1343,23 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
                 h_px);
         }
     }
+}
+
+float PopupWindow::GetVisibilityAnimationDurationMs(AnimState state) const
+{
+    const float configured = GlassWindow::GetVisibilityAnimationDurationMs(state);
+    return state == AnimState::Opening ? (std::min)(configured, 60.0f) : configured;
+}
+
+void PopupWindow::OnVisibilityTransitionCompleted(AnimState state)
+{
+    if (state != AnimState::Opening || m_visibilityRequestTick == 0)
+        return;
+    LOG_G_INFO_NODE(
+        L"ui.popup", L"fully_visible",
+        L"elapsed_ms=%llu",
+        static_cast<unsigned long long>(GetTickCount64() - m_visibilityRequestTick));
+    m_visibilityRequestTick = 0;
 }
 
 void PopupWindow::Hide()
@@ -2100,6 +2189,7 @@ void PopupWindow::RefreshIcons(bool forceRefresh, bool showFeedback)
     state->pendingWorkers.store(workerCount);
     m_iconRefreshTasks.clear();
     m_iconRefreshTasks.reserve(workerCount);
+    auto sharedIconService = m_appCtx ? m_appCtx->iconService : nullptr;
     auto finishWorker = [state, hwnd, dispatcher]() {
         if (state->pendingWorkers.fetch_sub(1) != 1)
             return;
@@ -2124,7 +2214,7 @@ void PopupWindow::RefreshIcons(bool forceRefresh, bool showFeedback)
         auto handle = m_appCtx->backgroundTasks->Submit(
             L"popup.icon_refresh." + std::to_wstring(workerIndex),
             refreshPriority,
-            [state, sharedJobs, nextJob, finishWorker](
+            [state, sharedJobs, nextJob, finishWorker, sharedIconService](
                 const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) mutable {
             const auto completion = std::shared_ptr<void>(nullptr, [finishWorker](void*) { finishWorker(); });
             const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -2135,7 +2225,7 @@ void PopupWindow::RefreshIcons(bool forceRefresh, bool showFeedback)
                     break;
                 auto& job = (*sharedJobs)[jobIndex];
                 auto& shortcut = std::get<3>(job);
-                HICON icon = ShortcutManager::GetShortcutIcon(shortcut);
+                HICON icon = ShortcutManager::GetShortcutIcon(shortcut, false, sharedIconService.get());
                 if (state->cancelled || cancellation->IsCancellationRequested())
                 {
                     if (icon) DestroyIcon(icon);

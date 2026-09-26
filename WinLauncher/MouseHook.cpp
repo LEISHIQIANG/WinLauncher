@@ -5,13 +5,10 @@
 #include "App/InputHookThreadStop.h"
 #include "InputFocusGuard.h"
 #include "Services/MacroService.h"
-#include "TriggerBlacklistPolicy.h"
+#include "Services/TriggerProcessResolver.h"
 #include "TriggerPolicy.h"
 #include <array>
 #include <cstdint>
-#include <memory>
-#include <string>
-#include <vector>
 
 std::atomic<int>    MouseHook::s_triggerType(0);
 std::atomic<HHOOK>  MouseHook::s_hHook       = nullptr;
@@ -21,7 +18,6 @@ std::atomic<DWORD>  MouseHook::s_hookThreadId = 0;
 HANDLE              MouseHook::s_hReadyEvent = nullptr;
 std::atomic<bool>   MouseHook::s_running(false);
 std::atomic<bool>   MouseHook::s_triggerEnabled(true);
-std::atomic<bool>   MouseHook::s_popupRequestPending(false);
 std::atomic<ULONG_PTR> MouseHook::s_triggerGeneration(1);
 HMODULE             MouseHook::s_hModule     = nullptr;
 
@@ -30,15 +26,20 @@ namespace
     constexpr DWORD SuppressMiddleUp  = 0x01;
     constexpr DWORD SuppressXButton1Up = 0x02;
     constexpr DWORD SuppressXButton2Up = 0x04;
-    constexpr size_t ProcessIdentityCacheCapacity = 16;
-    constexpr size_t CommonProcessPathCapacity = 1024;
-    constexpr size_t MaximumProcessPathCapacity = 32768;
+    constexpr ULONGLONG ProcessPrefetchSampleMs = 200;
 
     MouseButtonPairs g_buttonPairs;
     struct HookDiagnostic { WPARAM message; DWORD eventTime; ULONGLONG elapsed; DWORD pairs; bool consumed; };
     std::array<HookDiagnostic, 64> g_diagnostics{};
     std::atomic_size_t g_diagnosticWrite{0}, g_diagnosticRead{0};
     std::atomic_uint g_diagnosticDropped{0};
+    std::atomic_uint64_t g_triggerAccepted{0};
+    std::atomic_uint64_t g_triggerBlacklisted{0};
+    std::atomic_uint64_t g_triggerUnknownFailOpen{0};
+    std::atomic_uint64_t g_triggerPostFailed{0};
+    std::atomic<ULONGLONG> g_lastPrefetchSampleTick{0};
+    std::atomic<DWORD> g_lastPrefetchPid{0};
+    std::atomic<TriggerProcessResolver*> g_processResolver{nullptr};
     // Single hook producer, UI heartbeat consumer. Never allocate or log here.
     void RecordHook(WPARAM message, DWORD eventTime, ULONGLONG started, bool consumed)
     {
@@ -49,155 +50,18 @@ namespace
         g_diagnosticWrite.store(write + 1, std::memory_order_release);
     }
 
-    std::shared_ptr<const TriggerBlacklistPolicy::Matcher> g_triggerBlacklist =
-        std::make_shared<const TriggerBlacklistPolicy::Matcher>();
-
-    struct ProcessIdentity
+    DWORD ProcessIdAtPoint(POINT point)
     {
+        HWND window = WindowFromPoint(point);
+        if (!window)
+            return 0;
+        HWND root = GetAncestor(window, GA_ROOT);
+        if (root)
+            window = root;
         DWORD pid = 0;
-        HANDLE process = nullptr;
-        bool lifetimeCheckAvailable = false;
-        uint64_t lastUse = 0;
-        std::wstring processName;
-        std::wstring processStem;
-    };
-
-    class ProcessIdentityCache
-    {
-    public:
-        ~ProcessIdentityCache()
-        {
-            for (auto& entry : m_entries)
-                Reset(entry);
-        }
-
-        const ProcessIdentity* Resolve(HWND hwnd)
-        {
-            DWORD pid = 0;
-            if (!hwnd || GetWindowThreadProcessId(hwnd, &pid) == 0 || pid == 0)
-                return nullptr;
-
-            const uint64_t access = ++m_accessSerial;
-            for (auto& entry : m_entries)
-            {
-                if (entry.pid != pid)
-                    continue;
-
-                // Holding a SYNCHRONIZE handle prevents PID reuse from making a
-                // stale cache entry look valid. This zero-time wait never
-                // blocks the low-level hook.
-                if (entry.process &&
-                    entry.lifetimeCheckAvailable &&
-                    WaitForSingleObject(entry.process, 0) == WAIT_TIMEOUT)
-                {
-                    entry.lastUse = access;
-                    return &entry;
-                }
-
-                Reset(entry);
-                break;
-            }
-
-            // These process queries do not synchronously call the target GUI
-            // thread, so an unresponsive application cannot stall us in the
-            // same way as GetGUIThreadInfo/GetClassNameW on a foreign window.
-            // A successful lookup is cached and lifetime-checked thereafter.
-            HANDLE process = OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
-                FALSE,
-                pid);
-            bool lifetimeCheckAvailable = process != nullptr;
-            if (!process)
-            {
-                // A protected process may permit image-name queries while
-                // denying SYNCHRONIZE. Preserve correct one-shot matching in
-                // that case; only lifetime-validated handles enter the hot
-                // cache path.
-                process = OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION,
-                    FALSE,
-                    pid);
-            }
-            if (!process)
-                return nullptr;
-
-            std::wstring processName;
-            if (!QueryProcessName(process, processName))
-            {
-                CloseHandle(process);
-                return nullptr;
-            }
-
-            ProcessIdentity* slot = FindReplacementSlot();
-            Reset(*slot);
-            slot->pid = pid;
-            slot->process = process;
-            slot->lifetimeCheckAvailable = lifetimeCheckAvailable;
-            slot->lastUse = access;
-            slot->processName = std::move(processName);
-            slot->processStem = TriggerBlacklistPolicy::StemOf(slot->processName);
-            return slot;
-        }
-
-    private:
-        static bool QueryProcessName(HANDLE process, std::wstring& processName)
-        {
-            wchar_t commonPath[CommonProcessPathCapacity]{};
-            DWORD length = static_cast<DWORD>(CommonProcessPathCapacity);
-            if (QueryFullProcessImageNameW(process, 0, commonPath, &length) && length > 0)
-            {
-                processName.assign(commonPath, length);
-            }
-            else
-            {
-                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-                    return false;
-
-                // Paths above 1023 characters are exceptional. Keep the common
-                // hook path stack-only and allocate the maximum buffer only for
-                // that rare case.
-                std::vector<wchar_t> extendedPath(MaximumProcessPathCapacity);
-                length = static_cast<DWORD>(extendedPath.size());
-                if (!QueryFullProcessImageNameW(process, 0, extendedPath.data(), &length) ||
-                    length == 0)
-                {
-                    return false;
-                }
-                processName.assign(extendedPath.data(), length);
-            }
-
-            TriggerBlacklistPolicy::NormalizeProcessNameInPlace(processName);
-            return !processName.empty();
-        }
-
-        ProcessIdentity* FindReplacementSlot()
-        {
-            ProcessIdentity* replacement = &m_entries[0];
-            for (auto& entry : m_entries)
-            {
-                if (entry.pid == 0)
-                    return &entry;
-                if (entry.lastUse < replacement->lastUse)
-                    replacement = &entry;
-            }
-            return replacement;
-        }
-
-        static void Reset(ProcessIdentity& entry)
-        {
-            if (entry.process)
-                CloseHandle(entry.process);
-            entry = {};
-        }
-
-        std::array<ProcessIdentity, ProcessIdentityCacheCapacity> m_entries{};
-        uint64_t m_accessSerial = 0;
-    };
-
-    // The hook callback always runs on its dedicated message-loop thread.
-    // Thread-local storage therefore needs no lock and releases cached process
-    // handles automatically whenever that hook thread exits.
-    thread_local ProcessIdentityCache g_processIdentityCache;
+        GetWindowThreadProcessId(window, &pid);
+        return pid;
+    }
 
     bool IsCtrlDown()
     {
@@ -218,31 +82,6 @@ namespace
         return (GetAsyncKeyState(VK_MENU) & 0x8000) ||
             (GetAsyncKeyState(VK_LMENU) & 0x8000) ||
             (GetAsyncKeyState(VK_RMENU) & 0x8000);
-    }
-
-    bool IsTriggerBlacklistedAtPoint(POINT triggerPoint)
-    {
-        const auto blacklist = std::atomic_load_explicit(&g_triggerBlacklist, std::memory_order_acquire);
-
-        if (!blacklist || blacklist->empty())
-            return false;
-
-        // Resolve a first-seen PID here so blacklist enforcement cannot fail
-        // open forever. The cache keeps later triggers on a lifetime-checked
-        // fast path; Resolve itself performs no synchronous cross-window calls.
-        HWND windowAtPoint = WindowFromPoint(triggerPoint);
-        const ProcessIdentity* identity = g_processIdentityCache.Resolve(windowAtPoint);
-        if (!identity)
-        {
-            // A window can disappear between hit testing and PID lookup.
-            // Retry only when the hit result actually changed, keeping the
-            // normal path to one WindowFromPoint call.
-            HWND retryWindow = WindowFromPoint(triggerPoint);
-            if (retryWindow && retryWindow != windowAtPoint)
-                identity = g_processIdentityCache.Resolve(retryWindow);
-        }
-        return identity &&
-            blacklist->MatchesNormalized(identity->processName, identity->processStem);
     }
 
     void LogHookThreadStopResult(const wchar_t* operation, const InputHookThreadStop::Result& result)
@@ -272,7 +111,6 @@ void MouseHook::SetTriggerType(int type)
         // A click queued under a previous preset must never open a popup after
         // the user has changed the trigger. Keep an already-consumed button's
         // up event intact so the foreground app never receives an orphaned up.
-        s_popupRequestPending.store(false, std::memory_order_release);
         s_triggerGeneration.fetch_add(1, std::memory_order_acq_rel);
     }
 }
@@ -285,7 +123,6 @@ void MouseHook::SetTriggerEnabled(bool enabled)
         // A pause may occur between a consumed down event and its up event.
         // Preserve the matching up suppression so foreground apps never see an
         // unmatched button-up; all newly arriving input passes through.
-        s_popupRequestPending.store(false, std::memory_order_release);
         if (wasEnabled)
             s_triggerGeneration.fetch_add(1, std::memory_order_acq_rel);
     }
@@ -299,20 +136,10 @@ bool MouseHook::AcknowledgePopupRequest(ULONG_PTR requestGeneration)
         return false;
     }
 
-    bool expected = true;
-    return s_popupRequestPending.compare_exchange_strong(expected, false, std::memory_order_acq_rel);
+    return true;
 }
 
-void MouseHook::SetTriggerBlacklist(const std::vector<std::wstring>& processNames)
-{
-    std::atomic_store_explicit(
-        &g_triggerBlacklist,
-        std::make_shared<const TriggerBlacklistPolicy::Matcher>(
-            TriggerBlacklistPolicy::Matcher::Compile(processNames)),
-        std::memory_order_release);
-}
-
-bool MouseHook::Install(HWND hTargetWnd)
+bool MouseHook::Install(HWND hTargetWnd, TriggerProcessResolver* processResolver)
 {
     LOG_G_INFO(L"MouseHook::Install called");
     if (s_running.load()) return IsInstalled();
@@ -324,7 +151,7 @@ bool MouseHook::Install(HWND hTargetWnd)
     if (s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
 
     s_hTargetWnd = hTargetWnd;
-    s_popupRequestPending.store(false);
+    g_processResolver.store(processResolver, std::memory_order_release);
     s_hookThreadId.store(0);
 
     s_hReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -374,6 +201,7 @@ bool MouseHook::Install(HWND hTargetWnd)
         InputHookThreadStop::ReapIfExited(s_hThread);
     if (!stopResult.timedOut && s_hReadyEvent) { CloseHandle(s_hReadyEvent); s_hReadyEvent = nullptr; }
     s_hTargetWnd = nullptr;
+    g_processResolver.store(nullptr, std::memory_order_release);
     s_hookThreadId.store(0);
     return false;
 }
@@ -396,6 +224,7 @@ void MouseHook::Uninstall()
     if (!stopResult.timedOut)
         s_hHook.store(nullptr);
     s_hTargetWnd = nullptr;
+    g_processResolver.store(nullptr, std::memory_order_release);
     s_hookThreadId.store(0);
     LOG_G_INFO(L"MouseHook::Uninstall: uninstalled successfully");
 }
@@ -403,6 +232,12 @@ void MouseHook::Uninstall()
 bool MouseHook::IsInstalled()
 {
     return s_hHook != nullptr;
+}
+
+bool MouseHook::IsHealthy()
+{
+    return IsInstalled() && s_running.load(std::memory_order_acquire) && s_hThread &&
+        WaitForSingleObject(s_hThread, 0) == WAIT_TIMEOUT;
 }
 
 DWORD WINAPI MouseHook::ThreadProc(LPVOID)
@@ -459,6 +294,27 @@ void MouseHook::FlushDiagnostics()
     g_diagnosticRead.store(read, std::memory_order_release);
     const auto dropped = g_diagnosticDropped.exchange(0);
     if (dropped) LOG_G_WORNING(L"MouseHook diagnostics dropped=%u", dropped);
+
+    static ULONGLONG lastSummaryTick = 0;
+    const ULONGLONG now = GetTickCount64();
+    const uint64_t postFailed = g_triggerPostFailed.load(std::memory_order_relaxed);
+    if (postFailed || lastSummaryTick == 0 || now - lastSummaryTick >= 5000)
+    {
+        const uint64_t accepted = g_triggerAccepted.exchange(0, std::memory_order_relaxed);
+        const uint64_t blacklisted = g_triggerBlacklisted.exchange(0, std::memory_order_relaxed);
+        const uint64_t unknown = g_triggerUnknownFailOpen.exchange(0, std::memory_order_relaxed);
+        const uint64_t failed = g_triggerPostFailed.exchange(0, std::memory_order_relaxed);
+        if (accepted || blacklisted || unknown || failed)
+        {
+            LOG_G_INFO_NODE(L"input.mouse_hook", L"trigger_summary",
+                L"accepted=%llu blacklisted=%llu unknown_fail_open=%llu post_failed=%llu",
+                static_cast<unsigned long long>(accepted),
+                static_cast<unsigned long long>(blacklisted),
+                static_cast<unsigned long long>(unknown),
+                static_cast<unsigned long long>(failed));
+        }
+        lastSummaryTick = now;
+    }
 }
 
 LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam)
@@ -467,6 +323,21 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
     {
         auto* pMsh = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
         if (!pMsh) return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        const ULONGLONG callbackTick = GetTickCount64();
+        if (wParam == WM_MOUSEMOVE && !(pMsh->flags & LLMHF_INJECTED))
+        {
+            ULONGLONG lastSample = g_lastPrefetchSampleTick.load(std::memory_order_relaxed);
+            if (callbackTick - lastSample >= ProcessPrefetchSampleMs &&
+                g_lastPrefetchSampleTick.compare_exchange_strong(lastSample, callbackTick, std::memory_order_relaxed))
+            {
+                const DWORD pid = ProcessIdAtPoint(pMsh->pt);
+                auto* resolver = g_processResolver.load(std::memory_order_acquire);
+                HWND target = s_hTargetWnd.load(std::memory_order_acquire);
+                const DWORD previousPid = g_lastPrefetchPid.exchange(pid, std::memory_order_relaxed);
+                if (pid && pid != previousPid && resolver && !resolver->IsKnown(pid) && target)
+                    PostMessageW(target, AppMessages::PrefetchTriggerProcess, pid, 0);
+            }
+        }
         // Ordinary input and injected recovery events always pass through.
         const bool middle = wParam == WM_MBUTTONDOWN || wParam == WM_MBUTTONUP;
         const bool side = wParam == WM_XBUTTONDOWN || wParam == WM_XBUTTONUP;
@@ -512,9 +383,22 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
 
         if (activated)
         {
-            if (IsTriggerBlacklistedAtPoint(pMsh->pt))
+            const DWORD pid = ProcessIdAtPoint(pMsh->pt);
+            auto* resolver = g_processResolver.load(std::memory_order_acquire);
+            const auto processDecision = resolver
+                ? resolver->Classify(pid)
+                : TriggerProcessResolver::Decision::Unknown;
+            if (processDecision == TriggerProcessResolver::Decision::Blacklisted)
             {
+                g_triggerBlacklisted.fetch_add(1, std::memory_order_relaxed);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
+            }
+            if (processDecision == TriggerProcessResolver::Decision::Unknown)
+            {
+                g_triggerUnknownFailOpen.fetch_add(1, std::memory_order_relaxed);
+                HWND prefetchTarget = s_hTargetWnd.load(std::memory_order_acquire);
+                if (pid && prefetchTarget)
+                    PostMessageW(prefetchTarget, AppMessages::PrefetchTriggerProcess, pid, 0);
             }
 
             // Only check whether a WinLauncher-owned text box has focus.
@@ -526,34 +410,25 @@ LRESULT CALLBACK MouseHook::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
-            // A cold process lookup may be slow even without messaging its UI.
-            // If our decision budget was exceeded, pass the complete pair on.
-            if (GetTickCount64() - started >= 20)
-                return CallNextHookEx(nullptr, nCode, wParam, lParam);
-
             HWND target = s_hTargetWnd.load();
             if (!target || !IsWindow(target))
             {
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
-            bool expected = false;
             const ULONG_PTR requestGeneration = s_triggerGeneration.load(std::memory_order_acquire);
-            if (!s_popupRequestPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-                return CallNextHookEx(nullptr, nCode, wParam, lParam);
-
             // Settings changes run on the UI thread, while this callback is on
             // the hook thread. Do not post a request that crossed that boundary.
             if (requestGeneration != s_triggerGeneration.load(std::memory_order_acquire))
             {
-                s_popupRequestPending.store(false, std::memory_order_release);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
             if (!PostMessageW(target, AppMessages::ShowPopup, requestGeneration, static_cast<LPARAM>(pMsh->time)))
             {
-                s_popupRequestPending.store(false, std::memory_order_release);
+                g_triggerPostFailed.fetch_add(1, std::memory_order_relaxed);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
+            g_triggerAccepted.fetch_add(1, std::memory_order_relaxed);
             g_buttonPairs.Down(suppressUpMask, true);
             diagnostic.consumed = true;
             return 1;

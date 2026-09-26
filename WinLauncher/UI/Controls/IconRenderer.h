@@ -58,6 +58,74 @@ public:
         return (std::min)(result, 512);
     }
 
+    // Box-filter (area-average) downsample of a top-down 32bpp ARGB image.
+    // Averaging happens in premultiplied space so translucent edge pixels
+    // keep their colour; this removes the aliasing fringes a single GDI
+    // stretch produces when dropping a 256px shell icon to ~24-48px.
+    static void BoxDownsampleArgb(const DWORD* src, int sw, int sh, DWORD* dst, int dw, int dh)
+    {
+        for (int y = 0; y < dh; ++y)
+        {
+            const int sy0 = (int)((__int64)y * sh / dh);
+            const int sy1 = (std::max)(sy0 + 1, (int)((__int64)(y + 1) * sh / dh));
+            for (int x = 0; x < dw; ++x)
+            {
+                const int sx0 = (int)((__int64)x * sw / dw);
+                const int sx1 = (std::max)(sx0 + 1, (int)((__int64)(x + 1) * sw / dw));
+                unsigned sumA = 0, sumR = 0, sumG = 0, sumB = 0;
+                unsigned area = 0;
+                for (int sy = sy0; sy < sy1; ++sy)
+                {
+                    const DWORD* row = src + (size_t)sy * sw;
+                    for (int sx = sx0; sx < sx1; ++sx)
+                    {
+                        const DWORD px = row[sx];
+                        const unsigned a = (px >> 24) & 0xFF;
+                        // Treat the pixel as premultiplied for averaging.
+                        sumB += ((px) & 0xFF) * a;
+                        sumG += ((px >> 8) & 0xFF) * a;
+                        sumR += ((px >> 16) & 0xFF) * a;
+                        sumA += a;
+                        ++area;
+                    }
+                }
+                DWORD out = 0;
+                if (sumA)
+                {
+                    const unsigned b = (sumB + sumA / 2) / sumA;
+                    const unsigned g = (sumG + sumA / 2) / sumA;
+                    const unsigned r = (sumR + sumA / 2) / sumA;
+                    const unsigned a = (sumA + area / 2) / area;
+                    out = (a << 24) | (r << 16) | (g << 8) | b;
+                }
+                else
+                {
+                    // Classic AND-mask icon: the source has no alpha channel.
+                    // Keep the unweighted RGB average with alpha 0 so the
+                    // mask-repair pass below can rebuild the alpha channel;
+                    // zeroing RGB here would render solid black squares.
+                    unsigned sumR2 = 0, sumG2 = 0, sumB2 = 0;
+                    for (int sy = sy0; sy < sy1; ++sy)
+                    {
+                        const DWORD* row = src + (size_t)sy * sw;
+                        for (int sx = sx0; sx < sx1; ++sx)
+                        {
+                            const DWORD px = row[sx];
+                            sumB2 += px & 0xFF;
+                            sumG2 += (px >> 8) & 0xFF;
+                            sumR2 += (px >> 16) & 0xFF;
+                        }
+                    }
+                    const unsigned b = (sumB2 + area / 2) / area;
+                    const unsigned g = (sumG2 + area / 2) / area;
+                    const unsigned r = (sumR2 + area / 2) / area;
+                    out = (r << 16) | (g << 8) | b;
+                }
+                dst[(size_t)y * dw + x] = out;
+            }
+        }
+    }
+
     static ComPtr<ID2D1Bitmap> HicontoD2D(ID2D1HwndRenderTarget* rt, HICON hIcon, int size = 48, bool invert = false)
     {
         if (!rt)
@@ -100,7 +168,51 @@ public:
 
         HGDIOBJ oldObj = SelectObject(cdc, dib);
         ZeroMemory(bits, SZ * SZ * 4);
-        if (!DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL))
+
+        // Shell icons extract at 256px; letting DrawIconEx stretch them
+        // straight to 24-48px aliases badly. Render at the icon's native
+        // size first, then area-average down. Verified against real sources
+        // (shell32 icons, built-in resource icons, legacy icons): the filter
+        // keeps zero-alpha cells' RGB so mask-repair below still works, and
+        // any native-draw failure falls back to the direct stretch.
+        int nativeSize = SZ;
+        {
+            ICONINFO ii{};
+            if (GetIconInfo(hi, &ii))
+            {
+                BITMAP bm{};
+                if (ii.hbmColor && GetObjectW(ii.hbmColor, sizeof(bm), &bm) && bm.bmWidth > 0)
+                    nativeSize = bm.bmWidth;
+                if (ii.hbmColor) DeleteObject(ii.hbmColor);
+                if (ii.hbmMask) DeleteObject(ii.hbmMask);
+            }
+        }
+        if (nativeSize > SZ * 2 && nativeSize <= 512)
+        {
+            BITMAPINFO nativeBmi{};
+            nativeBmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            nativeBmi.bmiHeader.biWidth = nativeSize;
+            nativeBmi.bmiHeader.biHeight = -nativeSize;
+            nativeBmi.bmiHeader.biPlanes = 1;
+            nativeBmi.bmiHeader.biBitCount = 32;
+            nativeBmi.bmiHeader.biCompression = BI_RGB;
+            void* nativeBits = nullptr;
+            HBITMAP nativeDib = CreateDIBSection(cdc, &nativeBmi, DIB_RGB_COLORS, &nativeBits, nullptr, 0);
+            BOOL nativeDrawn = FALSE;
+            if (nativeDib && nativeBits)
+            {
+                HGDIOBJ nativeOld = SelectObject(cdc, nativeDib);
+                nativeDrawn = DrawIconEx(cdc, 0, 0, hi, nativeSize, nativeSize, 0, nullptr, DI_NORMAL);
+                GdiFlush();
+                SelectObject(cdc, nativeOld);
+                if (nativeDrawn)
+                    BoxDownsampleArgb((const DWORD*)nativeBits, nativeSize, nativeSize, (DWORD*)bits, SZ, SZ);
+                DeleteObject(nativeDib);
+            }
+            if (!nativeDrawn)
+                DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL);
+        }
+        else if (!DrawIconEx(cdc, 0, 0, hi, SZ, SZ, 0, nullptr, DI_NORMAL))
         {
             LOG_G_WORNING(L"HicontoD2D: DrawIconEx returned FALSE, hIcon=%p, size=%d, err=%d",
                 (void*)hi, SZ, GetLastError());

@@ -347,7 +347,8 @@ bool Application::LoadRuntimeSettings()
     m_appCtx->configService->LoadConfig();
     UIStyle::ApplyAppearanceSettings(m_appCtx->configService->GetAppearanceSettings());
     MouseHook::SetTriggerType(m_appCtx->configService->GetTriggerType());
-    MouseHook::SetTriggerBlacklist(m_appCtx->configService->GetTriggerBlacklist());
+    if (m_appCtx->triggerProcessResolver)
+        m_appCtx->triggerProcessResolver->SetBlacklist(m_appCtx->configService->GetTriggerBlacklist());
     UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
     UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
     UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
@@ -369,7 +370,7 @@ bool Application::LoadRuntimeSettings()
 bool Application::InstallHooks()
 {
     LOG_INFO(m_appCtx->logger, L"Application::InstallHooks: attempting to install mouse hook");
-    if (MouseHook::Install(m_hMainWnd))
+    if (MouseHook::Install(m_hMainWnd, m_appCtx->triggerProcessResolver.get()))
     {
         m_mouseHookInstalled = true;
         LOG_INFO(m_appCtx->logger, L"Application::InstallHooks: mouse hook installed successfully");
@@ -615,7 +616,7 @@ void Application::TogglePopupPause()
     LOG_INFO(m_appCtx->logger, L"Application::TogglePopupPause: paused=%d", (int)m_popupPaused);
 }
 
-void Application::RestartHook(bool showFeedback)
+bool Application::RestartHook(bool showFeedback)
 {
     LOG_INFO(m_appCtx->logger, L"Application::RestartHook: restarting mouse hook...");
 
@@ -631,7 +632,9 @@ void Application::RestartHook(bool showFeedback)
         m_mouseHookInstalled = false;
     }
 
-    const bool mouseInstalled = MouseHook::Install(m_hMainWnd);
+    const bool mouseInstalled = MouseHook::Install(
+        m_hMainWnd,
+        m_appCtx ? m_appCtx->triggerProcessResolver.get() : nullptr);
     if (mouseInstalled)
     {
         m_mouseHookInstalled = true;
@@ -662,6 +665,7 @@ void Application::RestartHook(bool showFeedback)
             ToastWindow::Show(L"钩子重启未完成，请重试或重启 WinLauncher", 2200);
         LOG_ERROR(m_appCtx->logger, L"Application::RestartHook: mouse=%d keyboard=%d", mouseInstalled ? 1 : 0, keyboardInstalled ? 1 : 0);
     }
+    return mouseInstalled && keyboardInstalled;
 }
 
 void Application::ScheduleHookRecovery(const wchar_t* reason)
@@ -669,11 +673,11 @@ void Application::ScheduleHookRecovery(const wchar_t* reason)
     if (m_shutdownStarted || !m_hMainWnd || !IsWindow(m_hMainWnd))
         return;
 
-    // Resume/unlock notifications can arrive in a burst while the desktop is
-    // still being reconstructed. Coalesce them and reinstall once user32 has
-    // settled, preserving the current paused/enabled state.
+    // Resume/unlock notifications can arrive in a burst. Keep a short settle
+    // window, then retry with bounded backoff if user32 is not ready yet.
     KillTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID);
-    SetTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID, 1000, nullptr);
+    m_hookRecoveryRetries = 0;
+    SetTimer(m_hMainWnd, HOOK_RECOVERY_TIMER_ID, 100, nullptr);
     LOG_INFO(m_appCtx->logger, L"Application::ScheduleHookRecovery: reason=%s",
         reason ? reason : L"unknown");
 }
@@ -735,12 +739,31 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         if (m_uiHeartbeat) m_uiHeartbeat->lastTick = GetTickCount64();
         MouseCaptureController::RecoverStaleGestureCapture(L"ui_heartbeat");
         MouseHook::FlushDiagnostics();
+        if (m_appCtx && m_appCtx->triggerProcessResolver)
+            m_appCtx->triggerProcessResolver->FlushDiagnostics();
+        if (m_mouseHookInstalled && !MouseHook::IsHealthy())
+            ScheduleHookRecovery(L"hook_thread_unhealthy");
         return 0;
     }
     if (msg == WM_TIMER && wParam == HOOK_RECOVERY_TIMER_ID)
     {
         KillTimer(hWnd, HOOK_RECOVERY_TIMER_ID);
-        RestartHook(false);
+        if (RestartHook(false))
+        {
+            m_hookRecoveryRetries = 0;
+        }
+        else
+        {
+            static constexpr UINT RetryDelaysMs[] = { 250, 1000, 3000 };
+            if (m_hookRecoveryRetries < _countof(RetryDelaysMs) && !m_shutdownStarted)
+            {
+                const UINT delay = RetryDelaysMs[m_hookRecoveryRetries++];
+                SetTimer(hWnd, HOOK_RECOVERY_TIMER_ID, delay, nullptr);
+                LOG_WORNING(m_appCtx->logger,
+                    L"Application::HookRecovery: retry=%u delay_ms=%u",
+                    m_hookRecoveryRetries, delay);
+            }
+        }
         return 0;
     }
     if (msg == AppMessages::UiDispatch)
@@ -778,12 +801,23 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
     case AppMessages::ShowPopup:
         {
+            MSG pending{};
+            while (PeekMessageW(&pending, hWnd, AppMessages::ShowPopup, AppMessages::ShowPopup, PM_REMOVE))
+            {
+                wParam = pending.wParam;
+                lParam = pending.lParam;
+            }
             const DWORD started = GetTickCount();
             const DWORD queueMs = lParam ? started - static_cast<DWORD>(lParam) : 0;
             ShowPopupAtCursor(wParam);
             LOG_INFO(m_appCtx->logger, L"Popup trigger timing: queue_ms=%lu show_ms=%lu total_ms=%lu",
                      queueMs, GetTickCount() - started, queueMs + GetTickCount() - started);
         }
+        return 0;
+
+    case AppMessages::PrefetchTriggerProcess:
+        if (m_appCtx && m_appCtx->triggerProcessResolver)
+            m_appCtx->triggerProcessResolver->Prefetch(static_cast<DWORD>(wParam));
         return 0;
 
     case AppMessages::LaunchShortcutById:
@@ -899,7 +933,7 @@ LRESULT Application::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         return 0;
 
     case AppMessages::RestartHook:
-        RestartHook(true);
+        (void)RestartHook(true);
         return 0;
 
     case AppMessages::RestartApp:

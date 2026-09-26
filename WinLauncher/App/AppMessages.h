@@ -27,6 +27,7 @@ namespace AppMessages
     constexpr UINT PrewarmTrayMenu         = WM_APP + 0x9A; // 空闲时创建托盘菜单渲染目标
     constexpr UINT InitializePlugins       = WM_APP + 0x9B; // 主消息循环开始后加载插件
     constexpr UINT FolderSyncAutoPaused    = WM_APP + 0x9C; // lParam: FolderAutoPauseRequest*
+    constexpr UINT PrefetchTriggerProcess  = WM_APP + 0x9D; // wParam: process id
     constexpr UINT CommandPanelAppend       = WM_APP + 0x310;
     constexpr UINT CommandPanelRefreshDone  = WM_APP + 0x311;
 

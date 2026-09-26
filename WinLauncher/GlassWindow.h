@@ -58,6 +58,8 @@ protected:
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) = 0;
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
     virtual bool ShouldAutoResizeOnDpiChange() const { return true; }
+    virtual float GetVisibilityAnimationDurationMs(AnimState state) const;
+    virtual void OnVisibilityTransitionCompleted(AnimState state) {}
 
     void ApplySystemBackdrop();
     bool EnsureD2D();
@@ -135,10 +137,12 @@ protected:
     void ApplyVisibilityFrame(float opacity, float animScale);
     void HideShadowNow();
     void PrepareOpenTransitionFrame(bool fromWindowCenter = false);
+    void CancelVisibilityTransitionForShow();
 
     void CaptureTransitionSnapshot();
     void DrawThemeTransitionOverlay(ID2D1HwndRenderTarget* rt, float w, float h);
     void StartThemeTransition(POINT clickPt);
+    void DrawBackgroundFullTarget(ID2D1Bitmap* bitmap);
 
     AnimState m_animState = AnimState::None;
     float m_animProgress = 0.0f;
@@ -153,6 +157,8 @@ protected:
     bool m_revealRetryPending = false;
     int m_revealShowCommand = SW_SHOWNOACTIVATE;
     ULONGLONG m_revealRequestStart = 0;
+
+    int m_lastAppliedAccentState = -1;
 
     bool m_themeTransitionActive = false;
     float m_themeTransitionProgress = 0.0f;

@@ -12,6 +12,11 @@
 #include <vector>
 #include <string>
 #include <deque>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <cstdint>
 #include <wrl.h>
 
 using Microsoft::WRL::ComPtr;
@@ -133,9 +138,64 @@ protected:
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) override;
 
 private:
+    // Unique owner of a backfilled HICON while it travels from the
+    // background extraction task to the UI-thread apply step. Destroying the
+    // result without transferring hIcon out (apply or drop) destroys the
+    // icon, so no code path can leak it.
+    struct IconBackfillResult
+    {
+        size_t pageIndex = 0;
+        std::wstring shortcutId;
+        std::wstring targetPath;
+        HICON hIcon = nullptr;
+
+        IconBackfillResult() = default;
+        IconBackfillResult(IconBackfillResult&& other) noexcept
+            : pageIndex(other.pageIndex)
+            , shortcutId(std::move(other.shortcutId))
+            , targetPath(std::move(other.targetPath))
+            , hIcon(other.hIcon)
+        {
+            other.hIcon = nullptr;
+        }
+        IconBackfillResult& operator=(IconBackfillResult&& other) noexcept
+        {
+            if (this != &other)
+            {
+                if (hIcon) DestroyIcon(hIcon);
+                pageIndex = other.pageIndex;
+                shortcutId = std::move(other.shortcutId);
+                targetPath = std::move(other.targetPath);
+                hIcon = other.hIcon;
+                other.hIcon = nullptr;
+            }
+            return *this;
+        }
+        IconBackfillResult(const IconBackfillResult&) = delete;
+        IconBackfillResult& operator=(const IconBackfillResult&) = delete;
+        ~IconBackfillResult()
+        {
+            if (hIcon) DestroyIcon(hIcon);
+        }
+    };
+
+    // Shared with background backfill tasks; the generation counter lets the
+    // UI thread invalidate in-flight work whenever pages are reloaded or the
+    // window is destroyed. failedUntil keeps targets whose extraction failed
+    // from being retried on every config reload.
+    struct IconBackfillState
+    {
+        std::atomic_uint64_t generation{ 0 };
+        std::mutex failedMutex;
+        std::unordered_map<std::wstring, ULONGLONG> failedUntil;
+    };
+
     void EnsureIcons();
     void ClearPages();
     void LoadConfig();
+    void CountLoadedIcons();
+    void ScheduleIconBackfill();
+    void ApplyIconBackfill(uint64_t generation, std::vector<IconBackfillResult>& results, ULONGLONG elapsedMs);
     void SaveConfig(bool publishConfigChanged = true, bool flushPending = false);
     void PersistAppearanceConfig();
     void ReloadAfterConfigFileOperation();
@@ -169,6 +229,10 @@ private:
     int ResolveShortcutHistoryPageIndex(const ShortcutHistoryPageState& pageState, std::vector<bool>& usedPages) const;
     void RestoreShortcutHistoryPage(RendPopupPage& page, const std::vector<Model::ShortcutInfo>& shortcuts);
     static bool ShortcutHistorySnapshotsEqual(const ShortcutHistorySnapshot& a, const ShortcutHistorySnapshot& b);
+
+    int m_lastLoadShortcutCount = 0;
+    int m_lastLoadMissingIcons = 0;
+    std::shared_ptr<IconBackfillState> m_iconBackfill;
 
     static ConfigWindow* s_instance;
     static AppContext* s_ctx;

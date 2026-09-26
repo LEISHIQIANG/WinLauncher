@@ -5,6 +5,7 @@
 #include "Model/ShortcutInfo.h"
 
 struct ID2D1Bitmap;
+class IIconService;
 
 // Legacy rendering-extended types (used by UI layer for bitmap management)
 // These coexist alongside Model:: types via different namespaces
@@ -44,9 +45,9 @@ class ShortcutManager
 public:
     static void FreeShortcuts(std::vector<RendShortcutInfo>& shortcuts);
     static std::wstring FindConfigDir();
-    static HICON GetShortcutIcon(const std::wstring& targetPath);
-    static HICON GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly = false);
-    static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly = false);
+    static HICON GetShortcutIcon(const std::wstring& targetPath, IIconService* sharedIcons = nullptr);
+    static HICON GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly = false, IIconService* sharedIcons = nullptr);
+    static HICON GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly = false, IIconService* sharedIcons = nullptr);
     static bool UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut);
     static Model::ShortcutTargetKind InferTargetKind(const std::wstring& path);
     static std::wstring ResolveSystemTargetPath(const std::wstring& targetPath);
@@ -54,5 +55,5 @@ public:
     static std::vector<RendPopupPage> LoadConfig(const std::wstring& configDir);
     static void SaveConfig(const std::wstring& configDir, const std::vector<RendPopupPage>& pages);
 
-    static void RefreshShortcutIcon(RendShortcutInfo& shortcut);
+    static void RefreshShortcutIcon(RendShortcutInfo& shortcut, IIconService* sharedIcons = nullptr);
 };

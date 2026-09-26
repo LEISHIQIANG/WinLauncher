@@ -113,6 +113,12 @@ void ShortcutPage::CancelPointerInteraction()
     }
 }
 
+IIconService* ShortcutPage::SharedIconService() const
+{
+    AppContext* ctx = m_owner ? m_owner->GetAppContext() : nullptr;
+    return ctx ? ctx->iconService.get() : nullptr;
+}
+
 void ShortcutPage::SetPageData(RendPopupPage* page, bool preserveScroll)
 {
     CancelBatchFaviconFetches();
@@ -159,7 +165,7 @@ void ShortcutPage::ShowAddShortcutDialog()
             sc.type            = Model::ShortcutType::File;
             sc.targetKind      = ShortcutManager::InferTargetKind(result.targetPath);
             sc.iconSource      = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-            sc.hIcon           = ShortcutManager::GetShortcutIcon(sc);
+            sc.hIcon           = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
             m_owner->RecordShortcutHistoryCheckpoint();
             m_pageData->shortcuts.push_back(sc);
@@ -190,7 +196,7 @@ void ShortcutPage::ShowAddHotkeyDialog()
         sc.iconInvertLight = result.iconInvertLight;
         sc.iconInvertDark  = result.iconInvertDark;
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
@@ -220,7 +226,7 @@ void ShortcutPage::ShowAddUrlDialog()
         sc.iconInvertLight = result.iconInvertLight;
         sc.iconInvertDark  = result.iconInvertDark;
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
@@ -254,7 +260,7 @@ void ShortcutPage::ShowAddCommandDialog()
         sc.iconInvertLight = result.iconInvertLight;
         sc.iconInvertDark  = result.iconInvertDark;
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
@@ -284,7 +290,7 @@ void ShortcutPage::ShowAddMacroDialog()
         sc.iconInvertLight = result.iconInvertLight;
         sc.iconInvertDark  = result.iconInvertDark;
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
@@ -314,7 +320,7 @@ void ShortcutPage::ShowAddBatchDialog()
         sc.iconInvertLight = result.iconInvertLight;
         sc.iconInvertDark  = result.iconInvertDark;
         sc.iconSource  = result.iconPath.empty() ? Model::IconSource::Auto : Model::IconSource::CustomPath;
-        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon       = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         m_owner->RecordShortcutHistoryCheckpoint();
         m_pageData->shortcuts.push_back(sc);
@@ -337,7 +343,7 @@ void ShortcutPage::ShowBuiltinIconDialog()
         m_owner->RecordShortcutHistoryCheckpoint();
         for (auto& sc : results)
         {
-            sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
+            sc.hIcon = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
             m_pageData->shortcuts.push_back(sc);
             ID2D1Bitmap* bmp = CreateShortcutBitmap(sc);
@@ -493,7 +499,8 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             float iconX = X + 19;
             float iconY = Y + 8;
             D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)ICON_SIZE, (float)ICON_SIZE);
-            rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            const float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
+            rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, revealAlpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
 
         // Label
@@ -596,7 +603,8 @@ void ShortcutPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 float iconX = X + 19;
                 float iconY = Y + 8;
                 D2D1_RECT_F iconRect = IconRenderer::AlignToPixels(rt, iconX, iconY, (float)ICON_SIZE, (float)ICON_SIZE);
-                rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                const float revealAlpha = (i < (int)m_shortcutStates.size()) ? m_shortcutStates[i].iconReveal : 1.0f;
+                rt->DrawBitmap(m_pageData->iconBitmaps[i], iconRect, revealAlpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             }
 
             // Label
@@ -1141,6 +1149,7 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
         {
             state.currentX = state.targetX;
             state.currentY = state.targetY;
+            state.iconReveal = 1.0f;
         }
         m_addCardCurrentX = m_addCardTargetX;
         m_addCardCurrentY = m_addCardTargetY;
@@ -1245,7 +1254,18 @@ void ShortcutPage::UpdateAnimation(float dt, bool& repaint)
     bool scrollAnimating = (std::abs(m_targetScrollY - m_scrollY) > 0.2f || std::abs(m_scrollVelocity) > 1.0f);
     bool dragging = m_dragActive;
 
-    if (scrollAnimating || dragging || anyIconMoving)
+    // Late-arriving icons fade in over ~0.22s instead of popping in.
+    bool anyIconRevealing = false;
+    for (auto& state : m_shortcutStates)
+    {
+        if (state.iconReveal < 1.0f)
+        {
+            state.iconReveal = std::min(1.0f, state.iconReveal + dt / 0.22f);
+            anyIconRevealing = true;
+        }
+    }
+
+    if (scrollAnimating || dragging || anyIconMoving || anyIconRevealing)
     {
         // Keep animating, trigger repaint
     }
@@ -1337,6 +1357,36 @@ void ShortcutPage::EnsureIcons(ID2D1HwndRenderTarget* rt)
         for (int i = 0; i < n; i++)
         {
             m_pageData->iconBitmaps[i] = CreateShortcutBitmap(m_pageData->shortcuts[i]);
+        }
+    }
+    else
+    {
+        // Seamless single-icon refresh: a nullptr slot means the real HICON
+        // arrived after this page was painted (background icon backfill).
+        // Rebuild only that slot and fade it in; cache-warm neighbours and
+        // text placeholders stay untouched.
+        bool slotRevealed = false;
+        EnsureShortcutStates();
+        for (int i = 0; i < n; i++)
+        {
+            if (m_pageData->iconBitmaps[i] || !m_pageData->shortcuts[i].hIcon)
+                continue;
+            m_pageData->iconBitmaps[i] = CreateShortcutBitmap(m_pageData->shortcuts[i]);
+            if (i < (int)m_shortcutStates.size())
+            {
+                m_shortcutStates[i].iconReveal =
+                    UIStyle::Animation::IsEnabled() ? 0.0f : 1.0f;
+            }
+            slotRevealed = true;
+        }
+        if (slotRevealed)
+        {
+            m_animating = true;
+            // The fade runs on the owner's animation timer; without starting
+            // the pump the reveal progress would stay at 0 (invisible icons).
+            m_owner->StartAnimation();
+            HWND hWnd = m_owner->GetWindowHWND();
+            if (hWnd) InvalidateRect(hWnd, nullptr, FALSE);
         }
     }
 }
@@ -1636,7 +1686,7 @@ void ShortcutPage::ApplyBatchFaviconResult(uint64_t generation, int index, const
             shortcut.iconSource = Model::IconSource::CustomPath;
 
             if (shortcut.hIcon) { DestroyIcon(shortcut.hIcon); shortcut.hIcon = nullptr; }
-            shortcut.hIcon = ShortcutManager::GetShortcutIcon(shortcut);
+            shortcut.hIcon = ShortcutManager::GetShortcutIcon(shortcut, false, SharedIconService());
             if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
             {
                 m_pageData->iconBitmaps[index]->Release();
@@ -2162,7 +2212,7 @@ void ShortcutPage::AddShortcutFromSingleFile(const std::wstring& path)
         sc.iconSource = Model::IconSource::Builtin;
         sc.builtinIconId = L"folder";
     }
-    sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
+    sc.hIcon = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
     m_pageData->shortcuts.push_back(sc);
 
@@ -2451,7 +2501,7 @@ void ShortcutPage::EditShortcut(int index, bool& repaint)
         sc.hIcon = currentIcon;
 
         if (sc.hIcon) { DestroyIcon(sc.hIcon); sc.hIcon = nullptr; }
-        sc.hIcon = ShortcutManager::GetShortcutIcon(sc);
+        sc.hIcon = ShortcutManager::GetShortcutIcon(sc, false, SharedIconService());
 
         if (index < (int)m_pageData->iconBitmaps.size() && m_pageData->iconBitmaps[index])
         {

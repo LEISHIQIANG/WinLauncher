@@ -7,7 +7,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <unordered_map>
-#include <list>
+#include "IconLruCache.h"
 #include "../UI/Controls/IconRenderer.h"
 
 #pragma comment(lib, "shlwapi.lib")
@@ -30,15 +30,8 @@ public:
             return nullptr;
         }
 
-        auto it = m_hiconCache.find(targetPath);
-        if (it != m_hiconCache.end())
-        {
-            // Move accessed item to front of LRU list
-            m_lruList.erase(it->second.lruIter);
-            m_lruList.push_front(targetPath);
-            it->second.lruIter = m_lruList.begin();
-            return it->second.hIcon;
-        }
+        if (HICON cached = m_iconCache.LookupMaster(targetPath))
+            return cached;
 
         HICON hIcon = nullptr;
         DWORD attr = GetFileAttributesW(targetPath.c_str());
@@ -56,7 +49,7 @@ public:
             if (hIcon)
             {
                 LOG_G_DEBUG(L"GetIcon: loaded builtin folder icon for dir=%s", targetPath.c_str());
-                StoreInCache(targetPath, hIcon);
+                m_iconCache.Store(targetPath, hIcon, /*fromResource=*/true);
                 return hIcon;
             }
             LOG_G_WORNING(L"GetIcon: LoadImage folder icon failed for dir=%s, err=%d",
@@ -77,7 +70,7 @@ public:
             UINT extracted = PrivateExtractIconsW(targetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
             if (extracted > 0 && hIcon)
             {
-                StoreInCache(targetPath, hIcon);
+                m_iconCache.Store(targetPath, hIcon);
                 return hIcon;
             }
         }
@@ -131,7 +124,7 @@ public:
 
         if (hIcon)
         {
-            StoreInCache(targetPath, hIcon);
+            m_iconCache.Store(targetPath, hIcon);
         }
         else
         {
@@ -139,6 +132,28 @@ public:
         }
         return hIcon;
     }
+
+    // Cache-only lookup returning an owned duplicate; never extracts. Used by
+    // background icon backfill and fast rendering paths. Returns nullptr on a
+    // miss or when the cached entry was invalidated as stale.
+    virtual HICON GetIconCopy(const std::wstring& targetPath)
+    {
+        return m_iconCache.LookupIconCopy(targetPath);
+    }
+
+    // Caches a copy of sourceIcon under targetPath without taking ownership
+    // of it, letting extraction call sites keep their existing ownership
+    // contract. Pass fromResource=true for icons derived from module
+    // resources so they are never file-validated.
+    virtual void StoreIconCopy(const std::wstring& targetPath, HICON sourceIcon, bool fromResource = false)
+    {
+        if (!sourceIcon || targetPath.empty()) return;
+        HICON dup = CopyIcon(sourceIcon);
+        if (dup) m_iconCache.Store(targetPath, dup, fromResource);
+    }
+
+    size_t CachedIconCount() const { return m_iconCache.Size(); }
+    IconLruCache::Stats CacheStats() const { return m_iconCache.GetStats(); }
 
     virtual ID2D1Bitmap* GetOrCreateBitmap(ID2D1HwndRenderTarget* rt, const std::wstring& targetPath, int size, bool invert) override
     {
@@ -202,43 +217,13 @@ public:
 
     virtual void ClearCache() override
     {
-        for (auto& pair : m_hiconCache)
-        {
-            if (pair.second.hIcon) DestroyIcon(pair.second.hIcon);
-        }
-        m_hiconCache.clear();
-        m_lruList.clear();
+        m_iconCache.Clear();
         m_bmpCache.clear();
     }
 
 private:
     static constexpr size_t MAX_HICON_CACHE = 512;
 
-    struct CacheEntry
-    {
-        HICON hIcon;
-        std::list<std::wstring>::iterator lruIter;
-    };
-
-    void StoreInCache(const std::wstring& targetPath, HICON hIcon)
-    {
-        if (!hIcon) return;
-        if (m_hiconCache.size() >= MAX_HICON_CACHE)
-        {
-            const std::wstring& oldest = m_lruList.back();
-            auto it = m_hiconCache.find(oldest);
-            if (it != m_hiconCache.end())
-            {
-                if (it->second.hIcon) DestroyIcon(it->second.hIcon);
-                m_hiconCache.erase(it);
-            }
-            m_lruList.pop_back();
-        }
-        m_lruList.push_front(targetPath);
-        m_hiconCache[targetPath] = CacheEntry{ hIcon, m_lruList.begin() };
-    }
-
-    std::unordered_map<std::wstring, CacheEntry> m_hiconCache;
-    std::list<std::wstring> m_lruList;
+    IconLruCache m_iconCache{ MAX_HICON_CACHE };
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_bmpCache;
 };

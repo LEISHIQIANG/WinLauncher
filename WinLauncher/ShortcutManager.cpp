@@ -1,4 +1,5 @@
 #include "ShortcutManager.h"
+#include "Contracts/IIconService.h"
 #include "Services/ConfigPath.h"
 #include "Services/SyncFolderService.h"
 #include "resource.h"
@@ -726,11 +727,17 @@ static HICON LoadIconViaGdiplus(const std::wstring& path)
     return hIcon;
 }
 
-HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
+HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath, IIconService* sharedIcons)
 {
     if (targetPath.empty()) return nullptr;
 
     const std::wstring iconTargetPath = ResolveSystemTargetPath(targetPath);
+
+    if (sharedIcons)
+    {
+        if (HICON cached = sharedIcons->GetIconCopy(iconTargetPath))
+            return cached;
+    }
 
     bool isDir = false;
     bool isFile = false;
@@ -744,48 +751,50 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
         }
     }
 
+    HICON hIcon = nullptr;
+    bool fromResource = false;
+
     if (isDir)
     {
-        HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
-        if (hIcon)
-            return hIcon;
+        hIcon = (HICON)LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_FOLDER_ICON), IMAGE_ICON, 256, 256, LR_DEFAULTCOLOR);
+        fromResource = hIcon != nullptr;
     }
 
-    if (isFile && IsImageExtension(iconTargetPath))
+    if (!hIcon && isFile && IsImageExtension(iconTargetPath))
     {
-        HICON hIcon = LoadIconViaGdiplus(iconTargetPath);
-        if (hIcon)
-            return hIcon;
+        hIcon = LoadIconViaGdiplus(iconTargetPath);
     }
 
-    HICON hIcon = nullptr;
-
-    const wchar_t* ext = PathFindExtensionW(iconTargetPath.c_str());
-    bool isExeOrDllOrIco = false;
-    if (ext && *ext)
+    if (!hIcon)
     {
-        isExeOrDllOrIco = (_wcsicmp(ext, L".exe") == 0 ||
-                           _wcsicmp(ext, L".dll") == 0 ||
-                           _wcsicmp(ext, L".ico") == 0);
-    }
-
-    if (isExeOrDllOrIco)
-    {
-        UINT extracted = PrivateExtractIconsW(iconTargetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
-        if (extracted > 0 && hIcon)
+        const wchar_t* ext = PathFindExtensionW(iconTargetPath.c_str());
+        bool isExeOrDllOrIco = false;
+        if (ext && *ext)
         {
-            return hIcon;
+            isExeOrDllOrIco = (_wcsicmp(ext, L".exe") == 0 ||
+                               _wcsicmp(ext, L".dll") == 0 ||
+                               _wcsicmp(ext, L".ico") == 0);
+        }
+
+        if (isExeOrDllOrIco)
+        {
+            UINT extracted = PrivateExtractIconsW(iconTargetPath.c_str(), 0, 256, 256, &hIcon, nullptr, 1, LR_DEFAULTCOLOR);
+            if (!(extracted > 0 && hIcon))
+                hIcon = nullptr;
         }
     }
 
-    IImageList* sysImgList = GetSystemImageList();
-    if (sysImgList)
+    if (!hIcon)
     {
-        SHFILEINFOW sfi{};
-        SHGetFileInfoW(iconTargetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX);
-        if (sysImgList->GetIcon(sfi.iIcon, ILD_NORMAL, &hIcon) != S_OK)
-            hIcon = nullptr;
-        sysImgList->Release();
+        IImageList* sysImgList = GetSystemImageList();
+        if (sysImgList)
+        {
+            SHFILEINFOW sfi{};
+            SHGetFileInfoW(iconTargetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_SYSICONINDEX);
+            if (sysImgList->GetIcon(sfi.iIcon, ILD_NORMAL, &hIcon) != S_OK)
+                hIcon = nullptr;
+            sysImgList->Release();
+        }
     }
 
     if (!hIcon)
@@ -794,6 +803,9 @@ HICON ShortcutManager::GetShortcutIcon(const std::wstring& targetPath)
         if (SHGetFileInfoW(iconTargetPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_LARGEICON))
             hIcon = sfi.hIcon;
     }
+
+    if (hIcon && sharedIcons)
+        sharedIcons->StoreIconCopy(iconTargetPath, hIcon, fromResource);
 
     return hIcon;
 }
@@ -820,13 +832,21 @@ Model::ShortcutTargetKind ShortcutManager::InferTargetKind(const std::wstring& p
     return Model::ShortcutTargetKind::Unknown;
 }
 
-HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly)
+HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut, bool fastOnly, IIconService* sharedIcons)
 {
     Model::IconSource source = NormalizeIconSource(shortcut.iconSource, shortcut.iconPath, shortcut.builtinIconId);
     if (source == Model::IconSource::CustomPath)
     {
-        if (fastOnly) return nullptr;
-        HICON hIcon = GetShortcutIcon(shortcut.iconPath);
+        if (fastOnly)
+        {
+            if (sharedIcons && !shortcut.iconPath.empty())
+            {
+                HICON cached = sharedIcons->GetIconCopy(ResolveSystemTargetPath(shortcut.iconPath));
+                if (cached) return cached;
+            }
+            return nullptr;
+        }
+        HICON hIcon = GetShortcutIcon(shortcut.iconPath, sharedIcons);
         if (hIcon) return hIcon;
     }
     else if (source == Model::IconSource::Builtin)
@@ -860,15 +880,27 @@ HICON ShortcutManager::GetShortcutIcon(const RendShortcutInfo& shortcut, bool fa
 
     if (fastOnly)
     {
+        // A cache lookup is pure in-memory work (no filesystem access), so
+        // the UI-thread fast path may use it. This keeps config reloads and
+        // popup loads flicker-free whenever the shared cache already holds
+        // the icon; only true misses fall to the background backfill.
+        if (sharedIcons && !shortcut.targetPath.empty())
+        {
+            HICON cached = sharedIcons->GetIconCopy(ResolveSystemTargetPath(shortcut.targetPath));
+            if (cached) return cached;
+        }
         return nullptr;
     }
 
     if ((shortcut.type == Model::ShortcutType::File || shortcut.type == Model::ShortcutType::System) && !shortcut.targetPath.empty())
     {
-        HICON hIcon = GetShortcutIcon(shortcut.targetPath);
+        HICON hIcon = GetShortcutIcon(shortcut.targetPath, sharedIcons);
         if (hIcon) return hIcon;
     }
 
+    // Non-file types (url/hotkey/command/macro/batch) intentionally return
+    // nullptr: every render site falls back to the unified text-placeholder
+    // icon, which is the expected steady-state look for iconless entries.
     if (shortcut.type != Model::ShortcutType::File && shortcut.type != Model::ShortcutType::System)
     {
         return nullptr;
@@ -898,17 +930,17 @@ bool ShortcutManager::UsesGeneratedDefaultIcon(const RendShortcutInfo& shortcut)
            kind == Model::ShortcutTargetKind::Unknown;
 }
 
-void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut)
+void ShortcutManager::RefreshShortcutIcon(RendShortcutInfo& shortcut, IIconService* sharedIcons)
 {
     if (shortcut.hIcon)
     {
         DestroyIcon(shortcut.hIcon);
         shortcut.hIcon = nullptr;
     }
-    shortcut.hIcon = GetShortcutIcon(shortcut);
+    shortcut.hIcon = GetShortcutIcon(shortcut, false, sharedIcons);
 }
 
-HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly)
+HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool fastOnly, IIconService* sharedIcons)
 {
     RendShortcutInfo renderInfo;
     renderInfo.id = shortcut.id;
@@ -923,5 +955,5 @@ HICON ShortcutManager::GetShortcutIcon(const Model::ShortcutInfo& shortcut, bool
     renderInfo.builtinIconId = shortcut.builtinIconId;
     renderInfo.iconInvertLight = shortcut.iconInvertLight;
     renderInfo.iconInvertDark = shortcut.iconInvertDark;
-    return GetShortcutIcon(renderInfo, fastOnly);
+    return GetShortcutIcon(renderInfo, fastOnly, sharedIcons);
 }

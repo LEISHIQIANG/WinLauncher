@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -139,6 +139,8 @@ $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
 $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
 $keyboardHookSource = Read-RepoFile "WinLauncher\KeyboardHook.cpp"
 $mouseHookSource = Read-RepoFile "WinLauncher\MouseHook.cpp"
+$triggerProcessResolverSource = Read-RepoFile "WinLauncher\Services\TriggerProcessResolver.cpp"
+$triggerProcessResolverHeader = Read-RepoFile "WinLauncher\Services\TriggerProcessResolver.h"
 $mouseCaptureSource = Read-RepoFile "WinLauncher\UI\MouseCaptureController.cpp"
 $mouseCaptureHeader = Read-RepoFile "WinLauncher\UI\MouseCaptureController.h"
 $triggerBlacklistPolicy = Read-RepoFile "WinLauncher\TriggerBlacklistPolicy.h"
@@ -300,7 +302,7 @@ Add-TestResult `
     -Passed (
         $shortcutPageSource -match 'sc\.targetPath\s*=\s*targetPath' -and
         $shortcutPageSource -match 'sc\.targetKind\s*=\s*ShortcutManager::InferTargetKind\(targetPath\)' -and
-        $shortcutPageSource -match 'sc\.hIcon\s*=\s*ShortcutManager::GetShortcutIcon\(sc\)' -and
+        $shortcutPageSource -match 'sc\.hIcon\s*=\s*ShortcutManager::GetShortcutIcon\(sc(,|\))' -and
         $shortcutPageSource -match 'HICON\s+hIcon\s*=\s*shortcut\.hIcon' -and
         $shortcutPageSource -notmatch 'UsesGeneratedDefaultIcon\(shortcut\)'
     ) `
@@ -421,7 +423,8 @@ Add-TestResult `
 Add-TestResult `
     -Name "Popup show reuses clean background caches and scene-safe page indices" `
     -Passed (
-        $popupSource -match 'backgroundRefreshNeeded\s*=\s*this->m_bgCaptureDirty' -and
+        $popupSource -match 'usesCapturedBackground\s*=\s*UIStyle::GetWindowMode\(\)\s*!=\s*1' -and
+        $popupSource -match 'backgroundRefreshNeeded\s*=\s*usesCapturedBackground' -and
         $popupSource -match 'if\s*\(geometryChanged\)\s*\r?\n\s*SetWindowPos' -and
         $popupSource -match 'm_pageModelIndices\[i\]\s*==\s*modelCurrentPage' -and
         $popupSource -match 'PopupWindow perf: show_state'
@@ -588,12 +591,13 @@ Add-TestResult `
     -Passed (
         $mouseHookSource -match 'void\s+MouseHook::SetTriggerEnabled\s*\(' -and
         $mouseHookSource -match 's_triggerGeneration\.fetch_add' -and
-        $mouseHookSource -match 's_popupRequestPending\.compare_exchange_strong' -and
+        $mouseHookSource -notmatch 's_popupRequestPending' -and
         $mouseHookSource -match 'bool\s+MouseHook::AcknowledgePopupRequest\s*\(' -and
         $mouseHookSource -match 'requestGeneration != s_triggerGeneration' -and
         $mouseHookSource -match 'TriggerPolicy::Match' -and
         $applicationSource -match 'MouseHook::SetTriggerEnabled\(!m_popupPaused\)' -and
         $applicationSource -match 'MouseHook::AcknowledgePopupRequest\(requestGeneration\)' -and
+        $applicationSource -match 'PeekMessageW\(&pending, hWnd, AppMessages::ShowPopup' -and
         $applicationSource -match 'PopupWindow::Hide\(\)'
     ) `
     -Detail "Paused triggers must preserve a consumed down/up pair, reject stale popup requests, and close the visible popup"
@@ -629,22 +633,39 @@ Add-TestResult `
 Add-TestResult `
     -Name "Trigger blacklist follows the window under the pointer" `
     -Passed (
-        $mouseHookSource -match 'IsTriggerBlacklistedAtPoint\s*\(\s*POINT\s+triggerPoint\s*\)' -and
-        $mouseHookSource -match 'WindowFromPoint\s*\(\s*triggerPoint\s*\)' -and
-        $mouseHookSource -match 'IsTriggerBlacklistedAtPoint\s*\(\s*pMsh->pt\s*\)' -and
+        $mouseHookSource -match 'ProcessIdAtPoint\s*\(\s*pMsh->pt\s*\)' -and
+        $mouseHookSource -match 'resolver->Classify\(pid\)' -and
+        $mouseHookSource -match 'Decision::Blacklisted' -and
+        $mouseHookSource -match 'Decision::Unknown' -and
+        $mouseHookSource -match 'AppMessages::PrefetchTriggerProcess' -and
         $mouseHookSource -notmatch 'GetForegroundProcessName' -and
-        $mouseHookSource -match 'thread_local\s+ProcessIdentityCache' -and
-        $mouseHookSource -match 'WaitForSingleObject\s*\(\s*entry\.process,\s*0\s*\)' -and
-        $mouseHookSource -match 'PROCESS_QUERY_LIMITED_INFORMATION\s*\|\s*SYNCHRONIZE' -and
-        $mouseHookSource -match 'lifetimeCheckAvailable' -and
-        $mouseHookSource -match 'CommonProcessPathCapacity\s*=\s*1024' -and
-        $mouseHookSource -match 'g_processIdentityCache\.Resolve\s*\(\s*windowAtPoint\s*\)' -and
-        $mouseHookSource -notmatch 'ResolveCacheOnly' -and
-        $mouseHookSource -match 'MatchesNormalized' -and
+        $mouseHookSource -notmatch 'OpenProcess|QueryFullProcessImageNameW' -and
+        $mouseHookSource -notmatch 'GetTickCount64\(\) - started >= 20' -and
+        $triggerProcessResolverSource -match 'Priority::Interactive' -and
+        $triggerProcessResolverSource -match 'PROCESS_QUERY_LIMITED_INFORMATION\s*\|\s*SYNCHRONIZE' -and
+        $triggerProcessResolverSource -match 'WaitForSingleObject\(entry\.process->handle, 0\)' -and
+        $triggerProcessResolverSource -match 'ProcessCacheCapacity\s*=\s*128' -and
+        $triggerProcessResolverSource -match 'NegativeCacheDurationMs\s*=\s*30000' -and
+        $triggerProcessResolverHeader -match 'enum class Decision' -and
         $triggerBlacklistPolicy -match 'class\s+Matcher' -and
         $triggerBlacklistPolicy -match 'static\s+Matcher\s+Compile'
     ) `
-    -Detail "Trigger blacklist decisions must resolve first-seen processes at the exact hook-event position and reuse a lifetime-checked PID-safe cache"
+    -Detail "The hook must classify the exact pointer process from a persistent cache, fail open on cold misses, and resolve identities only on the interactive worker"
+
+Add-TestResult `
+    -Name "Popup trigger path avoids scene reloads and stale close transitions" `
+    -Passed (
+        $popupSource -match 'm_hasSceneRules' -and
+        $popupSource -match 'CachedSceneIdentity' -and
+        $popupSource -match 'RebuildRenderPagesForScene\(false\)' -and
+        $popupSource -match 'if \(!m_configurationLoaded\)' -and
+        $popupSource -notmatch 'IdentifyTriggerApp\(clickPt\)' -and
+        $popupSource -match 'CancelVisibilityTransitionForShow\(\)' -and
+        $popupSource -match 'Opening \? \(std::min\)\(configured, 60\.0f\)' -and
+        $applicationSource -match 'SetTimer\(m_hMainWnd, HOOK_RECOVERY_TIMER_ID, 100' -and
+        $applicationSource -match 'RetryDelaysMs\[\]\s*=\s*\{\s*250,\s*1000,\s*3000\s*\}'
+    ) `
+    -Detail "Normal popup shows must use cached configuration, cancel obsolete close callbacks, cap fade-in, and recover hooks promptly"
 
 Add-TestResult `
     -Name "Macro playback interruption stays non-blocking and ignores injected input" `

@@ -1,22 +1,22 @@
 #pragma once
 #include <Windows.h>
 #include <atomic>
-#include <string>
-#include <vector>
+
+class TriggerProcessResolver;
 
 class MouseHook
 {
 public:
-    static bool Install(HWND hTargetWnd);
+    static bool Install(HWND hTargetWnd, TriggerProcessResolver* processResolver);
     static void Uninstall();
     static bool IsInstalled();
+    static bool IsHealthy();
     static void FlushDiagnostics();
     static void SetTriggerType(int type);
     static void SetTriggerEnabled(bool enabled);
     // Returns false when a queued request became stale because triggers were
     // paused or reconfigured before the UI thread could handle it.
     static bool AcknowledgePopupRequest(ULONG_PTR requestGeneration);
-    static void SetTriggerBlacklist(const std::vector<std::wstring>& processNames);
 
 private:
     static std::atomic<int>    s_triggerType;
@@ -27,7 +27,6 @@ private:
     static HANDLE              s_hReadyEvent;
     static std::atomic<bool>   s_running;
     static std::atomic<bool>   s_triggerEnabled;
-    static std::atomic<bool>   s_popupRequestPending;
     static std::atomic<ULONG_PTR> s_triggerGeneration;
     static HMODULE             s_hModule;
 

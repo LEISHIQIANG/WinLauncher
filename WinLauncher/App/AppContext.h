@@ -15,6 +15,7 @@
 #include "../Services/ConfigPath.h"
 #include "../Services/UsageHistoryStore.h"
 #include "../Services/DiagnosticService.h"
+#include "../Services/TriggerProcessResolver.h"
 
 struct AppContext
 {
@@ -26,6 +27,7 @@ struct AppContext
     std::shared_ptr<PluginManager> pluginManager;
     std::shared_ptr<UsageHistoryStore> usageHistory;
     std::shared_ptr<DiagnosticService> diagnostics;
+    std::shared_ptr<TriggerProcessResolver> triggerProcessResolver;
 
     std::shared_ptr<IConfigService> configService;
     std::shared_ptr<IIconService> iconService;
@@ -45,6 +47,7 @@ struct AppContext
         , pluginManager(std::make_shared<PluginManager>(eventBus, logger, uiDispatcher, backgroundTasks))
         , usageHistory(std::make_shared<UsageHistoryStore>(ConfigPath::GetUserDataDirectory() + L"\\usage_history.json"))
         , diagnostics(std::make_shared<DiagnosticService>(logger.get()))
+        , triggerProcessResolver(std::make_shared<TriggerProcessResolver>(backgroundTasks, logger))
     {
     }
 

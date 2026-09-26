@@ -55,6 +55,8 @@ protected:
     virtual LRESULT HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
     virtual void OnPaintContent(ID2D1HwndRenderTarget* rt) override;
     virtual bool ShouldAutoResizeOnDpiChange() const override { return false; }
+    virtual float GetVisibilityAnimationDurationMs(AnimState state) const override;
+    virtual void OnVisibilityTransitionCompleted(AnimState state) override;
 
 private:
     struct HeaderLayout
@@ -87,6 +89,7 @@ private:
     void DrawPage(ID2D1HwndRenderTarget* rt, int pageIndex);
     void ClearPages();
     void OnConfigChanged();
+    void RebuildRenderPagesForScene(bool configurationReloaded);
     void ApplyShortcutSortMode();
     void RecordShortcutUsage(const RendShortcutInfo& shortcut);
     void StartAutoHideTimer();
@@ -135,6 +138,8 @@ private:
     int m_currentPage;
     RendPopupPage m_dockPage;  // Fixed dock bar (DOCK category)
     AppScene::AppIdentity m_sceneApp;
+    bool m_configurationLoaded = false;
+    bool m_hasSceneRules = false;
 
     int m_hovered;
     bool m_trackMouse;
@@ -173,6 +178,7 @@ private:
     bool m_cursorBlink;
     bool m_destroyOnHide = false;
     double m_showTimeSeconds = 0.0;
+    ULONGLONG m_visibilityRequestTick = 0;
     HWND m_restoreForegroundWnd = nullptr;
     PressedShortcutKind m_pressedShortcutKind = PressedShortcutKind::None;
     int m_pressedShortcutIndex = -1;

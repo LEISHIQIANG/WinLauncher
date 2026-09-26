@@ -317,18 +317,32 @@ void GlassWindow::ApplySystemBackdrop()
         m_cornerRadius,
         m_hWnd);
 
+    const int targetAccentState = (windowMode == 1) ? 4 : 2;
+    const bool leavingHostedBackdrop =
+        (m_lastAppliedAccentState == 4 && targetAccentState != 4);
+
+    if (leavingHostedBackdrop)
+    {
+        // Acrylic (accent 4) installs a DWM-hosted backdrop visual. Switching
+        // it directly to another accent hot-swaps the composition and can
+        // leave a 1px strip of the rebuilt frame visible at the far edges
+        // (window size / UI scale dependent). Pass through ACCENT_DISABLED
+        // first so DWM tears the hosted backdrop down completely.
+        SetAccent(m_hWnd, 0, 0x00000000);
+    }
+
     if (windowMode == 1) // Acrylic
     {
         bool isLight = (UIStyle::GetThemeMode() == UIStyle::ThemeMode::Light);
         auto& cfg = isLight ? UIStyle::g_AcrylicLightConfig : UIStyle::g_AcrylicDarkConfig;
-        
+
         D2D1_COLOR_F rgb = UIStyle::HslToRgb(cfg.hue, 0.0f, cfg.brightness, cfg.opacity);
-        
+
         BYTE r = (BYTE)(fminf(fmaxf(rgb.r, 0.0f), 1.0f) * 255.0f);
         BYTE g = (BYTE)(fminf(fmaxf(rgb.g, 0.0f), 1.0f) * 255.0f);
         BYTE b = (BYTE)(fminf(fmaxf(rgb.b, 0.0f), 1.0f) * 255.0f);
         BYTE a = (BYTE)(cfg.opacity * 255.0f);
-        
+
         unsigned int gradientColor = (a << 24) | (b << 16) | (g << 8) | r;
         SetAccent(m_hWnd, 4, gradientColor);
     }
@@ -348,6 +362,37 @@ void GlassWindow::ApplySystemBackdrop()
         }
         SetAccent(m_hWnd, 2, 0x00000000);
     }
+
+    // Accent policy changes rebuild DWM's frame visuals and can drop window
+    // attributes set before the change (border color override included, whose
+    // default reappears as a 1px theme-colored edge line). Re-assert them
+    // after the accent is final.
+    {
+        DWORD borderNone = 0xFFFFFFFE;
+        DwmSetWindowAttribute(m_hWnd, 34, &borderNone, sizeof(borderNone));
+    }
+    if (leavingHostedBackdrop)
+    {
+        UpdateWindowCornerRadius();
+        if (m_cornerRadius > 0.0f)
+        {
+            DWORD corner = 2;
+            DwmSetWindowAttribute(m_hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+        }
+        UpdateWindowRoundRegion();
+        if (IsWindowVisible(m_hWnd))
+        {
+            SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        LOG_G_INFO_NODE(
+            L"ui.glass",
+            L"accent_transition_recovery",
+            L"from=4 to=%d hwnd=%p",
+            targetAccentState,
+            m_hWnd);
+    }
+    m_lastAppliedAccentState = targetAccentState;
 
     if (UIStyle::Animation::IsEnabled() && !IsWindowVisible(m_hWnd))
     {
@@ -564,15 +609,10 @@ void GlassWindow::UpdateTheme()
         m_pendingBackdropUpdate = true;
     else
     {
-        int windowMode = 0;
-        if (m_appCtx && m_appCtx->configService)
-        {
-            windowMode = m_appCtx->configService->GetWindowMode();
-        }
-        if (windowMode == 1)
-        {
-            ApplySystemBackdrop();
-        }
+        // Reapply for every mode, not just acrylic: leaving acrylic must
+        // replace the DWM accent visual, otherwise the stale acrylic backdrop
+        // bleeds through the painted frame as a dark edge seam.
+        ApplySystemBackdrop();
     }
     m_bgCompositeDirty = true;
     if (m_compositor)
@@ -618,10 +658,7 @@ void GlassWindow::UpdateBackgroundStyle()
     {
         windowMode = m_appCtx->configService->GetWindowMode();
     }
-    if (windowMode == 1)
-    {
-        ApplySystemBackdrop();
-    }
+    ApplySystemBackdrop();
 
     m_bgCompositeDirty = true;
     LOG_G_INFO_NODE(
@@ -1216,6 +1253,24 @@ bool GlassWindow::RefreshBackgroundCache()
     return captured;
 }
 
+
+void GlassWindow::DrawBackgroundFullTarget(ID2D1Bitmap* bitmap)
+{
+    // A DIP-sized destination rect can land a float hair inside the render
+    // target's last pixel column at fractional UI scales (90/110/120%), and
+    // Direct2D's rasterization then leaves that column only partially
+    // covered, letting residue from the previous material's frame (acrylic's
+    // border stroke) show as a 1px theme-colored edge line.  Overdraw one DIP
+    // past the far edges: the excess is clipped and the sub-pixel stretch of
+    // a blurred background is invisible.
+    if (!bitmap || !m_rt) return;
+
+    D2D1_SIZE_F size = m_rt->GetSize();
+    m_rt->DrawBitmap(
+        bitmap,
+        D2D1::RectF(0.0f, 0.0f, size.width + 1.0f, size.height + 1.0f));
+}
+
 void GlassWindow::DoPaint()
 {
     m_lastPaintSucceeded = false;
@@ -1390,11 +1445,11 @@ void GlassWindow::DoPaint()
 
         if (m_bgFinal)
         {
-            m_rt->DrawBitmap(m_bgFinal.Get(), D2D1::RectF(0, 0, w, h));
+            DrawBackgroundFullTarget(m_bgFinal.Get());
         }
         else if (m_bgCap)
         {
-            m_rt->DrawBitmap(m_bgCap.Get(), D2D1::RectF(0, 0, w, h));
+            DrawBackgroundFullTarget(m_bgCap.Get());
         }
         else
         {
@@ -1743,7 +1798,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             if (m_animState != AnimState::None)
             {
                 animating = true;
-                float duration = UIStyle::Animation::GetDurationMs();
+                float duration = GetVisibilityAnimationDurationMs(m_animState);
                 if (duration <= 0.0f) duration = 1.0f;
                 float elapsed = (float)(GetTickCount64() - m_animStartTime);
                 m_animProgress = elapsed / duration;
@@ -1756,6 +1811,7 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     if (oldState == AnimState::Opening)
                     {
                         ApplyVisibilityFrame(1.0f, 1.0f);
+                        OnVisibilityTransitionCompleted(oldState);
                     }
                     else if (oldState == AnimState::Closing)
                     {
@@ -2008,6 +2064,36 @@ void GlassWindow::PrepareOpenTransitionFrame(bool fromWindowCenter)
     EnsureShadowForCurrentBounds(0.0f);
     ApplyVisibilityFrame(0.0f, GetAnimationScale(0.0f, AnimState::Opening));
     m_openTransitionPrepared = true;
+}
+
+float GlassWindow::GetVisibilityAnimationDurationMs(AnimState) const
+{
+    return UIStyle::Animation::GetDurationMs();
+}
+
+void GlassWindow::CancelVisibilityTransitionForShow()
+{
+    if (!m_hWnd || !IsWindow(m_hWnd))
+        return;
+
+    m_revealRetryPending = false;
+    m_revealFirstFrameBarrier = false;
+    KillTimer(m_hWnd, AppMessages::GlassRevealRetryTimerId);
+    KillTimer(m_hWnd, 0x889);
+    m_animState = AnimState::None;
+    m_animProgress = 0.0f;
+    m_animOnComplete = nullptr;
+    m_openTransitionPrepared = false;
+
+    if (IsWindowVisible(m_hWnd))
+    {
+        EnsureShadowForCurrentBounds(1.0f);
+        ApplyVisibilityFrame(1.0f, 1.0f);
+    }
+    else
+    {
+        HideShadowNow();
+    }
 }
 
 void GlassWindow::RevealAfterFirstPaint(int showCommand, bool refreshBackground)

@@ -159,7 +159,7 @@ namespace UIStyle
     inline ThemeConfig g_LightConfig = { 36.0f, 20.0f, 0.50f, 0.90f, 0.90f, 2.5f };
     inline ThemeConfig g_AcrylicDarkConfig = { 30.0f, 20.0f, 0.36f, 0.90f, 0.11f, 2.5f };
     inline ThemeConfig g_AcrylicLightConfig = { 34.0f, 20.0f, 0.60f, 0.90f, 0.98f, 2.5f };
-    inline ThemeConfig g_GlassDarkConfig = { 32.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
+    inline ThemeConfig g_GlassDarkConfig = { 32.0f, 20.0f, 0.30f, 0.90f, 0.11f, 2.5f };
     inline ThemeConfig g_GlassLightConfig = { 36.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
 
     inline ThemeConfig ToThemeConfig(const Model::ThemeEffectConfig& config)
@@ -188,14 +188,26 @@ namespace UIStyle
 
     inline void ApplyAppearanceSettings(const Model::AppearanceSettings& settings)
     {
-        g_DarkConfig = ToThemeConfig(settings.dark);
-        g_LightConfig = ToThemeConfig(settings.light);
+        Model::AppearanceSettings normalized = settings;
+        // 0.5.1.9 shipped the glass dark material with the light-theme
+        // brightness, which made theme switching invisible in glass mode.
+        // Migrate the untouched broken default; customized values stay.
+        static const Model::ThemeEffectConfig kBrokenGlassDarkDefault = { 32.0f, 20.0f, 0.30f, 0.90f, 0.90f, 2.5f };
+        const auto& gd = normalized.glassDark;
+        if (gd.hue == kBrokenGlassDarkDefault.hue && gd.blur == kBrokenGlassDarkDefault.blur &&
+            gd.opacity == kBrokenGlassDarkDefault.opacity && gd.highlight == kBrokenGlassDarkDefault.highlight &&
+            gd.brightness == kBrokenGlassDarkDefault.brightness && gd.saturation == kBrokenGlassDarkDefault.saturation)
+        {
+            normalized.glassDark.brightness = 0.11f;
+        }
+        g_DarkConfig = ToThemeConfig(normalized.dark);
+        g_LightConfig = ToThemeConfig(normalized.light);
         ClampGlowMaterialConfig(g_DarkConfig);
         ClampGlowMaterialConfig(g_LightConfig);
-        g_AcrylicDarkConfig = ToThemeConfig(settings.acrylicDark);
-        g_AcrylicLightConfig = ToThemeConfig(settings.acrylicLight);
-        g_GlassDarkConfig = ToThemeConfig(settings.glassDark);
-        g_GlassLightConfig = ToThemeConfig(settings.glassLight);
+        g_AcrylicDarkConfig = ToThemeConfig(normalized.acrylicDark);
+        g_AcrylicLightConfig = ToThemeConfig(normalized.acrylicLight);
+        g_GlassDarkConfig = ToThemeConfig(normalized.glassDark);
+        g_GlassLightConfig = ToThemeConfig(normalized.glassLight);
     }
 
     inline Model::AppearanceSettings CaptureAppearanceSettings()

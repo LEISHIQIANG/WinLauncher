@@ -272,6 +272,7 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
     , m_lastRt(nullptr)
 {
     m_appCtx = ctx;
+    m_iconBackfill = std::make_shared<IconBackfillState>();
     m_settingsPage.OnImportJsonClicked = [this]() { ImportJsonConfig(); };
     if (ctx)
     {
@@ -301,6 +302,8 @@ ConfigWindow::ConfigWindow(AppContext* ctx)
 
 ConfigWindow::~ConfigWindow()
 {
+    if (m_iconBackfill)
+        m_iconBackfill->generation.fetch_add(1); // Invalidate in-flight icon backfill work.
     if (m_appCtx && m_appCtx->eventBus)
     {
         if (m_themeChangedToken)
@@ -359,7 +362,8 @@ void ConfigWindow::LoadConfig()
                 si.builtinIconId = vs.builtinIconId;
                 si.iconInvertLight = vs.iconInvertLight;
                 si.iconInvertDark = vs.iconInvertDark;
-                si.hIcon = ShortcutManager::GetShortcutIcon(si);
+                si.hIcon = ShortcutManager::GetShortcutIcon(si, /*fastOnly=*/true,
+                    m_appCtx ? m_appCtx->iconService.get() : nullptr);
                 pp.shortcuts.push_back(std::move(si));
             }
             m_pages.push_back(std::move(pp));
@@ -391,6 +395,198 @@ void ConfigWindow::LoadConfig()
         m_shortcutPage.SetPageData(&m_pages[m_currentCategory], true);
     else
         m_shortcutPage.SetPageData(nullptr);
+
+    CountLoadedIcons();
+    // On the cold path the window does not exist yet; ShowMode schedules the
+    // backfill right after Create. Reload paths reach it here.
+    ScheduleIconBackfill();
+}
+
+void ConfigWindow::CountLoadedIcons()
+{
+    m_lastLoadShortcutCount = 0;
+    m_lastLoadMissingIcons = 0;
+    for (const auto& pg : m_pages)
+    {
+        for (const auto& sc : pg.shortcuts)
+        {
+            ++m_lastLoadShortcutCount;
+            if (!sc.hIcon)
+                ++m_lastLoadMissingIcons;
+        }
+    }
+}
+
+void ConfigWindow::ScheduleIconBackfill()
+{
+    if (!GetHWND() || !IsWindow(GetHWND()))
+        return;
+    if (!m_appCtx || !m_appCtx->backgroundTasks || !m_appCtx->uiDispatcher)
+        return;
+
+    auto state = m_iconBackfill;
+
+    struct BackfillItem
+    {
+        size_t pageIndex;
+        std::wstring targetPath;
+        Model::ShortcutInfo info;
+    };
+    std::vector<BackfillItem> items;
+    {
+        const ULONGLONG now = GetTickCount64();
+        std::lock_guard<std::mutex> lock(state->failedMutex);
+        for (size_t p = 0; p < m_pages.size(); ++p)
+        {
+            for (const auto& sc : m_pages[p].shortcuts)
+            {
+                if (sc.hIcon)
+                    continue;
+                auto failed = state->failedUntil.find(sc.targetPath);
+                if (failed != state->failedUntil.end())
+                {
+                    if (now < failed->second)
+                        continue;
+                    state->failedUntil.erase(failed);
+                }
+                Model::ShortcutInfo info;
+                info.id = sc.id;
+                info.name = sc.name;
+                info.targetPath = sc.targetPath;
+                info.arguments = sc.arguments;
+                info.iconPath = sc.iconPath;
+                info.runAsAdmin = sc.runAsAdmin;
+                info.type = sc.type;
+                info.targetKind = sc.targetKind;
+                info.iconSource = sc.iconSource;
+                info.builtinIconId = sc.builtinIconId;
+                info.iconInvertLight = sc.iconInvertLight;
+                info.iconInvertDark = sc.iconInvertDark;
+                items.push_back({ p, sc.targetPath, std::move(info) });
+            }
+        }
+    }
+    if (items.empty())
+        return;
+
+    const uint64_t generation = state->generation.load();
+    auto iconService = m_appCtx->iconService;
+    LOG_G_INFO_NODE(L"ui.config", L"icon_backfill",
+        L"status=scheduled items=%d generation=%llu",
+        static_cast<int>(items.size()),
+        static_cast<unsigned long long>(generation));
+
+    m_appCtx->backgroundTasks->Submit(L"config.icon_backfill", BackgroundTaskService::Priority::Normal,
+        [state, generation, items = std::move(items), iconService](const std::shared_ptr<BackgroundTaskService::CancellationToken>& cancellation) {
+            std::vector<IconBackfillResult> results;
+            const ULONGLONG start = GetTickCount64();
+            for (const auto& item : items)
+            {
+                if (cancellation->IsCancellationRequested() ||
+                    state->generation.load(std::memory_order_relaxed) != generation)
+                    break;
+                RendShortcutInfo probe;
+                probe.id = item.info.id;
+                probe.name = item.info.name;
+                probe.targetPath = item.info.targetPath;
+                probe.arguments = item.info.arguments;
+                probe.iconPath = item.info.iconPath;
+                probe.runAsAdmin = item.info.runAsAdmin;
+                probe.type = item.info.type;
+                probe.targetKind = item.info.targetKind;
+                probe.iconSource = item.info.iconSource;
+                probe.builtinIconId = item.info.builtinIconId;
+                probe.iconInvertLight = item.info.iconInvertLight;
+                probe.iconInvertDark = item.info.iconInvertDark;
+                HICON hIcon = ShortcutManager::GetShortcutIcon(probe, /*fastOnly=*/false, iconService.get());
+                if (hIcon)
+                {
+                    IconBackfillResult result;
+                    result.pageIndex = item.pageIndex;
+                    result.shortcutId = std::move(item.info.id);
+                    result.targetPath = std::move(item.targetPath);
+                    result.hIcon = hIcon;
+                    results.push_back(std::move(result));
+                }
+                else
+                {
+                    // Negative cache: skip re-extracting known-unresolvable
+                    // targets on every subsequent config reload.
+                    std::lock_guard<std::mutex> lock(state->failedMutex);
+                    state->failedUntil[item.targetPath] = GetTickCount64() + 5 * 60 * 1000;
+                }
+            }
+            if (results.empty())
+                return;
+            if (state->generation.load(std::memory_order_relaxed) != generation)
+                return; // Results are RAII; dropping the vector destroys the icons.
+            const ULONGLONG elapsed = GetTickCount64() - start;
+            ConfigWindow* self = s_instance;
+            if (!self || self->m_iconBackfill.get() != state.get())
+                return;
+            if (!self->m_appCtx || !self->m_appCtx->uiDispatcher)
+                return;
+            auto posted = std::make_shared<std::vector<IconBackfillResult>>(std::move(results));
+            if (!self->m_appCtx->uiDispatcher->IsStopping() &&
+                self->m_appCtx->uiDispatcher->Post(L"config.icon_backfill.apply",
+                    [state, generation, posted, elapsed]() {
+                        ConfigWindow* uiSelf = s_instance;
+                        if (!uiSelf || uiSelf->m_iconBackfill.get() != state.get() ||
+                            state->generation.load() != generation)
+                            return; // RAII results destroy any unapplied icons.
+                        uiSelf->ApplyIconBackfill(generation, *posted, elapsed);
+                    }))
+            {
+                return;
+            }
+            // The dispatcher rejected the post while stopping; the shared
+            // vector is released and its RAII results destroy the icons.
+        });
+}
+
+void ConfigWindow::ApplyIconBackfill(uint64_t generation, std::vector<IconBackfillResult>& results, ULONGLONG elapsedMs)
+{
+    int applied = 0;
+    int skipped = 0;
+    for (auto& r : results)
+    {
+        bool matched = false;
+        if (r.pageIndex < m_pages.size() && r.hIcon)
+        {
+            auto& shortcuts = m_pages[r.pageIndex].shortcuts;
+            for (auto it = shortcuts.begin(); it != shortcuts.end(); ++it)
+            {
+                if (it->id != r.shortcutId || it->targetPath != r.targetPath)
+                    continue;
+                matched = true;
+                if (it->hIcon)
+                {
+                    ++skipped; // Slot was filled by a user edit; the RAII result keeps the new icon.
+                    break;
+                }
+                it->hIcon = r.hIcon; // Transfer ownership out of the result.
+                r.hIcon = nullptr;
+                ++applied;
+                auto& bmps = m_pages[r.pageIndex].iconBitmaps;
+                const size_t idx = static_cast<size_t>(it - shortcuts.begin());
+                if (idx < bmps.size() && bmps[idx])
+                {
+                    bmps[idx]->Release();
+                    bmps[idx] = nullptr;
+                }
+                break;
+            }
+        }
+        if (!matched)
+            ++skipped;
+    }
+    LOG_G_INFO_NODE(L"ui.config", L"icon_backfill",
+        L"status=applied applied=%d skipped=%d elapsed_ms=%llu generation=%llu",
+        applied, skipped,
+        static_cast<unsigned long long>(elapsedMs),
+        static_cast<unsigned long long>(generation));
+    if (applied > 0 && GetHWND() && IsWindow(GetHWND()))
+        InvalidateRect(GetHWND(), nullptr, FALSE);
 }
 
 void ConfigWindow::SaveConfig(bool publishConfigChanged, bool flushPending)
@@ -674,6 +870,8 @@ void ConfigWindow::ShowSettings(HWND parent, AppContext* ctx)
 
 void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
 {
+    const ULONGLONG showStart = GetTickCount64();
+
     if (s_instance)
     {
         if (ctx)
@@ -689,6 +887,11 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
         SetActiveWindow(s_instance->GetHWND());
         SetForegroundWindow(s_instance->GetHWND());
         InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
+        LOG_G_INFO_NODE(L"ui.config", L"show_timing",
+            L"total_ms=%.2f load_ms=0 create_ms=0 cold=0 shortcuts=%d missing_icons=%d",
+            static_cast<double>(GetTickCount64() - showStart),
+            s_instance->m_lastLoadShortcutCount,
+            s_instance->m_lastLoadMissingIcons);
         return;
     }
 
@@ -696,7 +899,9 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
 
     s_instance = new ConfigWindow(s_ctx);
     s_instance->m_configDir = ShortcutManager::FindConfigDir();
+    const ULONGLONG loadStart = GetTickCount64();
     s_instance->LoadConfig();
+    const ULONGLONG loadEnd = GetTickCount64();
     s_instance->SetSettingsMode(settingsMode);
 
     int w = 520;
@@ -717,13 +922,23 @@ void ConfigWindow::ShowMode(HWND parent, AppContext* ctx, bool settingsMode)
     int y = wa.top + (wa.bottom - wa.top - h_px) / 2;
 
     s_instance->Create(L"", WS_POPUP, WS_EX_TOOLWINDOW | WS_EX_TOPMOST, x, y, w_px, h_px, parent);
+    const ULONGLONG createEnd = GetTickCount64();
     if (s_instance->GetHWND())
     {
         SetWindowDisplayAffinitySafe(s_instance->GetHWND());
         s_instance->ApplySystemBackdrop();
         s_instance->PrepareAndReveal();
+        s_instance->ScheduleIconBackfill();
         SetForegroundWindow(s_instance->GetHWND());
     }
+    LOG_G_INFO_NODE(L"ui.config", L"show_timing",
+        L"total_ms=%.2f load_ms=%.2f create_ms=%.2f reveal_ms=%.2f cold=1 shortcuts=%d missing_icons=%d",
+        static_cast<double>(GetTickCount64() - showStart),
+        static_cast<double>(loadEnd - loadStart),
+        static_cast<double>(createEnd - loadEnd),
+        static_cast<double>(GetTickCount64() - createEnd),
+        s_instance->m_lastLoadShortcutCount,
+        s_instance->m_lastLoadMissingIcons);
 }
 
 void ConfigWindow::PrepareAndReveal()
@@ -1096,7 +1311,8 @@ void ConfigWindow::ReloadAfterConfigFileOperation()
     {
         UIStyle::ApplyAppearanceSettings(m_appCtx->configService->GetAppearanceSettings());
         MouseHook::SetTriggerType(m_appCtx->configService->GetTriggerType());
-        MouseHook::SetTriggerBlacklist(m_appCtx->configService->GetTriggerBlacklist());
+        if (m_appCtx->triggerProcessResolver)
+            m_appCtx->triggerProcessResolver->SetBlacklist(m_appCtx->configService->GetTriggerBlacklist());
         UIStyle::SetThemeMode(static_cast<UIStyle::ThemeMode>(m_appCtx->configService->GetTheme()));
         UIStyle::SetThemeColorIndex(m_appCtx->configService->GetThemeColor());
         UIStyle::SetWindowMode(m_appCtx->configService->GetWindowMode());
@@ -1483,7 +1699,8 @@ void ConfigWindow::SetTriggerBlacklist(const std::vector<std::wstring>& processN
     if (m_appCtx && m_appCtx->configService)
     {
         m_appCtx->configService->SetTriggerBlacklist(processNames);
-        MouseHook::SetTriggerBlacklist(processNames);
+        if (m_appCtx->triggerProcessResolver)
+            m_appCtx->triggerProcessResolver->SetBlacklist(processNames);
     }
 }
 
@@ -2638,10 +2855,11 @@ void ConfigWindow::AddSyncCategory(const std::wstring& name, const std::wstring&
 
     // Load shortcuts and icons from the folder
     auto rendShortcuts = SyncFolderService::LoadRendShortcuts(folderPath);
+    IIconService* sharedIcons = m_appCtx ? m_appCtx->iconService.get() : nullptr;
     for (auto& rs : rendShortcuts)
     {
         if (!rs.hIcon)
-            rs.hIcon = ShortcutManager::GetShortcutIcon(rs);
+            rs.hIcon = ShortcutManager::GetShortcutIcon(rs, false, sharedIcons);
         newPage.shortcuts.push_back(rs);
     }
 

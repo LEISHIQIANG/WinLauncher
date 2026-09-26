@@ -120,6 +120,7 @@
     <ClCompile Include="Services\ConfigFileStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\UsageHistoryStore.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\DiagnosticService.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Services\TriggerProcessResolver.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\MigrationBackupService.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\ArchiveUtility.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Services\CommandExecutionService.cpp"><Filter>源文件</Filter></ClCompile>
@@ -486,6 +487,7 @@
     <ClInclude Include="Popup\PinyinHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\UsageHistoryStore.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\DiagnosticService.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Services\TriggerProcessResolver.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\MigrationBackupService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\ArchiveUtility.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Services\SystemIconService.h">

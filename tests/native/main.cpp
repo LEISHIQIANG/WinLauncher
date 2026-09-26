@@ -18,10 +18,22 @@
 #include "../../WinLauncher/Popup/PopupCommandDispatcher.h"
 #include "../../WinLauncher/Popup/PinyinHelper.h"
 #include "../../WinLauncher/TriggerBlacklistPolicy.h"
+#include "../../WinLauncher/Services/IconLruCache.h"
+
+// Earlier headers include Windows.h with WIN32_LEAN_AND_MEAN, whose NOICONS
+// excludes CreateIconW, and none of them pull in commctrl.h for the shell
+// image-list declarations SystemIconService needs. Restore what the icon
+// tests require; these are plain user32/commctrl exports.
+#include <commctrl.h>
+#pragma comment(lib, "user32.lib")
+extern "C" WINUSERAPI HICON WINAPI CreateIcon(HINSTANCE hInstance, int nWidth, int nHeight, BYTE cPlanes, BYTE cBitsPixel, const BYTE* lpbANDbits, const BYTE* lpbXORbits);
+
+#include "../../WinLauncher/Services/SystemIconService.h"
 #include "../../WinLauncher/TriggerPolicy.h"
 #include "../../WinLauncher/UI/MouseCaptureController.h"
 #include "../../WinLauncher/SDK/include/WinLauncher/WinLauncherPluginABI.h"
 #include "../../WinLauncher/Services/DiagnosticService.h"
+#include "../../WinLauncher/Services/TriggerProcessResolver.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <chrono>
@@ -115,6 +127,15 @@ static DWORD WINAPI BlockedHookLikeThread(LPVOID)
     return 0;
 }
 
+static HICON MakeTinyIcon()
+{
+    // 2x2, 1 plane, 1 bpp; CreateIcon requires non-null row buffers (rows are
+    // WORD-aligned, hence 2 bytes each) and crashes on nullptr bits.
+    static const BYTE andBits[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
+    static const BYTE xorBits[4] = { 0x00, 0x00, 0x00, 0x00 };
+    return CreateIcon(nullptr, 2, 2, 1, 1, andBits, xorBits);
+}
+
 int wmain(int argc, wchar_t** argv)
 {
     if (argc >= 3 && wcscmp(argv[1], L"--crash-child") == 0)
@@ -202,6 +223,57 @@ int wmain(int argc, wchar_t** argv)
         {
             return Fail(L"compiled trigger blacklist normalization or fuzzy matching regressed");
         }
+    }
+
+    {
+        auto tasks = std::make_shared<BackgroundTaskService>(logger);
+        auto resolver = std::make_shared<TriggerProcessResolver>(tasks, logger);
+        resolver->SetBlacklist({ L"cmd.exe" });
+
+        wchar_t systemDirectory[MAX_PATH]{};
+        if (!GetSystemDirectoryW(systemDirectory, MAX_PATH))
+            return Fail(L"unable to locate system directory for resolver test");
+        std::wstring executable = std::wstring(systemDirectory) + L"\\cmd.exe";
+        std::wstring commandLine = L"\"" + executable + L"\" /d /c exit";
+        STARTUPINFOW startup{ sizeof(startup) };
+        PROCESS_INFORMATION process{};
+        if (!CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
+            CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process))
+        {
+            return Fail(L"unable to create suspended process for resolver test");
+        }
+
+        resolver->Prefetch(process.dwProcessId);
+        TriggerProcessResolver::Decision decision = TriggerProcessResolver::Decision::Unknown;
+        for (int attempt = 0; attempt < 100 && decision == TriggerProcessResolver::Decision::Unknown; ++attempt)
+        {
+            Sleep(10);
+            decision = resolver->Classify(process.dwProcessId);
+        }
+        TriggerProcessResolver::Identity identity;
+        if (decision != TriggerProcessResolver::Decision::Blacklisted ||
+            !resolver->TryGetIdentity(process.dwProcessId, identity) ||
+            _wcsicmp(identity.exeName.c_str(), L"cmd.exe") != 0)
+        {
+            TerminateProcess(process.hProcess, 1);
+            CloseHandle(process.hThread);
+            CloseHandle(process.hProcess);
+            return Fail(L"process resolver did not asynchronously classify a live PID");
+        }
+
+        resolver->SetBlacklist({});
+        if (resolver->Classify(process.dwProcessId) != TriggerProcessResolver::Decision::Allowed)
+        {
+            TerminateProcess(process.hProcess, 1);
+            CloseHandle(process.hThread);
+            CloseHandle(process.hProcess);
+            return Fail(L"process resolver did not reclassify cached identity after blacklist change");
+        }
+        TerminateProcess(process.hProcess, 0);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        resolver.reset();
+        tasks->Shutdown(std::chrono::milliseconds(1500));
     }
 
     {
@@ -680,6 +752,158 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(process.hProcess);
     if (!HasNonEmptyCrashArtifacts(crashDir)) return Fail(L"crash reporter did not create non-empty dump and metadata");
 
-    fwprintf(stdout, L"[PASS] native async, mouse button pairing, bounded wheel paging, icon generations, mouse capture recovery, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, and archive escaping tests\n");
+    {
+        // IconLruCache: ownership, copy semantics, LRU eviction, and
+        // last-write invalidation policy.
+        HICON owned = MakeTinyIcon();
+        if (!owned)
+            return Fail(L"unable to create a test icon for cache tests");
+        DestroyIcon(owned);
+
+        HICON andIcon = MakeTinyIcon();
+        HICON original = MakeTinyIcon();
+        if (!andIcon || !original)
+            return Fail(L"unable to create test icons for cache tests");
+
+        IconLruCache cache(2, IconLruCache::kDefaultValidationIntervalMs);
+        cache.Store(L"icon://a", andIcon, /*fromResource=*/true);
+        // Store took ownership of andIcon; the test must not destroy it again.
+
+        HICON copy = cache.LookupIconCopy(L"icon://a");
+        if (!copy)
+            return Fail(L"IconLruCache missed an entry that was just stored");
+        DestroyIcon(copy);
+
+        HICON master = cache.LookupMaster(L"icon://a");
+        if (master != andIcon)
+            return Fail(L"IconLruCache LookupMaster did not return the stored master icon");
+        DestroyIcon(original); // StoreIconCopy-style flow keeps caller ownership intact.
+        copy = cache.LookupIconCopy(L"icon://a");
+        if (!copy)
+            return Fail(L"IconLruCache lost its master after unrelated HICON destruction");
+        DestroyIcon(copy);
+
+        cache.Store(L"icon://b", MakeTinyIcon(), true);
+        cache.LookupMaster(L"icon://a"); // Touch a; b becomes the LRU victim.
+        cache.Store(L"icon://c", MakeTinyIcon(), true);
+        if (cache.LookupMaster(L"icon://b") != nullptr)
+            return Fail(L"IconLruCache did not evict the least-recently-used entry");
+        if (cache.LookupMaster(L"icon://a") == nullptr || cache.LookupMaster(L"icon://c") == nullptr)
+            return Fail(L"IconLruCache evicted recently used entries");
+
+        const IconLruCache::Stats stats = cache.GetStats();
+        if (stats.evictions < 1 || stats.hits < 3 || stats.misses < 1)
+            return Fail(L"IconLruCache statistics did not track hits, misses, and evictions");
+        cache.Clear();
+        if (cache.Size() != 0 || cache.LookupMaster(L"icon://a") != nullptr)
+            return Fail(L"IconLruCache Clear left entries behind");
+
+        if (!IconLruCache::ShouldValidate(FILE_ATTRIBUTE_NORMAL, false, DRIVE_FIXED) ||
+            IconLruCache::ShouldValidate(FILE_ATTRIBUTE_NORMAL, true, DRIVE_FIXED) ||
+            IconLruCache::ShouldValidate(FILE_ATTRIBUTE_NORMAL, false, DRIVE_REMOTE) ||
+            IconLruCache::ShouldValidate(FILE_ATTRIBUTE_NORMAL, false, DRIVE_REMOVABLE) ||
+            IconLruCache::ShouldValidate(FILE_ATTRIBUTE_DIRECTORY, false, DRIVE_FIXED) ||
+            IconLruCache::ShouldValidate(0, false, DRIVE_FIXED) ||
+            IconLruCache::ShouldValidate(INVALID_FILE_ATTRIBUTES, false, DRIVE_FIXED))
+            return Fail(L"IconLruCache validation policy accepted paths that could stall a cache hit");
+
+        // File-backed invalidation: a changed last-write time on a fixed
+        // local drive must drop the entry; a directory entry must survive.
+        std::wstring targetFile = temp + L"\\icon_cache_target.txt";
+        {
+            FILE* file = _wfopen(targetFile.c_str(), L"wb");
+            if (!file)
+                return Fail(L"unable to create the icon cache invalidation target file");
+            fwprintf(file, L"v1");
+            fclose(file);
+        }
+        wchar_t tempRoot[MAX_PATH]{};
+        GetTempPathW(MAX_PATH, tempRoot);
+        wchar_t driveRoot[4] = { tempRoot[0], L':', L'\\', L'\0' };
+        const bool fixedDrive = GetDriveTypeW(driveRoot) == DRIVE_FIXED;
+
+        IconLruCache fileCache(8, /*validationIntervalMs=*/0);
+        HICON fileIcon = MakeTinyIcon();
+        fileCache.Store(targetFile, fileIcon);
+        if (!fileCache.LookupMaster(targetFile))
+            return Fail(L"IconLruCache invalidated a fresh file entry before its stamp changed");
+
+        bool invalidationVerified = !fixedDrive;
+        if (fixedDrive)
+        {
+            HANDLE handle = CreateFileW(targetFile.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (handle == INVALID_HANDLE_VALUE)
+                return Fail(L"unable to reopen the icon cache invalidation target file");
+            SYSTEMTIME futureSys{ 2099, 1, 0, 1, 0, 0, 0, 0 };
+            FILETIME future{};
+            SystemTimeToFileTime(&futureSys, &future);
+            if (!SetFileTime(handle, &future, &future, &future))
+                return Fail(L"unable to restamp the icon cache invalidation target file");
+            CloseHandle(handle);
+            invalidationVerified = fileCache.LookupMaster(targetFile) == nullptr;
+        }
+        if (!invalidationVerified)
+            return Fail(L"IconLruCache kept an entry whose file last-write time changed");
+
+        std::wstring targetDir = temp + L"\\icon_cache_dir";
+        fs::create_directories(targetDir);
+        HICON dirIcon = MakeTinyIcon();
+        fileCache.Store(targetDir, dirIcon);
+        if (!fileCache.LookupMaster(targetDir))
+            return Fail(L"IconLruCache invalidated a directory entry; directory hits must never touch the filesystem");
+
+        // Concurrent access smoke test: parallel stores and lookups must not
+        // corrupt the LRU or exceed capacity.
+        {
+            IconLruCache concurrent(16, IconLruCache::kDefaultValidationIntervalMs);
+            std::vector<HANDLE> threads;
+            for (int t = 0; t < 4; ++t)
+            {
+                struct Ctx { IconLruCache* cache; int base; };
+                auto* ctx = new Ctx{ &concurrent, t * 100 };
+                threads.push_back(CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
+                    auto* c = static_cast<Ctx*>(param);
+                    for (int i = 0; i < 200; ++i)
+                    {
+                        const std::wstring key = L"icon://" + std::to_wstring(c->base + (i % 32));
+                        if ((i & 1) == 0)
+                            c->cache->Store(key, MakeTinyIcon(), true);
+                        else
+                            c->cache->LookupMaster(key);
+                    }
+                    delete c;
+                    return 0;
+                }, ctx, 0, nullptr));
+            }
+            for (HANDLE thread : threads)
+            {
+                WaitForSingleObject(thread, 15000);
+                CloseHandle(thread);
+            }
+            if (concurrent.Size() > 16)
+                return Fail(L"IconLruCache exceeded its capacity under concurrent access");
+            concurrent.Clear();
+        }
+    }
+
+    {
+        SystemIconService iconService;
+        HICON original = MakeTinyIcon();
+        if (!original)
+            return Fail(L"unable to create a test icon for SystemIconService tests");
+        iconService.StoreIconCopy(L"icon://service", original);
+        DestroyIcon(original);
+        HICON copy = iconService.GetIconCopy(L"icon://service");
+        if (!copy)
+            return Fail(L"SystemIconService lost an icon stored via StoreIconCopy");
+        DestroyIcon(copy);
+        if (iconService.GetIconCopy(L"icon://never-stored") != nullptr)
+            return Fail(L"SystemIconService GetIconCopy returned an icon for an unknown key");
+        if (iconService.CachedIconCount() != 1)
+            return Fail(L"SystemIconService cache count did not reflect stored entries");
+    }
+
+    fwprintf(stdout, L"[PASS] native async, mouse button pairing, bounded wheel paging, icon generations, mouse capture recovery, popup layout, ABI compatibility, callback, crash, Logger flush, stack trace, diagnostic package, migration ZIP, merge semantics, config corruption recovery, search ranking, icon cache ownership/eviction/invalidation, and archive escaping tests\n");
     return 0;
 }

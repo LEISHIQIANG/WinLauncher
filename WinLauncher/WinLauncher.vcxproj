@@ -204,6 +204,7 @@
     <ClCompile Include="Services\UpdateService.cpp" />
     <ClCompile Include="Services\UsageHistoryStore.cpp" />
     <ClCompile Include="Services\DiagnosticService.cpp" />
+    <ClCompile Include="Services\TriggerProcessResolver.cpp" />
     <ClCompile Include="Services\MigrationBackupService.cpp" />
     <ClCompile Include="Services\CommandExecutionService.cpp" />
     <ClCompile Include="Services\ArchiveUtility.cpp" />
@@ -292,6 +293,7 @@
     <ClInclude Include="Services\UpdateService.h" />
     <ClInclude Include="Services\UsageHistoryStore.h" />
     <ClInclude Include="Services\DiagnosticService.h" />
+    <ClInclude Include="Services\TriggerProcessResolver.h" />
     <ClInclude Include="Services\MigrationBackupService.h" />
     <!-- ViewModel Layer -->
     <ClInclude Include="ViewModel\PopupViewModel.h" />

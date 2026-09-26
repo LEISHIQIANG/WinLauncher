@@ -71,9 +71,13 @@ private:
     {
         std::wstring id;
         std::wstring name;
+        std::wstring targetPath;
         Model::ShortcutType type;
         HICON hIcon = nullptr;
         ID2D1Bitmap* bitmap = nullptr;
+        // True once the lazy icon resolution settled on a bitmap (real icon
+        // or the unified text placeholder); prevents per-frame retries.
+        bool iconSettled = false;
     };
 
     struct QueueVisualState

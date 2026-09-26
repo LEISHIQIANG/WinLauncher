@@ -5,6 +5,8 @@
 #include "UIStyle.h"
 #include "../DpiHelper.h"
 #include "../ShortcutManager.h"
+#include "../Contracts/IIconService.h"
+#include "../App/AppContext.h"
 #include <windowsx.h>
 #include <commdlg.h>
 #include <shlobj.h>
@@ -153,6 +155,7 @@ void BatchLaunchEditForm::PopulateAvailableShortcuts(ID2D1HwndRenderTarget* rt)
             SimpleShortcutItem item;
             item.id = sc.id;
             item.name = sc.name;
+            item.targetPath = sc.targetPath;
             item.type = sc.type;
             item.hIcon = sc.hIcon;
             if (item.hIcon && rt)
@@ -321,6 +324,34 @@ void BatchLaunchEditForm::Paint(ID2D1HwndRenderTarget* rt, float scale)
             float iconSize = 24.0f;
             float iconX = cx + (cellW - iconSize) * 0.5f;
             float iconY = cy + 3;
+            if (!m_availableItems[i].bitmap && !m_availableItems[i].iconSettled)
+            {
+                // Items snapshotted before background icon backfill finished
+                // start iconless; the shared cache is pure memory, so re-check
+                // it per paint until the icon shows up (microseconds when the
+                // backfill has completed). Whatever the outcome, the slot
+                // settles on a bitmap: a real icon or the same unified text
+                // placeholder every other surface uses — never a blank cell.
+                m_availableItems[i].iconSettled = true;
+                AppContext* ctx = m_ctx;
+                IIconService* icons = ctx ? ctx->iconService.get() : nullptr;
+                if (icons && !m_availableItems[i].targetPath.empty())
+                {
+                    HICON lateIcon = icons->GetIconCopy(
+                        ShortcutManager::ResolveSystemTargetPath(m_availableItems[i].targetPath));
+                    if (lateIcon)
+                    {
+                        auto bmp = IconRenderer::HicontoD2D(rt, lateIcon, (int)iconSize, false);
+                        DestroyIcon(lateIcon);
+                        if (bmp) m_availableItems[i].bitmap = bmp.Detach();
+                    }
+                }
+                if (!m_availableItems[i].bitmap)
+                {
+                    auto placeholder = IconRenderer::CreateDefaultIcon(rt, nullptr, m_availableItems[i].name, (int)iconSize);
+                    if (placeholder) m_availableItems[i].bitmap = placeholder.Detach();
+                }
+            }
             if (m_availableItems[i].bitmap)
                 rt->DrawBitmap(m_availableItems[i].bitmap, D2D1::RectF(iconX, iconY, iconX + iconSize, iconY + iconSize));
             if (textBrush && m_tfSmallCenter)
