@@ -33,6 +33,9 @@
     <ClCompile Include="App\PluginManager.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="App\PluginManagerHostApi.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="App\PluginManifest.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

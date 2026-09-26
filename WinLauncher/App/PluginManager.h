@@ -287,6 +287,9 @@ private:
     static bool WL_CALL HostAppendResultToPanel(void* hostContext, const wchar_t* text);
     static bool WL_CALL HostAddSearchResult(void* hostContext, const WLSearchResultV1* result);
 
+    static void SetCurrentPluginOutputPanel(HWND hwnd);
+    static HWND GetCurrentPluginOutputPanel();
+
     std::shared_ptr<EventBus> m_eventBus;
     std::shared_ptr<Logger> m_logger;
     std::shared_ptr<UiDispatcher> m_uiDispatcher;

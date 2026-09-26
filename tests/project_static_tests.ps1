@@ -139,6 +139,7 @@ $folderWatcherSource = Read-RepoFile "WinLauncher\Services\FolderWatcher.cpp"
 $folderWatcherHeader = Read-RepoFile "WinLauncher\Services\FolderWatcher.h"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
+$pluginManagerHostApiSource = Read-RepoFile "WinLauncher\App\PluginManagerHostApi.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
 $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
 $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
@@ -538,7 +539,13 @@ Add-TestResult `
 
 Add-TestResult `
     -Name "Plugin UI and shutdown use guarded lifetimes" `
-    -Passed ($pluginManagerSource -match 'RequestShutdown' -and $pluginManagerSource -match 'm_activeExecutions' -and $pluginManagerSource -match 'm_uiDispatcher->InvokeSync' -and $pluginManagerSource -match 'm_uiDispatcher->Post' -and $pluginManagerSource -match 'IsCurrentTaskCancellationRequested') `
+    -Passed (
+        $pluginManagerSource -match 'RequestShutdown' -and
+        $pluginManagerSource -match 'm_activeExecutions' -and
+        ($pluginManagerSource -match 'm_uiDispatcher->InvokeSync' -or $pluginManagerHostApiSource -match 'm_uiDispatcher->InvokeSync') -and
+        ($pluginManagerSource -match 'm_uiDispatcher->Post' -or $pluginManagerHostApiSource -match 'm_uiDispatcher->Post') -and
+        ($pluginManagerSource -match 'IsCurrentTaskCancellationRequested' -or $pluginManagerHostApiSource -match 'IsCurrentTaskCancellationRequested')
+    ) `
     -Detail "Plugin tasks must retain manager lifetime and marshal UI work"
 
 Add-TestResult `

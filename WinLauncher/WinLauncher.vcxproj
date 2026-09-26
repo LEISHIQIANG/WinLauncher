@@ -140,6 +140,7 @@
     <ClCompile Include="App\UiDispatcher.cpp" />
     <ClCompile Include="App\PluginInstaller.cpp" />
     <ClCompile Include="App\PluginManager.cpp" />
+    <ClCompile Include="App\PluginManagerHostApi.cpp" />
     <ClCompile Include="App\PluginManifest.cpp" />
     <ClCompile Include="App\PluginStateStore.cpp" />
     <ClCompile Include="main.cpp" />
