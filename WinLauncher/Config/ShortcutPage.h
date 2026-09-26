@@ -1,5 +1,6 @@
 #pragma once
 #include "ConfigPage.h"
+#include "ShortcutDialogController.h"
 #include "../ShortcutManager.h"
 #include "../App/BackgroundTaskService.h"
 #include <vector>
@@ -73,6 +74,7 @@ private:
     void AddShortcutFromPath(const std::wstring& filePath);
     void AddShortcutFromSingleFile(const std::wstring& path);
     void NotifyShortcutListChanged(bool snap = false);
+    ShortcutDialogController::DialogHostContext BuildDialogHostContext() const;
     ID2D1Bitmap* CreateShortcutBitmap(const RendShortcutInfo& shortcut) const;
     void FetchSelectedUrlFavicons(const std::vector<int>& indices);
     void ApplyBatchFaviconResult(uint64_t generation, int index, const std::wstring& shortcutId,
