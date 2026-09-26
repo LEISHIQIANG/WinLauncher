@@ -13,6 +13,7 @@
 #include "Popup/PopupIconRefreshController.h"
 #include "Popup/PopupIconCache.h"
 #include "Popup/PopupLayout.h"
+#include "Popup/PopupShortcutLauncher.h"
 #include "Popup/PopupWheelState.h"
 #include "Popup/PopupSearchService.h"
 #include <mutex>
@@ -108,6 +109,7 @@ private:
     void DrawSearchResults(ID2D1HwndRenderTarget* rt);
     void DrawDock(ID2D1HwndRenderTarget* rt);
     void LaunchShortcut(const RendShortcutInfo& sc);
+    static PopupShortcutLauncher::LaunchContext BuildLaunchContext(HWND parent, const std::vector<std::wstring>& selectedFiles);
     void ExecuteSearchResult(int index);
     void StartPageAnimationLoop();
     void StepPageAnimationFrame(HWND hWnd);
@@ -199,6 +201,4 @@ private:
     void StartFileSelectionQuery(HWND activeHwnd, POINT triggerPt);
     void CancelFileSelectionQuery();
     void PollFileSelectionQuery();
-
-    friend std::wstring ExpandVariables(const std::wstring& inputStr, HWND parent, AppContext* ctx, bool& cancelled);
 };

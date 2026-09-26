@@ -88,14 +88,15 @@ $privilegeLaunchSource = Read-RepoFile "WinLauncher\Services\PrivilegeLaunchServ
 $shortcutPageSource = Read-RepoFile "WinLauncher\Config\ShortcutPage.cpp"
 $popupSearchServiceSource = Read-RepoFile "WinLauncher\Popup\PopupSearchService.cpp"
 $popupSorterSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutSorter.cpp"
+$popupLauncherSource = Read-RepoFile "WinLauncher\Popup\PopupShortcutLauncher.cpp"
 $commandExecSource = Read-RepoFile "WinLauncher\Services\CommandExecutionService.cpp"
 Add-TestResult `
     -Name "Command capture opens live panel before work" `
     -Passed (
-        $popupSource -match 'CommandPanelWindow::ShowLive' -and
+        $popupLauncherSource -match 'CommandPanelWindow::ShowLive' -and
         (
-            ($popupSource -match 'ExecuteProcessStreaming' -and $popupSource -match 'ConfirmHighRiskCommand') -or
-            ($commandExecSource -match 'ExecuteProcessStreaming' -and $popupSource -match 'ctx->userInteraction->ConfirmHighRiskCommand')
+            ($popupLauncherSource -match 'ExecuteProcessStreaming' -and $popupLauncherSource -match 'ConfirmHighRiskCommand') -or
+            ($commandExecSource -match 'ExecuteProcessStreaming' -and $popupLauncherSource -match 'ctx->userInteraction->ConfirmHighRiskCommand')
         )
     ) `
     -Detail "Long-running command execution must remain asynchronous and risk-gated"
@@ -470,8 +471,8 @@ Add-TestResult `
 Add-TestResult `
     -Name "Command timeout settings are bounded and reported" `
     -Passed (
-        $popupSource -match 'configuredTimeout >= 1 && configuredTimeout <= 3600' -and
-        $popupSource -match 'invalid timeout=.*using default 300 seconds' -and
+        $popupLauncherSource -match 'configuredTimeout >= 1 && configuredTimeout <= 3600' -and
+        $popupLauncherSource -match 'invalid timeout=.*using default 300 seconds' -and
         (
             $popupSource -match (-join [char[]]@(0x79D2, 0x8D85, 0x65F6, 0x65F6, 0x95F4, 0xFF0C, 0x8FDB, 0x7A0B, 0x5DF2, 0x7EC8, 0x6B62)) -or
             $commandExecSource -match (-join [char[]]@(0x79D2, 0x8D85, 0x65F6, 0x65F6, 0x95F4, 0xFF0C, 0x8FDB, 0x7A0B, 0x5DF2, 0x7EC8, 0x6B62))
@@ -817,12 +818,12 @@ Add-TestResult `
 Add-TestResult `
     -Name "External popup shortcuts use immediate launch dispatch" `
     -Passed (
-        $popupSource -match 'bool\s+IsBackgroundExternalLaunch\s*\(' -and
-        $popupSource -match 'bool\s+LaunchExternalShortcutImmediately\s*\(' -and
-        $popupSource -match 'PrivilegeLaunchService::Launch\(shortcut\.targetPath, arguments, shortcut\.runAsAdmin\)' -and
-        $popupSource -notmatch 'tasks->Submit\(L"shortcut\.launch"' -and
-        $popupSource -match 'if \(IsBackgroundExternalLaunch\(sc\)\)' -and
-        $popupSource -match 'HideSelf\(HasLaunchAction\(sc\) && IsBackgroundExternalLaunch\(sc\)\)' -and
+        $popupLauncherSource -match 'bool\s+PopupShortcutLauncher::IsBackgroundExternalLaunch\s*\(' -and
+        $popupLauncherSource -match 'bool\s+LaunchExternalShortcutImmediately\s*\(' -and
+        $popupLauncherSource -match 'PrivilegeLaunchService::Launch\(shortcut\.targetPath, arguments, shortcut\.runAsAdmin\)' -and
+        $popupLauncherSource -notmatch 'tasks->Submit\(L"shortcut\.launch"' -and
+        $popupLauncherSource -match 'if \(IsBackgroundExternalLaunch\(sc\)\)' -and
+        $popupSource -match 'HideSelf\(PopupShortcutLauncher::HasLaunchAction\(sc\) && PopupShortcutLauncher::IsBackgroundExternalLaunch\(sc\)\)' -and
         $popupSource -match 'void\s+PopupWindow::HideSelf\(bool immediate\)' -and
         $glassWindowSource -match 'void\s+GlassWindow::HideImmediately\(\)' -and
         $glassWindowSource -match 'KillTimer\(m_hWnd, 0x889\)' -and
