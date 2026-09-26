@@ -163,6 +163,7 @@
     <ClCompile Include="Popup\PinyinHelper.cpp" />
     <ClCompile Include="Config\SettingsTabHelper.cpp" />
     <ClCompile Include="Config\SettingsPageHitTest.cpp" />
+    <ClCompile Include="Config\SettingsControlKit.cpp" />
     <ClCompile Include="Config\SettingsGeneralView.cpp" />
     <ClCompile Include="Config\SettingsPluginView.cpp" />
     <ClCompile Include="Config\SettingsAppearanceView.cpp" />
@@ -287,6 +288,7 @@
     <ClInclude Include="Popup\PinyinHelper.h" />
     <ClInclude Include="Config\SettingsTabHelper.h" />
     <ClInclude Include="Config\SettingsPageLayout.h" />
+    <ClInclude Include="Config\SettingsControlKit.h" />
     <ClInclude Include="Config\SettingsGeneralView.h" />
     <ClInclude Include="Config\SettingsPluginView.h" />
     <ClInclude Include="Config\SettingsAppearanceView.h" />

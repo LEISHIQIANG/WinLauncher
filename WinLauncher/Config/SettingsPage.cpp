@@ -1,4 +1,5 @@
 #include "SettingsPage.h"
+#include "SettingsControlKit.h"
 #include "../UI/MouseCaptureController.h"
 #include "SettingsTabHelper.h"
 #include "IConfigWindow.h"
@@ -489,54 +490,10 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
     if (m_categoryIndex == 0) // 系统设置
     {
-        auto drawInlineCheckbox = [&](float x, bool checked, bool hovered, const wchar_t* label)
-        {
-            D2D1_RECT_F boxRect = D2D1::RectF(x, 85, x + 16.0f, 101);
-            D2D1_ROUNDED_RECT roundedBox = D2D1::RoundedRect(boxRect, 3.0f, 3.0f);
-
-            ID2D1SolidColorBrush* bgBrush = nullptr;
-            float alphaBg = hovered ? 0.105f : 0.035f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBg), &bgBrush);
-
-            ID2D1SolidColorBrush* borderBrush = nullptr;
-            float alphaBorder = hovered ? 0.18f : 0.065f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, alphaBorder), &borderBrush);
-
-            if (bgBrush) rt->FillRoundedRectangle(roundedBox, bgBrush);
-            if (borderBrush) rt->DrawRoundedRectangle(roundedBox, borderBrush, UIStyle::Metrics::ControlStroke());
-
-            if (bgBrush) bgBrush->Release();
-            if (borderBrush) borderBrush->Release();
-
-            if (checked)
-            {
-                ID2D1SolidColorBrush* accentBrush = nullptr;
-                rt->CreateSolidColorBrush(UIStyle::ThemeColor::Accent().d2d, &accentBrush);
-                if (accentBrush)
-                {
-                    D2D1_ROUNDED_RECT checkRect = D2D1::RoundedRect(D2D1::RectF(x + 3.0f, 88, x + 13.0f, 98), 2.0f, 2.0f);
-                    rt->FillRoundedRectangle(checkRect, accentBrush);
-                    accentBrush->Release();
-                }
-            }
-
-            if (tfDefault)
-            {
-                ID2D1SolidColorBrush* tb = nullptr;
-                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &tb);
-                if (tb)
-                {
-                    rt->DrawTextW(label, (UINT32)wcslen(label), tfDefault,
-                        D2D1::RectF(x + 26.0f, 83, x + 90.0f, 103), tb);
-                    tb->Release();
-                }
-            }
-        };
-
-        drawInlineCheckbox(160.0f, m_owner->GetAutoStart(), m_hoveredAutoStart, L"开机自启");
-        drawInlineCheckbox(245.0f, m_owner->GetHideTrayIcon(), m_hoveredHideTrayIcon, L"隐藏托盘");
-        drawInlineCheckbox(330.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
-        drawInlineCheckbox(415.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
+        SettingsControlKit::DrawInlineCheckbox(rt, tfDefault, baseClr, 160.0f, m_owner->GetAutoStart(), m_hoveredAutoStart, L"开机自启");
+        SettingsControlKit::DrawInlineCheckbox(rt, tfDefault, baseClr, 245.0f, m_owner->GetHideTrayIcon(), m_hoveredHideTrayIcon, L"隐藏托盘");
+        SettingsControlKit::DrawInlineCheckbox(rt, tfDefault, baseClr, 330.0f, m_owner->GetHardwareAccelerationEnabled(), m_hoveredHardwareAcceleration, L"硬件加速");
+        SettingsControlKit::DrawInlineCheckbox(rt, tfDefault, baseClr, 415.0f, !m_owner->GetAnimationEnabled(), m_hoveredAnimationToggle, L"关闭动画");
 
         // Animation duration uses the same staged slider/apply pattern as global scale.
         {
@@ -1230,114 +1187,6 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
     }
     else if (m_categoryIndex == 2) // 弹窗交互
     {
-        auto drawSegmentButton = [&](const D2D1_RECT_F& cardRect, const std::wstring& text, bool selected, bool hovered)
-        {
-            D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
-            ID2D1SolidColorBrush* bgBrush = nullptr;
-            D2D1_COLOR_F bgClr = baseClr;
-            float bgAlpha = hovered ? 0.06f : 0.018f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(bgClr.r, bgClr.g, bgClr.b, bgAlpha), &bgBrush);
-            if (bgBrush)
-            {
-                rt->FillRoundedRectangle(roundedCard, bgBrush);
-                bgBrush->Release();
-            }
-
-            ID2D1SolidColorBrush* borderBrush = nullptr;
-            D2D1_COLOR_F borderClr = baseClr;
-            float borderAlpha = hovered ? 0.105f : 0.045f;
-            rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &borderBrush);
-            if (borderBrush)
-            {
-                rt->DrawRoundedRectangle(roundedCard, borderBrush, UIStyle::Metrics::ControlStroke());
-                borderBrush->Release();
-            }
-
-            if (tfDefault)
-            {
-                ID2D1SolidColorBrush* textBrush = nullptr;
-                D2D1_COLOR_F txtClr = selected ? UIStyle::ThemeColor::Accent().d2d : UIStyle::ThemeColor::TextNormal().d2d;
-                rt->CreateSolidColorBrush(txtClr, &textBrush);
-                if (textBrush)
-                {
-                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    rt->DrawTextW(text.c_str(), (UINT32)text.size(), tfDefault, cardRect, textBrush);
-                    tfDefault->SetTextAlignment(oldAlignment);
-                    textBrush->Release();
-                }
-            }
-        };
-
-        auto drawStepperCard = [&](float ix, float iy, const std::wstring& label, const std::wstring& value, bool hovered, int button)
-        {
-            float cy = iy + 16.0f;
-            D2D1_RECT_F cardRect = D2D1::RectF(ix, iy, ix + TWO_COLUMN_WIDTH, iy + CARD_HEIGHT);
-            D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
-
-            ID2D1SolidColorBrush* cardBg = nullptr;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, hovered ? 0.06f : 0.018f), &cardBg);
-            if (cardBg)
-            {
-                rt->FillRoundedRectangle(roundedCard, cardBg);
-                cardBg->Release();
-            }
-
-            ID2D1SolidColorBrush* cardBorder = nullptr;
-            rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, hovered ? 0.105f : 0.045f), &cardBorder);
-            if (cardBorder)
-            {
-                rt->DrawRoundedRectangle(roundedCard, cardBorder, UIStyle::Metrics::ControlStroke());
-                cardBorder->Release();
-            }
-
-            if (tfDefault)
-            {
-                ID2D1SolidColorBrush* textBrush = nullptr;
-                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &textBrush);
-                if (textBrush)
-                {
-                    rt->DrawTextW(label.c_str(), (UINT32)label.size(), tfDefault,
-                        D2D1::RectF(ix + 10, cy - 10, ix + 75, cy + 10), textBrush);
-                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    rt->DrawTextW(value.c_str(), (UINT32)value.size(), tfDefault,
-                        D2D1::RectF(ix + 101, cy - 10, ix + 129, cy + 10), textBrush);
-                    tfDefault->SetTextAlignment(oldAlignment);
-                    textBrush->Release();
-                }
-            }
-
-            auto drawStepButton = [&](float left, bool plus, bool isHovered)
-            {
-                D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(D2D1::RectF(left, cy - 8, left + 16, cy + 8), 3.0f, 3.0f);
-                ID2D1SolidColorBrush* btnBrush = nullptr;
-                rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isHovered ? 0.105f : 0.04f), &btnBrush);
-                if (btnBrush)
-                {
-                    rt->FillRoundedRectangle(rr, btnBrush);
-                    btnBrush->Release();
-                }
-                rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, isHovered ? 0.18f : 0.075f), &btnBrush);
-                if (btnBrush)
-                {
-                    rt->DrawRoundedRectangle(rr, btnBrush, UIStyle::Metrics::ControlStroke());
-                    btnBrush->Release();
-                }
-                rt->CreateSolidColorBrush(UIStyle::ThemeColor::TextNormal().d2d, &btnBrush);
-                if (btnBrush)
-                {
-                    rt->DrawLine(D2D1::Point2F(left + 4, cy), D2D1::Point2F(left + 12, cy), btnBrush, UIStyle::Metrics::ControlStroke());
-                    if (plus)
-                        rt->DrawLine(D2D1::Point2F(left + 8, cy - 4), D2D1::Point2F(left + 8, cy + 4), btnBrush, UIStyle::Metrics::ControlStroke());
-                    btnBrush->Release();
-                }
-            };
-
-            drawStepButton(ix + 85, false, hovered && button == 1);
-            drawStepButton(ix + 129, true, hovered && button == 2);
-        };
-
         if (tfDefault)
         {
             ID2D1SolidColorBrush* tb = nullptr;
@@ -1363,13 +1212,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         DrawSelectionHighlight(rt, GetSelectionRect(m_triggerSelection, TriggerButtonRect(selectedTriggerButton)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
-            drawSegmentButton(
+            SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, 
                 TriggerButtonRect(i),
                 radioLabels[i],
                 i == currentTrigger,
                 i == m_hoveredTrigger);
         }
-        drawSegmentButton(TriggerButtonRect(TRIGGER_PRESET_BUTTON), L"其他预设", currentTrigger > 2, m_hoveredTrigger == TRIGGER_PRESET_BUTTON);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, TriggerButtonRect(TRIGGER_PRESET_BUTTON), L"其他预设", currentTrigger > 2, m_hoveredTrigger == TRIGGER_PRESET_BUTTON);
 
         if (tfDefault)
         {
@@ -1391,13 +1240,13 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         DrawSelectionHighlight(rt, GetSelectionRect(m_popupAlignSelection, PopupAlignRect(selectedPopupAlignButton)), 6.0f);
         for (int i = 0; i < POPUP_ALIGN_PRIMARY_COUNT; i++)
         {
-            drawSegmentButton(
+            SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, 
                 PopupAlignRect(i),
                 alignLabels[i],
                 i == alignMode,
                 i == m_hoveredPopupAlignMode);
         }
-        drawSegmentButton(
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, 
             PopupAlignRect(POPUP_ALIGN_PRESET_BUTTON),
             L"其他预设",
             alignMode >= POPUP_ALIGN_PRESET_BUTTON,
@@ -1421,20 +1270,20 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         int sortMode = m_owner->GetSortMode();
         DrawSelectionHighlight(rt, GetSelectionRect(m_popupAutoCloseSelection,
             PopupBehaviorRect(autoClose ? 0 : 1, 256.0f)), 6.0f);
-        drawSegmentButton(PopupBehaviorRect(0, 256.0f), L"自动关闭", autoClose, m_hoveredPopupAutoClose == 0);
-        drawSegmentButton(PopupBehaviorRect(1, 256.0f), L"点击关闭", !autoClose, m_hoveredPopupAutoClose == 1);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 256.0f), L"自动关闭", autoClose, m_hoveredPopupAutoClose == 0);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 256.0f), L"点击关闭", !autoClose, m_hoveredPopupAutoClose == 1);
         DrawSelectionHighlight(rt, GetSelectionRect(m_popupMultiOpenSelection,
             PopupBehaviorRect(!multiOpen ? 0 : 1, 296.0f)), 6.0f);
-        drawSegmentButton(PopupBehaviorRect(0, 296.0f), L"固定时复用", !multiOpen, m_hoveredPopupMultiOpenWhenPinned == 0);
-        drawSegmentButton(PopupBehaviorRect(1, 296.0f), L"固定时多开", multiOpen, m_hoveredPopupMultiOpenWhenPinned == 1);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 296.0f), L"固定时复用", !multiOpen, m_hoveredPopupMultiOpenWhenPinned == 0);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 296.0f), L"固定时多开", multiOpen, m_hoveredPopupMultiOpenWhenPinned == 1);
         DrawSelectionHighlight(rt, GetSelectionRect(m_sortModeSelection,
             PopupBehaviorRect(sortMode == 0 ? 0 : 1, 336.0f)), 6.0f);
-        drawSegmentButton(PopupBehaviorRect(0, 336.0f), L"自定义排序", sortMode == 0, m_hoveredSortMode == 0);
-        drawSegmentButton(PopupBehaviorRect(1, 336.0f), L"智能排序", sortMode == 1, m_hoveredSortMode == 1);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 336.0f), L"自定义排序", sortMode == 0, m_hoveredSortMode == 0);
+        SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 336.0f), L"智能排序", sortMode == 1, m_hoveredSortMode == 1);
 
         wchar_t delayBuf[32];
         swprintf_s(delayBuf, L"%dms", m_owner->GetHoverLeaveDelay());
-        drawStepperCard(TwoColumnRect(0, 386.0f).left, 386.0f, L"消失延迟", delayBuf, m_hoveredHoverLeaveDelay, m_hoveredHoverLeaveDelayButton);
+        SettingsControlKit::DrawStepperCard(rt, tfDefault, baseClr, TwoColumnRect(0, 386.0f).left, 386.0f, L"消失延迟", delayBuf, m_hoveredHoverLeaveDelay, m_hoveredHoverLeaveDelayButton);
 
         wchar_t selectionBuf[32];
         const int selectionValiditySeconds = m_owner->GetFileSelectionValiditySeconds();
@@ -1442,7 +1291,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             wcscpy_s(selectionBuf, L"无限");
         else
             swprintf_s(selectionBuf, L"%d秒", selectionValiditySeconds);
-        drawStepperCard(TwoColumnRect(1, 386.0f).left, 386.0f, L"选中时限", selectionBuf, m_hoveredFileSelectionValidity, m_hoveredFileSelectionValidityButton);
+        SettingsControlKit::DrawStepperCard(rt, tfDefault, baseClr, TwoColumnRect(1, 386.0f).left, 386.0f, L"选中时限", selectionBuf, m_hoveredFileSelectionValidity, m_hoveredFileSelectionValidityButton);
 
         const D2D1_RECT_F blacklistRect = TriggerBlacklistRect();
         const D2D1_RECT_F editRect = TriggerBlacklistEditRect();
@@ -1490,7 +1339,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 textBrush->Release();
             }
 
-            drawSegmentButton(editRect, L"编辑", false, m_hoveredTriggerBlacklist);
+            SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, editRect, L"编辑", false, m_hoveredTriggerBlacklist);
         }
     }
     else if (m_categoryIndex == 3) // 配置管理
@@ -1569,51 +1418,18 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 tfDefault->SetTextAlignment(oldAlignment);
             }
 
-            auto drawActionButton = [&](const D2D1_RECT_F& buttonRect, const std::wstring& text, bool hovered, bool danger)
-            {
-                D2D1_ROUNDED_RECT btnRect = D2D1::RoundedRect(buttonRect, 6.0f, 6.0f);
-                ID2D1SolidColorBrush* btnBg = nullptr;
-                D2D1_COLOR_F actionClr = danger ? UIStyle::ThemeColor::DangerRed().d2d : UIStyle::ThemeColor::Accent().d2d;
-                D2D1_COLOR_F btnClr = hovered ? actionClr : baseClr;
-                float btnAlpha = hovered ? (danger ? 0.16f : 0.12f) : 0.035f;
-                rt->CreateSolidColorBrush(D2D1::ColorF(btnClr.r, btnClr.g, btnClr.b, btnAlpha), &btnBg);
-                if (btnBg)
-                {
-                    rt->FillRoundedRectangle(btnRect, btnBg);
-                    btnBg->Release();
-                }
-
-                ID2D1SolidColorBrush* btnBorder = nullptr;
-                D2D1_COLOR_F borderClr = hovered ? actionClr : baseClr;
-                float borderAlpha = hovered ? (danger ? 0.34f : 0.26f) : 0.07f;
-                rt->CreateSolidColorBrush(D2D1::ColorF(borderClr.r, borderClr.g, borderClr.b, borderAlpha), &btnBorder);
-                if (btnBorder)
-                {
-                    rt->DrawRoundedRectangle(btnRect, btnBorder, UIStyle::Metrics::ControlStroke());
-                    btnBorder->Release();
-                }
-
-                if (tbNormal)
-                {
-                    DWRITE_TEXT_ALIGNMENT oldAlignment = tfDefault->GetTextAlignment();
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    rt->DrawTextW(text.c_str(), (UINT32)text.size(), tfDefault, buttonRect, tbNormal);
-                    tfDefault->SetTextAlignment(oldAlignment);
-                }
-            };
-
-            drawActionButton(openLogFileRect, L"打开日志文件", m_hoveredOpenLogFile, false);
-            drawActionButton(backupRect, L"立即备份", m_hoveredCreateConfigBackup, false);
-            drawActionButton(restoreRect, L"回滚最近历史", m_hoveredRestoreConfigBackup, false);
-            drawActionButton(historyDirRect, L"打开历史目录", m_hoveredOpenConfigHistoryDir, false);
-            drawActionButton(diagnosticRect, L"生成诊断包", m_hoveredDiagnosticPackage, false);
-            drawActionButton(exportMigrationRect, L"导出迁移备份", m_hoveredExportMigration, false);
-            drawActionButton(importMigrationRect, L"导入迁移备份", m_hoveredImportMigration, false);
-            drawActionButton(importJsonRect, L"导入 QuickLauncher", m_hoveredImportJson, false);
-            drawActionButton(clearUsageRect, L"清除使用记录", m_hoveredClearUsageHistory, true);
-            drawActionButton(clearCacheRect, L"清理缓存", m_hoveredClearCache, true);
-            drawActionButton(clearConfigRect, L"清除配置", m_hoveredClearConfig, true);
-            drawActionButton(clearHistoryRect, L"清除历史", m_hoveredClearConfigHistory, true);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, openLogFileRect, L"打开日志文件", m_hoveredOpenLogFile, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, backupRect, L"立即备份", m_hoveredCreateConfigBackup, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, restoreRect, L"回滚最近历史", m_hoveredRestoreConfigBackup, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, historyDirRect, L"打开历史目录", m_hoveredOpenConfigHistoryDir, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, diagnosticRect, L"生成诊断包", m_hoveredDiagnosticPackage, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, exportMigrationRect, L"导出迁移备份", m_hoveredExportMigration, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, importMigrationRect, L"导入迁移备份", m_hoveredImportMigration, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, importJsonRect, L"导入 QuickLauncher", m_hoveredImportJson, false);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearUsageRect, L"清除使用记录", m_hoveredClearUsageHistory, true);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearCacheRect, L"清理缓存", m_hoveredClearCache, true);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearConfigRect, L"清除配置", m_hoveredClearConfig, true);
+            SettingsControlKit::DrawActionButton(rt, tfDefault, baseClr, tbNormal, clearHistoryRect, L"清除历史", m_hoveredClearConfigHistory, true);
 
             if (tbNormal) tbNormal->Release();
             if (tbMuted) tbMuted->Release();
@@ -1651,29 +1467,9 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->DrawTextW(dropHint.c_str(), (UINT32)dropHint.size(), tfDefault, D2D1::RectF(172, 134, CONTENT_RIGHT, 150), tbMuted);
             }
 
-            auto drawSmallButton = [&](D2D1_RECT_F buttonRect, const wchar_t* text, bool hovered, bool accent)
-            {
-                D2D1_COLOR_F bg = accent ? UIStyle::ThemeColor::Accent().d2d : baseClr;
-                bg.a = accent ? (hovered ? 0.28f : 0.18f) : (hovered ? 0.08f : 0.04f);
-                ID2D1SolidColorBrush* bgBrush = nullptr;
-                rt->CreateSolidColorBrush(bg, &bgBrush);
-                if (bgBrush)
-                {
-                    rt->FillRoundedRectangle(D2D1::RoundedRect(buttonRect, 5.0f, 5.0f), bgBrush);
-                    bgBrush->Release();
-                }
-                if (tbNormal)
-                {
-                    DWRITE_TEXT_ALIGNMENT old = tfDefault->GetTextAlignment();
-                    tfDefault->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                    rt->DrawTextW(text, (UINT32)wcslen(text), tfDefault, buttonRect, tbNormal);
-                    tfDefault->SetTextAlignment(old);
-                }
-            };
-
-            drawSmallButton(D2D1::RectF(348.0f, 96.0f, 396.0f, 122.0f), L"安装", m_hoveredPluginInstall, true);
-            drawSmallButton(D2D1::RectF(402.0f, 96.0f, 450.0f, 122.0f), L"打开", m_hoveredPluginOpenDir, false);
-            drawSmallButton(D2D1::RectF(456.0f, 96.0f, 504.0f, 122.0f), L"刷新", m_hoveredPluginRefresh, false);
+            SettingsControlKit::DrawSmallButton(rt, tfDefault, baseClr, tbNormal, D2D1::RectF(348.0f, 96.0f, 396.0f, 122.0f), L"安装", m_hoveredPluginInstall, true);
+            SettingsControlKit::DrawSmallButton(rt, tfDefault, baseClr, tbNormal, D2D1::RectF(402.0f, 96.0f, 450.0f, 122.0f), L"打开", m_hoveredPluginOpenDir, false);
+            SettingsControlKit::DrawSmallButton(rt, tfDefault, baseClr, tbNormal, D2D1::RectF(456.0f, 96.0f, 504.0f, 122.0f), L"刷新", m_hoveredPluginRefresh, false);
 
             if (plugins.empty())
             {
@@ -1806,33 +1602,11 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
                 rt->DrawTextW(tagline, (UINT32)wcslen(tagline), tfDefault,
                     D2D1::RectF(160, 132, CONTENT_RIGHT, 150), tbMuted);
 
-                auto drawInfoCard = [&](const D2D1_RECT_F& cardRect, const wchar_t* title, const wchar_t* body)
-                {
-                    D2D1_ROUNDED_RECT roundedCard = D2D1::RoundedRect(cardRect, 6.0f, 6.0f);
-                    ID2D1SolidColorBrush* cardBrush = nullptr;
-                    rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.025f), &cardBrush);
-                    if (cardBrush)
-                    {
-                        rt->FillRoundedRectangle(roundedCard, cardBrush);
-                        cardBrush->Release();
-                    }
-                    rt->CreateSolidColorBrush(D2D1::ColorF(baseClr.r, baseClr.g, baseClr.b, 0.065f), &cardBrush);
-                    if (cardBrush)
-                    {
-                        rt->DrawRoundedRectangle(roundedCard, cardBrush, UIStyle::Metrics::ControlStroke());
-                        cardBrush->Release();
-                    }
-                    rt->DrawTextW(title, (UINT32)wcslen(title), tfDefault,
-                        D2D1::RectF(cardRect.left + 10.0f, cardRect.top + 6.0f, cardRect.right - 10.0f, cardRect.top + 24.0f), tbNormal);
-                    rt->DrawTextW(body, (UINT32)wcslen(body), tfDefault,
-                        D2D1::RectF(cardRect.left + 10.0f, cardRect.top + 24.0f, cardRect.right - 10.0f, cardRect.bottom - 5.0f), tbMuted);
-                };
-
-                drawInfoCard(TwoColumnRect(0, 164.0f, 68.0f), L"快速启动", L"通过鼠标手势或快捷键\n在光标处唤出快捷方式面板");
-                drawInfoCard(TwoColumnRect(1, 164.0f, 68.0f), L"搜索与分类", L"分页管理常用项目，支持\n即时搜索、智能排序与场景筛选");
-                drawInfoCard(TwoColumnRect(0, 242.0f, 68.0f), L"命令与自动化", L"运行自定义命令、批量启动与宏；\n可使用已选文件作为命令输入");
-                drawInfoCard(TwoColumnRect(1, 242.0f, 68.0f), L"外观与扩展", L"可调主题、材质、布局与动画；\n支持 DLL 插件、/ 命令与搜索源");
-                drawInfoCard(D2D1::RectF(CONTENT_LEFT, 320.0f, CONTENT_RIGHT, 400.0f), L"本地优先与诊断", L"配置、使用记录、日志和崩溃诊断均保留在本机，不会自动上传。\n可在“配置管理”中生成脱敏诊断包、创建备份或迁移到新设备。");
+                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(0, 164.0f, 68.0f), L"快速启动", L"通过鼠标手势或快捷键\n在光标处唤出快捷方式面板");
+                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(1, 164.0f, 68.0f), L"搜索与分类", L"分页管理常用项目，支持\n即时搜索、智能排序与场景筛选");
+                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(0, 242.0f, 68.0f), L"命令与自动化", L"运行自定义命令、批量启动与宏；\n可使用已选文件作为命令输入");
+                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, TwoColumnRect(1, 242.0f, 68.0f), L"外观与扩展", L"可调主题、材质、布局与动画；\n支持 DLL 插件、/ 命令与搜索源");
+                SettingsControlKit::DrawInfoCard(rt, tfDefault, baseClr, tbNormal, tbMuted, D2D1::RectF(CONTENT_LEFT, 320.0f, CONTENT_RIGHT, 400.0f), L"本地优先与诊断", L"配置、使用记录、日志和崩溃诊断均保留在本机，不会自动上传。\n可在“配置管理”中生成脱敏诊断包、创建备份或迁移到新设备。");
 
                 const D2D1_RECT_F sourceLinkRect = AboutOpenSourceLinkRect();
                 const D2D1_ROUNDED_RECT roundedSourceLink = D2D1::RoundedRect(sourceLinkRect, 5.0f, 5.0f);
