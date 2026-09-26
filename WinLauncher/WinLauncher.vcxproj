@@ -139,6 +139,7 @@
     <ClCompile Include="App\Logger.cpp" />
     <ClCompile Include="App\UiDispatcher.cpp" />
     <ClCompile Include="App\PluginInstaller.cpp" />
+    <ClCompile Include="App\PluginConfigStore.cpp" />
     <ClCompile Include="App\PluginManager.cpp" />
     <ClCompile Include="App\PluginManagerHostApi.cpp" />
     <ClCompile Include="App\PluginManifest.cpp" />
@@ -267,6 +268,7 @@
     <ClInclude Include="App\Logger.h" />
     <ClInclude Include="App\UiDispatcher.h" />
     <ClInclude Include="App\PluginInstaller.h" />
+    <ClInclude Include="App\PluginConfigStore.h" />
     <ClInclude Include="App\PluginManager.h" />
     <ClInclude Include="App\PluginManifest.h" />
     <ClInclude Include="App\PluginStateStore.h" />

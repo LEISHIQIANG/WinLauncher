@@ -140,6 +140,7 @@ $folderWatcherHeader = Read-RepoFile "WinLauncher\Services\FolderWatcher.h"
 $fileSelectionSource = Read-RepoFile "WinLauncher\Services\FileSelectionService.cpp"
 $pluginManagerSource = Read-RepoFile "WinLauncher\App\PluginManager.cpp"
 $pluginManagerHostApiSource = Read-RepoFile "WinLauncher\App\PluginManagerHostApi.cpp"
+$pluginConfigStoreSource = Read-RepoFile "WinLauncher\App\PluginConfigStore.cpp"
 $loggerSource = Read-RepoFile "WinLauncher\App\Logger.cpp"
 $crashSource = Read-RepoFile "WinLauncher\App\CrashReporter.cpp"
 $inputHookStopHeader = Read-RepoFile "WinLauncher\App\InputHookThreadStop.h"
@@ -906,7 +907,8 @@ Add-TestResult `
     -Name "Configuration and plugin writes are atomic" `
     -Passed (
         $shortcutManagerSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING' -and
-        $pluginManagerSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING'
+        ($pluginManagerSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING' -or
+         $pluginConfigStoreSource -match 'MoveFileExW\(tempPath\.c_str\(\), path\.c_str\(\), MOVEFILE_REPLACE_EXISTING')
     ) `
     -Detail "All file writes of user shortcuts and plugin settings must write to .tmp and swap atomically"
 

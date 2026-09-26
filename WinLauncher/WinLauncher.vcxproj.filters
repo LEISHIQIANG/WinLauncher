@@ -30,6 +30,9 @@
     <ClCompile Include="App\PluginInstaller.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="App\PluginConfigStore.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="App\PluginManager.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -281,6 +284,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="App\PluginInstaller.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="App\PluginConfigStore.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="App\PluginManager.h">
