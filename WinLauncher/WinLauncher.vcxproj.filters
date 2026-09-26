@@ -81,6 +81,7 @@
     <ClCompile Include="Config\SettingsAppearanceView.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsBackupView.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\SettingsAboutView.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Config\SettingsSelectionAnimator.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="Config\ShortcutGridViewHelper.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="App\PluginDllLoader.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="TrayMenuWindow.cpp">
@@ -501,6 +502,7 @@
     <ClInclude Include="Config\SettingsAppearanceView.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsBackupView.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\SettingsAboutView.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Config\SettingsSelectionAnimator.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Config\ShortcutGridViewHelper.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="App\PluginDllLoader.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="Popup\PinyinHelper.h"><Filter>头文件</Filter></ClInclude>

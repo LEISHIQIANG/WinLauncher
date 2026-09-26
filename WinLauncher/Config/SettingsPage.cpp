@@ -57,106 +57,19 @@ void SettingsPage::CancelPointerInteraction()
     }
 }
 
-static bool SameRectLocal(const D2D1_RECT_F& a, const D2D1_RECT_F& b)
-{
-    return fabsf(a.left - b.left) < 0.1f &&
-        fabsf(a.top - b.top) < 0.1f &&
-        fabsf(a.right - b.right) < 0.1f &&
-        fabsf(a.bottom - b.bottom) < 0.1f;
-}
-
 D2D1_RECT_F SettingsPage::GetSelectionRect(SelectionVisual& visual, const D2D1_RECT_F& target)
 {
-    if (!visual.initialized || !UIStyle::Animation::IsEnabled())
-    {
-        visual.initialized = true;
-        visual.moving = false;
-        visual.current = target;
-        visual.target = target;
-        return visual.current;
-    }
-
-    if (!SameRectLocal(visual.target, target))
-    {
-        visual.target = target;
-        visual.moving = true;
-        m_selectionAnimating = true;
-        if (m_owner)
-            m_owner->StartAnimation();
-    }
-
-    return visual.current;
+    return m_animator.GetSelectionRect(visual, target, m_owner);
 }
-
-
 
 void SettingsPage::DrawSelectionHighlight(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect, float radius, float bgAlpha, float borderAlpha)
 {
-    D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(rect, radius, radius);
-
-    ID2D1SolidColorBrush* bgBrush = nullptr;
-    D2D1_COLOR_F bgClr = UIStyle::ThemeColor::Accent().d2d;
-    bgClr.a = bgAlpha;
-    rt->CreateSolidColorBrush(bgClr, &bgBrush);
-    if (bgBrush)
-    {
-        rt->FillRoundedRectangle(rounded, bgBrush);
-        bgBrush->Release();
-    }
-
-    ID2D1SolidColorBrush* borderBrush = nullptr;
-    D2D1_COLOR_F borderClr = UIStyle::ThemeColor::Accent().d2d;
-    borderClr.a = borderAlpha;
-    rt->CreateSolidColorBrush(borderClr, &borderBrush);
-    if (borderBrush)
-    {
-        rt->DrawRoundedRectangle(rounded, borderBrush, UIStyle::Metrics::ControlStroke());
-        borderBrush->Release();
-    }
+    SettingsSelectionAnimator::DrawSelectionHighlight(rt, rect, radius, bgAlpha, borderAlpha);
 }
 
 void SettingsPage::UpdateAnimation(float dt, bool& repaint)
 {
-    if (!UIStyle::Animation::IsEnabled())
-    {
-        m_selectionAnimating = false;
-        return;
-    }
-
-    bool stillMoving = false;
-    auto updateVisual = [&](SelectionVisual& visual)
-    {
-        if (!visual.initialized || !visual.moving)
-            return;
-
-        float t = 1.0f - std::exp(-20.0f * dt);
-        visual.current.left += (visual.target.left - visual.current.left) * t;
-        visual.current.top += (visual.target.top - visual.current.top) * t;
-        visual.current.right += (visual.target.right - visual.current.right) * t;
-        visual.current.bottom += (visual.target.bottom - visual.current.bottom) * t;
-
-        if (SameRectLocal(visual.current, visual.target))
-        {
-            visual.current = visual.target;
-            visual.moving = false;
-        }
-        else
-        {
-            stillMoving = true;
-        }
-    };
-
-    updateVisual(m_themeSelection);
-    updateVisual(m_themeColorSelection);
-    updateVisual(m_windowModeSelection);
-    updateVisual(m_triggerSelection);
-    updateVisual(m_popupAlignSelection);
-    updateVisual(m_popupAutoCloseSelection);
-    updateVisual(m_popupMultiOpenSelection);
-    updateVisual(m_sortModeSelection);
-
-    m_selectionAnimating = stillMoving;
-    repaint = true;
+    m_animator.UpdateAnimation(dt, repaint);
 }
 
 int SettingsPage::PendingGlobalScalePercent()
@@ -499,7 +412,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         std::wstring themeLabels[] = { L"深色主题", L"浅色主题" };
         {
             float selectedX = (currentTheme == 0) ? 160.0f : 345.0f;
-            DrawSelectionHighlight(rt, GetSelectionRect(m_themeSelection, D2D1::RectF(selectedX, 180.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, selectedX + 165.0f, 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)), 6.0f);
+            DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_themeSelection, D2D1::RectF(selectedX, 180.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, selectedX + 165.0f, 212.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)), 6.0f);
         }
         for (int i = 0; i < 2; i++)
         {
@@ -613,7 +526,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
             const float swatchSize = 18.0f;
             const float swatchStep = (swatchRight - swatchLeft - swatchSize) / (float)(UIStyle::ThemeColorPresetCount() - 1);
             float x = swatchLeft + currentThemeColor * swatchStep;
-            D2D1_RECT_F ringRect = GetSelectionRect(m_themeColorSelection, D2D1::RectF(x - 2.0f, 242.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, x + swatchSize + 2.0f, 264.0f + SYSTEM_SETTINGS_CONTENT_OFFSET));
+            D2D1_RECT_F ringRect = GetSelectionRect(m_animator.m_themeColorSelection, D2D1::RectF(x - 2.0f, 242.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, x + swatchSize + 2.0f, 264.0f + SYSTEM_SETTINGS_CONTENT_OFFSET));
             ID2D1SolidColorBrush* ringBrush = nullptr;
             D2D1_COLOR_F ringClr = UIStyle::GetThemeColorPresetColor(currentThemeColor).d2d;
             ringClr.a = 0.92f;
@@ -642,7 +555,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
 
         // Draw Window Mode Buttons side-by-side
         std::wstring modeLabels[] = { L"发光材质", L"亚克力材质", L"玻璃材质" };
-        DrawSelectionHighlight(rt, GetSelectionRect(m_windowModeSelection,
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_windowModeSelection,
             D2D1::RectF(160.0f + currentWindowMode * 120.0f, 298.0f + SYSTEM_SETTINGS_CONTENT_OFFSET, 270.0f + currentWindowMode * 120.0f, 326.0f + SYSTEM_SETTINGS_CONTENT_OFFSET)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
@@ -1005,7 +918,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         int currentTrigger = m_owner->GetTriggerType();
         std::wstring radioLabels[] = { L"鼠标中键", L"侧键 4", L"侧键 5" };
         int selectedTriggerButton = (currentTrigger >= 0 && currentTrigger <= 2) ? currentTrigger : TRIGGER_PRESET_BUTTON;
-        DrawSelectionHighlight(rt, GetSelectionRect(m_triggerSelection, TriggerButtonRect(selectedTriggerButton)), 6.0f);
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_triggerSelection, TriggerButtonRect(selectedTriggerButton)), 6.0f);
         for (int i = 0; i < 3; i++)
         {
             SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, 
@@ -1033,7 +946,7 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         const int selectedPopupAlignButton =
             (alignMode >= 0 && alignMode < POPUP_ALIGN_PRIMARY_COUNT) ? alignMode : POPUP_ALIGN_PRESET_BUTTON;
         std::wstring alignLabels[] = { L"鼠标居中", L"鼠标左上", L"屏幕居中" };
-        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAlignSelection, PopupAlignRect(selectedPopupAlignButton)), 6.0f);
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_popupAlignSelection, PopupAlignRect(selectedPopupAlignButton)), 6.0f);
         for (int i = 0; i < POPUP_ALIGN_PRIMARY_COUNT; i++)
         {
             SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, 
@@ -1064,15 +977,15 @@ void SettingsPage::OnPaint(ID2D1HwndRenderTarget* rt, const D2D1_RECT_F& rect)
         bool autoClose = m_owner->GetPopupAutoClose();
         bool multiOpen = m_owner->GetPopupMultiOpenWhenPinned();
         int sortMode = m_owner->GetSortMode();
-        DrawSelectionHighlight(rt, GetSelectionRect(m_popupAutoCloseSelection,
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_popupAutoCloseSelection,
             PopupBehaviorRect(autoClose ? 0 : 1, 256.0f)), 6.0f);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 256.0f), L"自动关闭", autoClose, m_hoveredPopupAutoClose == 0);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 256.0f), L"点击关闭", !autoClose, m_hoveredPopupAutoClose == 1);
-        DrawSelectionHighlight(rt, GetSelectionRect(m_popupMultiOpenSelection,
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_popupMultiOpenSelection,
             PopupBehaviorRect(!multiOpen ? 0 : 1, 296.0f)), 6.0f);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 296.0f), L"固定时复用", !multiOpen, m_hoveredPopupMultiOpenWhenPinned == 0);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 296.0f), L"固定时多开", multiOpen, m_hoveredPopupMultiOpenWhenPinned == 1);
-        DrawSelectionHighlight(rt, GetSelectionRect(m_sortModeSelection,
+        DrawSelectionHighlight(rt, GetSelectionRect(m_animator.m_sortModeSelection,
             PopupBehaviorRect(sortMode == 0 ? 0 : 1, 336.0f)), 6.0f);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(0, 336.0f), L"自定义排序", sortMode == 0, m_hoveredSortMode == 0);
         SettingsControlKit::DrawSegmentButton(rt, tfDefault, baseClr, PopupBehaviorRect(1, 336.0f), L"智能排序", sortMode == 1, m_hoveredSortMode == 1);

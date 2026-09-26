@@ -1,5 +1,6 @@
 #pragma once
 #include "ConfigPage.h"
+#include "SettingsSelectionAnimator.h"
 #include <string>
 #include <functional>
 
@@ -20,7 +21,7 @@ public:
     virtual void OnLButtonUp(POINT pt, bool& repaint) override;
     virtual void OnLButtonDblClk(POINT pt, bool& repaint) override;
     virtual void OnDropFiles(HDROP hDrop, bool& repaint) override;
-    virtual bool IsAnimating() const override { return m_selectionAnimating; }
+    virtual bool IsAnimating() const override { return m_animator.IsAnimating(); }
     virtual void UpdateAnimation(float dt, bool& repaint) override;
 
     std::function<void()> OnImportJsonClicked;
@@ -79,14 +80,7 @@ private:
     bool InstallPluginPackageFromPath(const std::wstring& filePath, bool showSuccessMessage, std::wstring* errorMessage = nullptr);
     bool IsPluginPackagePath(const std::wstring& filePath) const;
 
-    struct SelectionVisual
-    {
-        bool initialized = false;
-        bool moving = false;
-        D2D1_RECT_F current = {};
-        D2D1_RECT_F target = {};
-    };
-
+    using SelectionVisual = SettingsSelectionAnimator::SelectionVisual;
     D2D1_RECT_F GetSelectionRect(SelectionVisual& visual, const D2D1_RECT_F& target);
     void ShowTriggerPresetMenu();
     void ShowPopupAlignPresetMenu();
@@ -152,13 +146,5 @@ private:
     int m_hoveredPluginToggle = -1;
     int m_hoveredPluginUninstall = -1;
 
-    bool m_selectionAnimating = false;
-    SelectionVisual m_themeSelection;
-    SelectionVisual m_themeColorSelection;
-    SelectionVisual m_windowModeSelection;
-    SelectionVisual m_triggerSelection;
-    SelectionVisual m_popupAlignSelection;
-    SelectionVisual m_popupAutoCloseSelection;
-    SelectionVisual m_popupMultiOpenSelection;
-    SelectionVisual m_sortModeSelection;
+    SettingsSelectionAnimator m_animator;
 };
