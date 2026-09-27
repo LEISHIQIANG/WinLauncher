@@ -40,4 +40,6 @@ private:
 
     int m_hovered;
     bool m_mouseCaptured = false;
+    EventBus::Token m_themeChangedToken = 0;
+    EventBus::Token m_bgStyleChangedToken = 0;
 };

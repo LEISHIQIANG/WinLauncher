@@ -32,10 +32,42 @@ TrayMenuWindow::TrayMenuWindow(AppContext* ctx)
     : m_hovered(-1)
 {
     m_appCtx = ctx;
+    if (m_appCtx && m_appCtx->eventBus)
+    {
+        m_themeChangedToken = m_appCtx->eventBus->Subscribe(EventType::ThemeChanged, [this]() {
+            UpdateBackgroundStyle();
+            UpdateTheme();
+            if (m_hWnd && IsWindow(m_hWnd))
+            {
+                InvalidateRect(m_hWnd, nullptr, FALSE);
+            }
+        });
+
+        m_bgStyleChangedToken = m_appCtx->eventBus->Subscribe(EventType::BackgroundStyleChanged, [this]() {
+            UpdateBackgroundStyle();
+            if (m_hWnd && IsWindow(m_hWnd))
+            {
+                InvalidateRect(m_hWnd, nullptr, FALSE);
+            }
+        });
+    }
 }
 
 TrayMenuWindow::~TrayMenuWindow()
 {
+    if (m_appCtx && m_appCtx->eventBus)
+    {
+        if (m_themeChangedToken != 0)
+        {
+            m_appCtx->eventBus->Unsubscribe(EventType::ThemeChanged, m_themeChangedToken);
+            m_themeChangedToken = 0;
+        }
+        if (m_bgStyleChangedToken != 0)
+        {
+            m_appCtx->eventBus->Unsubscribe(EventType::BackgroundStyleChanged, m_bgStyleChangedToken);
+            m_bgStyleChangedToken = 0;
+        }
+    }
 }
 
 // ============================================================
@@ -154,7 +186,6 @@ void TrayMenuWindow::Show(POINT pt)
     if (pt.x < wa.left)          pt.x = wa.left;
     if (pt.y < wa.top)           pt.y = wa.top;
 
-    bool created = false;
     if (!s_instance)
     {
         s_instance = new TrayMenuWindow(s_ctx);
@@ -166,14 +197,10 @@ void TrayMenuWindow::Show(POINT pt)
             s_instance = nullptr;
             return;
         }
-        created = true;
     }
 
-    if (created)
-    {
-        SetWindowDisplayAffinitySafe(s_instance->GetHWND());
-        s_instance->ApplySystemBackdrop();
-    }
+    SetWindowDisplayAffinitySafe(s_instance->GetHWND());
+    s_instance->ApplySystemBackdrop();
 
     SetWindowPos(s_instance->GetHWND(), HWND_TOPMOST, pt.x, pt.y, w_px, h_px, SWP_NOACTIVATE);
 
@@ -191,12 +218,18 @@ void TrayMenuWindow::Show(POINT pt)
         // the restored opaque frame instead of resetting it to transparent.
         s_instance->EnsureShadowForCurrentBounds(1.0f);
         s_instance->ApplyVisibilityFrame(1.0f, 1.0f);
-        s_instance->RefreshBackgroundCache();
+        if (UIStyle::GetWindowMode() != 1)
+        {
+            s_instance->RefreshBackgroundCache();
+        }
         InvalidateRect(s_instance->GetHWND(), nullptr, FALSE);
     }
 
     if (!IsWindowVisible(s_instance->GetHWND()))
-        s_instance->RevealAfterFirstPaint();
+    {
+        const bool usesCapturedBackground = UIStyle::GetWindowMode() != 1;
+        s_instance->RevealAfterFirstPaint(SW_SHOW, usesCapturedBackground);
+    }
     SetForegroundWindow(s_instance->GetHWND());
     s_instance->CaptureMouse();
 }
