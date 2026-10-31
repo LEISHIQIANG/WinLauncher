@@ -42,6 +42,7 @@ public:
         FLOAT dpiX = 96.0f;
         FLOAT dpiY = 96.0f;
         POINT clientScreenOrigin = { 0, 0 };  // screen coords of the client origin at capture time
+        RECT captureRect = { 0, 0, 0, 0 };    // effective captured screen rect (margin-inflated, clamped)
         unsigned sequence = 0;
         bool fromDuplication = false;
     };
@@ -61,6 +62,18 @@ public:
 
     // UI thread only: enable/disable capture while the window shows/hides.
     void SetLive(bool live);
+
+    // UI thread only: drag-mode tuning. While the user drags the window the
+    // worker captures a margin-inflated rect at a lower cadence so GDI screen
+    // reads stop contending with DWM composition, and the UI can glide the
+    // cached blur with the world-anchored offset between refreshes.
+    void SetDragMode(bool dragging);
+
+    // Margin (physical px) inflated around the window rect while dragging.
+    static constexpr int kDragCaptureMarginPx = 96;
+    // Capture interval while dragging (ms): ~30 fps content refresh is
+    // invisible under the blur, and the window itself glides at full rate.
+    static constexpr UINT kDragRefreshMs = 33;
 
     // UI thread only: nudge the worker (theme/style changes, drag end).
     void RequestCapture();
@@ -91,7 +104,7 @@ private:
     void ThreadLoop();
     Geometry SnapshotGeometry() const;
 
-    bool ProduceGdiFrame(const Geometry& g, Frame& frame);
+    bool ProduceGdiFrame(const Geometry& g, const RECT& captureRect, Frame& frame);
 
     void Publish(Frame&& frame);
 
@@ -99,6 +112,7 @@ private:
     UINT m_refreshMs = 11;
     std::atomic<bool> m_stop{ false };
     std::atomic<bool> m_live{ false };
+    std::atomic<bool> m_dragging{ false };
     HANDLE m_wakeEvent = nullptr;
     HANDLE m_thread = nullptr;
 

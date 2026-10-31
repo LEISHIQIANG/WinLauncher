@@ -643,6 +643,14 @@ void GlassWindow::CompositeBackgroundToCache()
     auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
 
     // ---- Pass A: blurred desktop screenshot (world-anchored) ----
+    // The raw capture covers the window rect plus the drag margin; shift the
+    // composite source so the window region of the blurred capture lands at
+    // (0,0) of the window-sized blur bitmap.
+    const RECT captureRect = m_backgroundCapture.LastCaptureRect();
+    const float captureShiftX = scale > 0.0f
+        ? (float)(m_bgCaptureOriginScreen.x - captureRect.left) / scale : 0.0f;
+    const float captureShiftY = scale > 0.0f
+        ? (float)(m_bgCaptureOriginScreen.y - captureRect.top) / scale : 0.0f;
     ComPtr<ID2D1BitmapRenderTarget> blurRt = m_bgBlurRt;
     blurRt->BeginDraw();
     blurRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
@@ -692,18 +700,25 @@ void GlassWindow::CompositeBackgroundToCache()
             {
                 m_satEffect->SetInput(0, blurOut.Get());
                 m_satEffect->SetValue(D2D1_SATURATION_PROP_SATURATION, cfg.saturation);
-                dc->DrawImage(m_satEffect.Get());
+                dc->DrawImage(m_satEffect.Get(), D2D1::Point2F(-captureShiftX, -captureShiftY));
             }
         }
         else
         {
-            dc->DrawImage(m_backgroundCapture.Bitmap());
+            dc->DrawImage(m_backgroundCapture.Bitmap(), D2D1::Point2F(-captureShiftX, -captureShiftY));
         }
         dc->Release();
     }
     else
     {
-        blurRt->DrawBitmap(m_backgroundCapture.Bitmap(), D2D1::RectF(0, 0, w, h));
+        // No device context (software path): draw the window region of the
+        // margin-inflated capture 1:1.
+        blurRt->DrawBitmap(
+            m_backgroundCapture.Bitmap(),
+            D2D1::RectF(0.0f, 0.0f, w, h),
+            1.0f,
+            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+            D2D1::RectF(captureShiftX, captureShiftY, captureShiftX + w, captureShiftY + h));
     }
 
     if (blurLayerPushed)
@@ -716,6 +731,7 @@ void GlassWindow::CompositeBackgroundToCache()
     if (SUCCEEDED(blurEndHr))
     {
         blurRt->GetBitmap(&m_bgBlurFinal);
+        m_bgCompositeWindowOrigin = m_bgCaptureOriginScreen;
     }
     else
     {
@@ -994,6 +1010,7 @@ bool GlassWindow::ConsumeBackgroundWorkerFrame()
             frame.dpiX,
             frame.dpiY,
             frame.clientScreenOrigin,
+            frame.captureRect,
             m_rt.Get()))
     {
         return false;
@@ -1020,16 +1037,17 @@ void GlassWindow::DrawGlassBackground(float w, float h, float scale)
 {
     if (m_bgBlurFinal)
     {
-        // Shift the blurred layer opposite to the window's movement since its
-        // capture so the world behind stays glued in place between worker
-        // frames. Sheen/tint/border (window-anchored) are drawn unshifted.
+        // Anchor to the composite's window origin: between throttled drag
+        // composites the cached blur glides with the world via this offset,
+        // so the window, shadow, and blurred background all move together
+        // without re-running the blur on the UI thread.
         float offsetX = 0.0f;
         float offsetY = 0.0f;
         POINT now{ 0, 0 };
         if (m_hWnd && ClientToScreen(m_hWnd, &now) && scale > 0.0f)
         {
-            offsetX = -(float)(now.x - m_bgCaptureOriginScreen.x) / scale;
-            offsetY = -(float)(now.y - m_bgCaptureOriginScreen.y) / scale;
+            offsetX = -(float)(now.x - m_bgCompositeWindowOrigin.x) / scale;
+            offsetY = -(float)(now.y - m_bgCompositeWindowOrigin.y) / scale;
         }
         DrawWorldAnchoredBitmap(m_bgBlurFinal.Get(), offsetX, offsetY, w, h);
         if (m_bgOverlayFinal)
@@ -1040,7 +1058,31 @@ void GlassWindow::DrawGlassBackground(float w, float h, float scale)
     }
     if (m_backgroundCapture.Bitmap())
     {
-        DrawBackgroundFullTarget(m_backgroundCapture.Bitmap());
+        // Composite unavailable: align the raw (margin-inflated) capture to
+        // the window with the same world-anchored brush path.
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        POINT now{ 0, 0 };
+        const RECT captureRect = m_backgroundCapture.LastCaptureRect();
+        if (m_hWnd && ClientToScreen(m_hWnd, &now) && scale > 0.0f)
+        {
+            offsetX = -(float)(now.x - captureRect.left) / scale;
+            offsetY = -(float)(now.y - captureRect.top) / scale;
+        }
+        D2D1_BITMAP_BRUSH_PROPERTIES brushProps = D2D1::BitmapBrushProperties(
+            D2D1_EXTEND_MODE_CLAMP,
+            D2D1_EXTEND_MODE_CLAMP,
+            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        ComPtr<ID2D1BitmapBrush> brush;
+        if (SUCCEEDED(m_rt->CreateBitmapBrush(m_backgroundCapture.Bitmap(), brushProps, &brush)) && brush)
+        {
+            brush->SetTransform(D2D1::Matrix3x2F::Translation(offsetX, offsetY));
+            m_rt->FillRectangle(D2D1::RectF(0.0f, 0.0f, w + 1.0f, h + 1.0f), brush.Get());
+        }
+        else
+        {
+            DrawBackgroundFullTarget(m_backgroundCapture.Bitmap());
+        }
         return;
     }
     m_rt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
@@ -1259,8 +1301,27 @@ void GlassWindow::DoPaint()
 
         if (m_bgCompositeDirty)
         {
-            CompositeBackgroundToCache();
-            m_bgCompositeDirty = false;
+            // While the modal move loop is active, paints glide the cached
+            // blur with the world-anchored offset; composites are throttled
+            // so the UI thread never competes with the drag for frame time.
+            bool skipComposite = false;
+            if (m_glassDragging && m_bgBlurFinal)
+            {
+                const ULONGLONG nowTick = GetTickCount64();
+                if (nowTick - m_lastDragCompositeTick < 25)
+                {
+                    skipComposite = true;
+                }
+                else
+                {
+                    m_lastDragCompositeTick = nowTick;
+                }
+            }
+            if (!skipComposite)
+            {
+                CompositeBackgroundToCache();
+                m_bgCompositeDirty = false;
+            }
         }
 
         DrawGlassBackground(w, h, scale);
@@ -1432,6 +1493,14 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_ENTERSIZEMOVE:
+        // Modal move loop starting: switch the capture worker to drag mode
+        // (margin-inflated rect, reduced cadence) so GDI screen reads stop
+        // contending with DWM composition while the window glides.
+        m_glassDragging = true;
+        if (m_bgWorker)
+        {
+            m_bgWorker->SetDragMode(true);
+        }
         return 0;
 
     case WM_WINDOWPOSCHANGED:
@@ -1541,8 +1610,18 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
 
     case WM_EXITSIZEMOVE:
-        MarkBackgroundDirty(L"exit_size_move", true);
-        SyncBackgroundWorkerGeometry();
+        m_glassDragging = false;
+        if (m_bgWorker)
+        {
+            // Back to the exact-rect live cadence; the worker refreshes the
+            // background without a synchronous UI-thread capture stall.
+            m_bgWorker->SetDragMode(false);
+            SyncBackgroundWorkerGeometry();
+        }
+        else
+        {
+            MarkBackgroundDirty(L"exit_size_move", true);
+        }
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
 

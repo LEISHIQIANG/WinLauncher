@@ -26,7 +26,9 @@ public:
     bool Capture(HWND hwnd, ID2D1HwndRenderTarget* rt);
 
     // Uploads a worker-produced buffer as the raw background bitmap. The
-    // buffer layout matches Capture() (top-down BGRA, opaque alpha).
+    // buffer covers captureRect (window rect inflated by the drag margin and
+    // clamped); clientScreenOrigin is the window client origin at capture
+    // time. Both feed the composite's source alignment.
     bool IngestBuffer(
         const DWORD* pixels,
         int width,
@@ -34,10 +36,15 @@ public:
         FLOAT dpiX,
         FLOAT dpiY,
         POINT clientScreenOrigin,
+        const RECT& captureRect,
         ID2D1RenderTarget* rt);
 
     // Screen coords of the client origin for the bitmap currently held.
     POINT LastClientOrigin() const { return m_lastOrigin; }
+
+    // Screen rect the current bitmap actually covers (may exceed the window
+    // rect by the drag margin).
+    RECT LastCaptureRect() const { return m_lastCaptureRect; }
 
     // The last captured raw background (null when none yet or after Reset).
     ID2D1Bitmap* Bitmap() const { return m_bgCap.Get(); }
@@ -52,6 +59,7 @@ private:
     ComPtr<ID2D1Bitmap> m_bgCap;
     std::vector<DWORD> m_pixbuf;
     POINT m_lastOrigin = { 0, 0 };
+    RECT m_lastCaptureRect = { 0, 0, 0, 0 };
     DWORD m_lastError = ERROR_SUCCESS;
     ULONGLONG m_lastLogTick = 0;
 };

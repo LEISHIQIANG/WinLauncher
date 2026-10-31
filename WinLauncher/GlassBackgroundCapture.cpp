@@ -148,11 +148,13 @@ bool GlassBackgroundCapture::Capture(HWND hwnd, ID2D1HwndRenderTarget* rt)
     FLOAT dpiX = 96.0f;
     FLOAT dpiY = 96.0f;
     rt->GetDpi(&dpiX, &dpiY);
+    RECT captureRect{ clientOrigin.x, clientOrigin.y, clientOrigin.x + w, clientOrigin.y + h };
     const bool uploaded = UploadBuffer(m_pixbuf.data(), w, h, dpiX, dpiY, rt);
     m_pixbuf.clear();
     if (uploaded)
     {
         m_lastOrigin = clientOrigin;
+        m_lastCaptureRect = captureRect;
         m_lastError = ERROR_SUCCESS;
         m_lastLogTick = 0;
     }
@@ -185,6 +187,7 @@ bool GlassBackgroundCapture::IngestBuffer(
     FLOAT dpiX,
     FLOAT dpiY,
     POINT clientScreenOrigin,
+    const RECT& captureRect,
     ID2D1RenderTarget* rt)
 {
     if (!pixels || width <= 0 || height <= 0 || !rt)
@@ -196,6 +199,7 @@ bool GlassBackgroundCapture::IngestBuffer(
         return false;
     }
     m_lastOrigin = clientScreenOrigin;
+    m_lastCaptureRect = captureRect;
     m_lastError = ERROR_SUCCESS;
     m_lastLogTick = 0;
     return true;

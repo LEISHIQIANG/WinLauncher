@@ -68,6 +68,35 @@ namespace
         return rect;
     }
 
+    // Inflate the window rect by the drag margin and clamp to the virtual
+    // screen, so BitBlt/duplication never sample undefined desktop area.
+    RECT EffectiveCaptureRect(const RECT& windowRect, int margin)
+    {
+        RECT r = windowRect;
+        if (margin > 0)
+        {
+            r.left -= margin;
+            r.top -= margin;
+            r.right += margin;
+            r.bottom += margin;
+        }
+        RECT vs{
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN) + GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+        RECT clipped{
+            (r.left > vs.left ? r.left : vs.left),
+            (r.top > vs.top ? r.top : vs.top),
+            (r.right < vs.right ? r.right : vs.right),
+            (r.bottom < vs.bottom ? r.bottom : vs.bottom) };
+        if (clipped.right <= clipped.left || clipped.bottom <= clipped.top)
+        {
+            return windowRect;  // degenerate clip: capture the window rect as-is
+        }
+        return clipped;
+    }
+
     bool FullyInside(const RECT& inner, const RECT& outer)
     {
         return inner.left >= outer.left && inner.top >= outer.top &&
@@ -169,11 +198,13 @@ namespace
     }
 
     // Extract the window subrect out of the persistent desktop copy. Called
-    // both after a fresh frame and when only the window rect moved.
+    // both after a fresh frame and when only the window rect moved. The
+    // requested rect is clamped to the output bounds; the effective rect is
+    // reported through the frame so the UI can align the bitmap exactly.
     DupResult ExtractDuplicationSubrect(
         GlassBackgroundWorker::DuplicationState& s,
-        const RECT& rectScreen,
-        std::vector<DWORD>& pixels)
+        const RECT& captureRect,
+        GlassBackgroundWorker::Frame& frame)
     {
         if (!s.desktopCopy || !s.staging || !s.context)
         {
@@ -181,15 +212,17 @@ namespace
         }
         const RECT outputRect = s.outputDesc.DesktopCoordinates;
         RECT local{
-            rectScreen.left - outputRect.left,
-            rectScreen.top - outputRect.top,
-            rectScreen.right - outputRect.left,
-            rectScreen.bottom - outputRect.top };
-        const int w = rectScreen.right - rectScreen.left;
-        const int h = rectScreen.bottom - rectScreen.top;
-        if (w <= 0 || h <= 0 ||
-            local.left < 0 || local.top < 0 ||
-            local.right > (LONG)s.outputWidth || local.bottom > (LONG)s.outputHeight)
+            captureRect.left - outputRect.left,
+            captureRect.top - outputRect.top,
+            captureRect.right - outputRect.left,
+            captureRect.bottom - outputRect.top };
+        local.left = (std::max)(local.left, 0L);
+        local.top = (std::max)(local.top, 0L);
+        local.right = (std::min)(local.right, (LONG)s.outputWidth);
+        local.bottom = (std::min)(local.bottom, (LONG)s.outputHeight);
+        const int w = local.right - local.left;
+        const int h = local.bottom - local.top;
+        if (w <= 0 || h <= 0)
         {
             return DupResult::Failed;
         }
@@ -206,11 +239,12 @@ namespace
         {
             return DupResult::Failed;
         }
+        frame.pixels->assign((size_t)w * h, 0);
         for (int y = 0; y < h; ++y)
         {
             const BYTE* src = (const BYTE*)mapped.pData +
                 (size_t)(local.top + y) * mapped.RowPitch + (size_t)local.left * 4;
-            DWORD* dst = pixels.data() + (size_t)y * w;
+            DWORD* dst = frame.pixels->data() + (size_t)y * w;
             memcpy(dst, src, (size_t)w * 4);
             for (int x = 0; x < w; ++x)
             {
@@ -218,17 +252,25 @@ namespace
             }
         }
         s.context->Unmap(s.staging.Get(), 0);
+
+        frame.captureRect = RECT{
+            local.left + outputRect.left,
+            local.top + outputRect.top,
+            local.right + outputRect.left,
+            local.bottom + outputRect.top };
+        frame.width = w;
+        frame.height = h;
         return DupResult::Captured;
     }
 
     // Acquire one desktop frame, keep a persistent full-output copy, and
-    // extract the window subrect when either the image or the rect changed.
+    // extract the capture rect when either the image or the rect changed.
     DupResult TryCaptureDuplication(
         GlassBackgroundWorker::DuplicationState& s,
-        const RECT& rectScreen,
+        const RECT& captureRect,
         bool rectChanged,
         UINT timeoutMs,
-        std::vector<DWORD>& pixels)
+        GlassBackgroundWorker::Frame& frame)
     {
         DXGI_OUTDUPL_FRAME_INFO info{};
         ComPtr<IDXGIResource> resource;
@@ -242,7 +284,7 @@ namespace
             {
                 return DupResult::NoChange;
             }
-            return ExtractDuplicationSubrect(s, rectScreen, pixels);
+            return ExtractDuplicationSubrect(s, captureRect, frame);
         }
         if (FAILED(hr))
         {
@@ -306,7 +348,7 @@ namespace
         {
             return DupResult::NoChange;  // metadata-only update
         }
-        return ExtractDuplicationSubrect(s, rectScreen, pixels);
+        return ExtractDuplicationSubrect(s, captureRect, frame);
     }
 }
 
@@ -425,6 +467,15 @@ void GlassBackgroundWorker::RequestCapture()
     }
 }
 
+void GlassBackgroundWorker::SetDragMode(bool dragging)
+{
+    m_dragging.store(dragging);
+    if (m_wakeEvent)
+    {
+        SetEvent(m_wakeEvent);
+    }
+}
+
 bool GlassBackgroundWorker::TryConsumeFrame(Frame& out)
 {
     std::lock_guard<std::mutex> lock(m_frameMutex);
@@ -443,11 +494,11 @@ GlassBackgroundWorker::Geometry GlassBackgroundWorker::SnapshotGeometry() const
     return m_geometry;
 }
 
-bool GlassBackgroundWorker::ProduceGdiFrame(const Geometry& g, Frame& frame)
+bool GlassBackgroundWorker::ProduceGdiFrame(const Geometry& g, const RECT& captureRect, Frame& frame)
 {
     double captureStartMs = PerfNowMs();
-    const int w = g.width;
-    const int h = g.height;
+    const int w = captureRect.right - captureRect.left;
+    const int h = captureRect.bottom - captureRect.top;
 
     HDC sdc = GetDC(nullptr);
     if (!sdc)
@@ -462,7 +513,7 @@ bool GlassBackgroundWorker::ProduceGdiFrame(const Geometry& g, Frame& frame)
         HGDIOBJ oldBitmap = SelectObject(mdc, bmp);
         if (oldBitmap)
         {
-            if (BitBlt(mdc, 0, 0, w, h, sdc, g.clientScreenOrigin.x, g.clientScreenOrigin.y, SRCCOPY))
+            if (BitBlt(mdc, 0, 0, w, h, sdc, captureRect.left, captureRect.top, SRCCOPY))
             {
                 BITMAPINFO bi{};
                 bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -512,6 +563,7 @@ bool GlassBackgroundWorker::ProduceGdiFrame(const Geometry& g, Frame& frame)
     }
     frame.width = w;
     frame.height = h;
+    frame.captureRect = captureRect;
     frame.fromDuplication = false;
     return true;
 }
@@ -549,7 +601,9 @@ void GlassBackgroundWorker::ThreadLoop()
 
     while (!m_stop.load())
     {
-        DWORD timeout = m_live.load() ? m_refreshMs : 500;
+        DWORD timeout = m_live.load()
+            ? (m_dragging.load() ? kDragRefreshMs : m_refreshMs)
+            : 500;
         WaitForSingleObject(m_wakeEvent, timeout);
         if (m_stop.load())
         {
@@ -565,21 +619,25 @@ void GlassBackgroundWorker::ThreadLoop()
             continue;
         }
 
+        const RECT windowRect = WindowRectScreen(g.clientScreenOrigin, g.width, g.height);
+        const RECT captureRect = EffectiveCaptureRect(
+            windowRect, m_dragging.load() ? kDragCaptureMarginPx : 0);
+
         Frame frame;
-        frame.width = g.width;
-        frame.height = g.height;
+        frame.width = captureRect.right - captureRect.left;
+        frame.height = captureRect.bottom - captureRect.top;
         frame.dpiX = g.dpiX;
         frame.dpiY = g.dpiY;
         frame.clientScreenOrigin = g.clientScreenOrigin;
+        frame.captureRect = captureRect;
         frame.pixels = std::make_shared<std::vector<DWORD>>(
-            (size_t)g.width * (size_t)g.height, 0);
+            (size_t)frame.width * (size_t)frame.height, 0);
 
-        const RECT rectScreen = WindowRectScreen(g.clientScreenOrigin, g.width, g.height);
         const bool rectChanged = !haveLastCapture ||
-            lastCaptureRect.left != rectScreen.left ||
-            lastCaptureRect.top != rectScreen.top ||
-            lastCaptureRect.right != rectScreen.right ||
-            lastCaptureRect.bottom != rectScreen.bottom;
+            lastCaptureRect.left != captureRect.left ||
+            lastCaptureRect.top != captureRect.top ||
+            lastCaptureRect.right != captureRect.right ||
+            lastCaptureRect.bottom != captureRect.bottom;
 
         bool produced = false;
         bool dupAttempted = false;
@@ -587,9 +645,9 @@ void GlassBackgroundWorker::ThreadLoop()
         if (duplication && (!duplicationBroken || now >= duplicationRetryTick))
         {
             dupAttempted = true;
-            if (EnsureDuplicationSession(*duplication, rectScreen, m_hwnd))
+            if (EnsureDuplicationSession(*duplication, captureRect, m_hwnd))
             {
-                switch (TryCaptureDuplication(*duplication, rectScreen, rectChanged, m_refreshMs, *frame.pixels))
+                switch (TryCaptureDuplication(*duplication, captureRect, rectChanged, timeout, frame))
                 {
                 case DupResult::Captured:
                     frame.fromDuplication = true;
@@ -616,13 +674,13 @@ void GlassBackgroundWorker::ThreadLoop()
         // duplication attempt just failed for this frame.
         if (!produced && (!dupAttempted || duplicationBroken))
         {
-            produced = ProduceGdiFrame(g, frame);
+            produced = ProduceGdiFrame(g, captureRect, frame);
         }
 
         if (produced)
         {
             frame.sequence = ++m_sequence;
-            lastCaptureRect = rectScreen;
+            lastCaptureRect = captureRect;
             haveLastCapture = true;
             Publish(std::move(frame));
         }

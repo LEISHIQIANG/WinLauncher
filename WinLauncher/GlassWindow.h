@@ -124,7 +124,10 @@ protected:
     ComPtr<ID2D1BitmapRenderTarget> m_bgBlurRt;      // cached blur pass RT
     ComPtr<ID2D1BitmapRenderTarget> m_bgOverlayRt;   // cached overlay pass RT
     POINT                     m_bgCaptureOriginScreen = { 0, 0 };  // world anchor of m_bgBlurFinal
+    POINT                     m_bgCompositeWindowOrigin = { 0, 0 };  // window origin when the blur composite was built
     std::unique_ptr<GlassBackgroundWorker> m_bgWorker;   // background capture producer
+    bool                      m_glassDragging = false;   // modal move loop in progress
+    ULONGLONG                 m_lastDragCompositeTick = 0;
     bool                      m_bgCaptureDirty = true;
     bool                      m_bgCompositeDirty = true;
 
