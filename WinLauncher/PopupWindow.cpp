@@ -929,7 +929,7 @@ void PopupWindow::ShowAt(HWND parent, POINT pt)
 
         const bool usesCapturedBackground = UIStyle::GetWindowMode() != 1;
         const bool backgroundRefreshNeeded = usesCapturedBackground &&
-            (this->m_bgCaptureDirty || this->m_bgCompositeDirty || !this->m_bgFinal);
+            (this->m_bgCaptureDirty || this->m_bgCompositeDirty || !this->m_bgBlurFinal);
         double bgElapsedMs = 0.0;
         if (backgroundRefreshNeeded)
         {

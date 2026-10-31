@@ -20,12 +20,21 @@ void PopupWindow::UpdateTextFormat()
 {
     if (!m_dw) return;
 
+    float fontSize = GetFontSize();
+    float searchFontSize = GetSearchFontSize();
+    float tabTextSize = GetHeaderLayout().textSize;
+    if (m_popupTextFormat && m_searchTextFormat && m_tabTextFormat &&
+        m_textFormatFactory == m_dw.Get() &&
+        m_textFormatFontSize == fontSize &&
+        m_textFormatSearchFontSize == searchFontSize &&
+        m_textFormatTabTextSize == tabTextSize)
+    {
+        return;
+    }
+
     m_popupTextFormat.Reset();
     m_searchTextFormat.Reset();
     m_tabTextFormat.Reset();
-
-    float fontSize = GetFontSize();
-    float searchFontSize = GetSearchFontSize();
 
     UIStyle::Typography::CreateTextFormat(
         m_dw.Get(),
@@ -46,10 +55,15 @@ void PopupWindow::UpdateTextFormat()
     UIStyle::Typography::CreateTextFormat(
         m_dw.Get(),
         &m_tabTextFormat,
-        GetHeaderLayout().textSize,
+        tabTextSize,
         DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_TEXT_ALIGNMENT_CENTER,
         DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+    m_textFormatFactory = m_dw.Get();
+    m_textFormatFontSize = fontSize;
+    m_textFormatSearchFontSize = searchFontSize;
+    m_textFormatTabTextSize = tabTextSize;
 }
 void PopupWindow::DrawTopBar(ID2D1HwndRenderTarget* rt)
 {
@@ -229,28 +243,18 @@ void PopupWindow::DrawSearchResults(ID2D1HwndRenderTarget* rt)
         float iy = (float)(wndPad + (i / cols) * ch + topBarHeight);
         const auto& item = m_searchResults[i];
         auto* bmp = item.bitmap;
-        ComPtr<ID2D1Bitmap> generatedBitmap;
         bool commandLike =
             item.kind == SearchResultItem::Kind::PluginCommand ||
             item.kind == SearchResultItem::Kind::PluginSearchResult ||
             item.kind == SearchResultItem::Kind::SlashCommand;
         if (!bmp && commandLike)
         {
-            HICON hIcon = nullptr;
-            if (!item.iconPath.empty())
-            {
-                ExtractIconExW(item.iconPath.c_str(), 0, &hIcon, nullptr, 1);
-            }
-            if (hIcon)
-            {
-                generatedBitmap = IconRenderer::HicontoD2D(rt, hIcon, IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(iconSize)));
-                DestroyIcon(hIcon);
-            }
-            if (!generatedBitmap)
-            {
-                generatedBitmap = IconRenderer::CreateDefaultIcon(rt, GetDWFactory(), item.shortcut.name, IconRenderer::GetRecommendedBitmapSize(rt, static_cast<float>(iconSize)));
-            }
-            bmp = generatedBitmap.Get();
+            // Cached per result identity: generating this bitmap every frame
+            // re-extracted the shell icon and re-ran the box filter at paint
+            // rate. The presenter drops the cache when the RT/DPI changes.
+            const std::wstring cacheKey = item.iconPath + L"|" + item.shortcut.name + L"|" + std::to_wstring(iconSize);
+            bmp = m_iconPresenter.GetOrCreateSearchResultBitmap(
+                this, cacheKey, item.shortcut.name, item.iconPath, iconSize);
         }
         if (bmp)
         {

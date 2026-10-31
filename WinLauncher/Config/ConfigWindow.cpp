@@ -444,8 +444,10 @@ void ConfigWindow::ResizeToCurrentScale()
         m_rt->SetDpi(dpi, dpi);
         UIStyle::Typography::ApplyRenderTargetTextDefaults(m_rt.Get());
         m_backgroundCapture.Reset();
-        m_bgFinal.Reset();
-        m_compositeRt.Reset();
+        m_bgBlurFinal.Reset();
+        m_bgOverlayFinal.Reset();
+        m_bgBlurRt.Reset();
+        m_bgOverlayRt.Reset();
         m_effectWinSize = {};
         m_bgCaptureDirty = true;
         m_bgCompositeDirty = true;

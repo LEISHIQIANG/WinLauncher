@@ -10,6 +10,7 @@
 #include "../App/UiDispatcher.h"
 #include "PopupClock.h"
 #include "PopupWindowMessages.h"
+#include <shellapi.h>
 #include <algorithm>
 #include <cmath>
 
@@ -58,6 +59,7 @@ void PopupIconPresenter::Reset()
     m_bmpBrushCache.clear();
     m_iconFlashStart = 0;
     m_iconFlashBitmaps.clear();
+    m_searchResultBitmaps.clear();
     for (const auto& task : m_iconRefreshTasks) task.Cancel();
     m_iconRefreshTasks.clear();
 }
@@ -76,6 +78,52 @@ ID2D1BitmapBrush* PopupIconPresenter::GetOrCreateBrush(ID2D1Bitmap* bmp, ID2D1Hw
         return ptr;
     }
     return nullptr;
+}
+
+ID2D1Bitmap* PopupIconPresenter::GetOrCreateSearchResultBitmap(
+    PopupWindow* window,
+    const std::wstring& cacheKey,
+    const std::wstring& iconName,
+    const std::wstring& iconPath,
+    int iconSize)
+{
+    if (!window || !window->m_rt)
+        return nullptr;
+
+    auto it = m_searchResultBitmaps.find(cacheKey);
+    if (it != m_searchResultBitmaps.end() && it->second)
+        return it->second.Get();
+
+    ComPtr<ID2D1Bitmap> bitmap;
+    HICON hIcon = nullptr;
+    if (!iconPath.empty())
+    {
+        ExtractIconExW(iconPath.c_str(), 0, &hIcon, nullptr, 1);
+    }
+    if (hIcon)
+    {
+        bitmap = IconRenderer::HicontoD2D(window->m_rt.Get(), hIcon,
+            IconRenderer::GetRecommendedBitmapSize(window->m_rt.Get(), static_cast<float>(iconSize)));
+        DestroyIcon(hIcon);
+    }
+    if (!bitmap)
+    {
+        bitmap = IconRenderer::CreateDefaultIcon(window->m_rt.Get(), window->GetDWFactory(), iconName,
+            IconRenderer::GetRecommendedBitmapSize(window->m_rt.Get(), static_cast<float>(iconSize)));
+    }
+
+    // Unbounded command sets would slowly grow the cache; the result set is
+    // small, so a simple cap keeps memory predictable without LRU bookkeeping.
+    if (m_searchResultBitmaps.size() >= 256)
+    {
+        m_searchResultBitmaps.clear();
+    }
+    ID2D1Bitmap* result = bitmap.Get();
+    if (result)
+    {
+        m_searchResultBitmaps[cacheKey] = std::move(bitmap);
+    }
+    return result;
 }
 
 void PopupIconPresenter::EnsureIcons(PopupWindow* window)
@@ -101,6 +149,7 @@ void PopupIconPresenter::EnsureIcons(PopupWindow* window)
         m_lastDpi = currentDpi;
         m_lastIconBitmapSize = iconBitmapSize;
         m_bmpBrushCache.clear();
+        m_searchResultBitmaps.clear();
     }
 
     bool anyRecreated = false;

@@ -145,6 +145,67 @@ bool GlassBackgroundCapture::Capture(HWND hwnd, ID2D1HwndRenderTarget* rt)
     DeleteDC(mdc);
     ReleaseDC(nullptr, sdc);
 
+    FLOAT dpiX = 96.0f;
+    FLOAT dpiY = 96.0f;
+    rt->GetDpi(&dpiX, &dpiY);
+    const bool uploaded = UploadBuffer(m_pixbuf.data(), w, h, dpiX, dpiY, rt);
+    m_pixbuf.clear();
+    if (uploaded)
+    {
+        m_lastOrigin = clientOrigin;
+        m_lastError = ERROR_SUCCESS;
+        m_lastLogTick = 0;
+    }
+
+    double elapsedMs = PerfNowMs() - captureStartMs;
+    static ULONGLONG s_lastCaptureLogTick = 0;
+    if (ShouldLogPerf(s_lastCaptureLogTick, elapsedMs, 12.0))
+    {
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"background_capture_slow",
+            L"elapsedMs=%.2f thresholdMs=12.00 size=%dx%d dpi=%.1fx%.1f origin=(%d,%d) hasBitmap=%d hwnd=%p",
+            elapsedMs,
+            w,
+            h,
+            dpiX,
+            dpiY,
+            clientOrigin.x,
+            clientOrigin.y,
+            m_bgCap ? 1 : 0,
+            hwnd);
+    }
+    return uploaded;
+}
+
+bool GlassBackgroundCapture::IngestBuffer(
+    const DWORD* pixels,
+    int width,
+    int height,
+    FLOAT dpiX,
+    FLOAT dpiY,
+    POINT clientScreenOrigin,
+    ID2D1RenderTarget* rt)
+{
+    if (!pixels || width <= 0 || height <= 0 || !rt)
+    {
+        return false;
+    }
+    if (!UploadBuffer(pixels, width, height, dpiX, dpiY, rt))
+    {
+        return false;
+    }
+    m_lastOrigin = clientScreenOrigin;
+    m_lastError = ERROR_SUCCESS;
+    m_lastLogTick = 0;
+    return true;
+}
+
+bool GlassBackgroundCapture::UploadBuffer(const DWORD* pixels, int width, int height, FLOAT dpiX, FLOAT dpiY, ID2D1RenderTarget* rt)
+{
+    const int w = width;
+    const int h = height;
+
     if (m_bgCap)
     {
         D2D1_SIZE_U size = m_bgCap->GetPixelSize();
@@ -153,12 +214,11 @@ bool GlassBackgroundCapture::Capture(HWND hwnd, ID2D1HwndRenderTarget* rt)
             LOG_G_DEBUG_NODE(
                 L"ui.glass",
                 L"background_capture_bitmap_recreated",
-                L"reason=size_changed old=%ux%u new=%dx%d hwnd=%p",
+                L"reason=size_changed old=%ux%u new=%dx%d",
                 size.width,
                 size.height,
                 w,
-                h,
-                hwnd);
+                h);
             m_bgCap.Reset();
         }
         else
@@ -174,12 +234,11 @@ bool GlassBackgroundCapture::Capture(HWND hwnd, ID2D1HwndRenderTarget* rt)
                 LOG_G_DEBUG_NODE(
                     L"ui.glass",
                     L"background_capture_bitmap_recreated",
-                    L"reason=dpi_changed bitmapDpi=%.1fx%.1f rtDpi=%.1fx%.1f hwnd=%p",
+                    L"reason=dpi_changed bitmapDpi=%.1fx%.1f rtDpi=%.1fx%.1f",
                     bmpDpiX,
                     bmpDpiY,
                     rtDpiX,
-                    rtDpiY,
-                    hwnd);
+                    rtDpiY);
                 m_bgCap.Reset();
             }
         }
@@ -187,60 +246,30 @@ bool GlassBackgroundCapture::Capture(HWND hwnd, ID2D1HwndRenderTarget* rt)
 
     if (m_bgCap)
     {
-        HRESULT copyHr = m_bgCap->CopyFromMemory(nullptr, m_pixbuf.data(), w * 4);
+        HRESULT copyHr = m_bgCap->CopyFromMemory(nullptr, pixels, w * 4);
         if (FAILED(copyHr))
         {
-            LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_copy_failed", L"hr=0x%08X size=%dx%d hwnd=%p", copyHr, w, h, hwnd);
+            LOG_G_ERROR_NODE(L"ui.glass", L"background_capture_copy_failed", L"hr=0x%08X size=%dx%d", copyHr, w, h);
             m_bgCap.Reset();
         }
     }
     if (!m_bgCap)
     {
-        float dx = 96.0f, dy = 96.0f;
-        rt->GetDpi(&dx, &dy);
         D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dx, dy);
-        HRESULT createHr = rt->CreateBitmap(D2D1::SizeU(w, h), m_pixbuf.data(), w * 4, &props, &m_bgCap);
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpiX, dpiY);
+        HRESULT createHr = rt->CreateBitmap(D2D1::SizeU(w, h), pixels, w * 4, &props, &m_bgCap);
         if (FAILED(createHr))
         {
             LOG_G_ERROR_NODE(
                 L"ui.glass",
                 L"background_capture_create_d2d_bitmap_failed",
-                L"hr=0x%08X size=%dx%d dpi=%.1fx%.1f hwnd=%p",
+                L"hr=0x%08X size=%dx%d dpi=%.1fx%.1f",
                 createHr,
                 w,
                 h,
-                dx,
-                dy,
-                hwnd);
+                dpiX,
+                dpiY);
         }
-    }
-    m_pixbuf.clear();
-    if (m_bgCap)
-    {
-        m_lastError = ERROR_SUCCESS;
-        m_lastLogTick = 0;
-    }
-    double elapsedMs = PerfNowMs() - captureStartMs;
-    static ULONGLONG s_lastCaptureLogTick = 0;
-    if (ShouldLogPerf(s_lastCaptureLogTick, elapsedMs, 12.0))
-    {
-        FLOAT dpiX = 96.0f;
-        FLOAT dpiY = 96.0f;
-        rt->GetDpi(&dpiX, &dpiY);
-        LOG_G_WARNING_NODE(
-            L"ui.glass",
-            L"background_capture_slow",
-            L"elapsedMs=%.2f thresholdMs=12.00 size=%dx%d dpi=%.1fx%.1f origin=(%d,%d) hasBitmap=%d hwnd=%p",
-            elapsedMs,
-            w,
-            h,
-            dpiX,
-            dpiY,
-            clientOrigin.x,
-            clientOrigin.y,
-            m_bgCap ? 1 : 0,
-            hwnd);
     }
     return m_bgCap != nullptr;
 }

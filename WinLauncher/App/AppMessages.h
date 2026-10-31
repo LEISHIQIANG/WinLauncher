@@ -28,6 +28,7 @@ namespace AppMessages
     constexpr UINT InitializePlugins       = WM_APP + 0x9B; // 主消息循环开始后加载插件
     constexpr UINT FolderSyncAutoPaused    = WM_APP + 0x9C; // lParam: FolderAutoPauseRequest*
     constexpr UINT PrefetchTriggerProcess  = WM_APP + 0x9D; // wParam: process id
+    constexpr UINT GlassBackgroundFrame    = WM_APP + 0x9E; // 玻璃窗口后台捕获线程产出了新背景帧
     constexpr UINT CommandPanelAppend       = WM_APP + 0x310;
     constexpr UINT CommandPanelRefreshDone  = WM_APP + 0x311;
 

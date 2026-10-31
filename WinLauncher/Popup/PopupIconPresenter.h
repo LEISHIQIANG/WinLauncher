@@ -42,6 +42,16 @@ public:
     void ClearFlash() noexcept;
     void Reset();
 
+    // Cached bitmap for command-like search results (plugin commands, slash
+    // commands, plugin search results). Without the cache every painted frame
+    // re-extracted the shell icon and re-ran the box filter.
+    ID2D1Bitmap* GetOrCreateSearchResultBitmap(
+        PopupWindow* window,
+        const std::wstring& cacheKey,
+        const std::wstring& iconName,
+        const std::wstring& iconPath,
+        int iconSize);
+
 private:
     ID2D1HwndRenderTarget* m_lastRt = nullptr;
     float m_lastDpi = 96.0f;
@@ -50,6 +60,7 @@ private:
     std::unordered_map<ID2D1Bitmap*, ComPtr<ID2D1BitmapBrush>> m_bmpBrushCache;
     ULONGLONG m_iconFlashStart = 0;
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_iconFlashBitmaps;
+    std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> m_searchResultBitmaps;
     std::vector<BackgroundTaskService::TaskHandle> m_iconRefreshTasks;
     uint64_t m_iconLayoutGeneration = 0;
 };

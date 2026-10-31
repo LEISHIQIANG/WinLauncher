@@ -1,6 +1,7 @@
 #include "App/AppMessages.h"
 #define NOMINMAX
 #include "GlassWindow.h"
+#include "GlassBackgroundWorker.h"
 #include "DpiHelper.h"
 #include "App/Logger.h"
 #include "Config/UIStyle.h"
@@ -50,6 +51,11 @@ GlassWindow::GlassWindow()
 
 GlassWindow::~GlassWindow()
 {
+    if (m_bgWorker)
+    {
+        m_bgWorker->Stop();
+        m_bgWorker.reset();
+    }
     ReleaseD2D();
 }
 
@@ -336,7 +342,8 @@ void GlassWindow::ReleaseD2D()
 void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRenderTarget)
 {
     bool hadResources =
-        m_backgroundCapture.Bitmap() || m_bgFinal.Get() || m_compositeRt.Get() ||
+        m_backgroundCapture.Bitmap() || m_bgBlurFinal.Get() || m_bgOverlayFinal.Get() ||
+        m_bgBlurRt.Get() || m_bgOverlayRt.Get() ||
         m_blurEffect.Get() || m_satEffect.Get() || m_sheenBlurEffect.Get() ||
         m_sheenGsc.Get() || m_sheenBrush.Get() || m_sheenLayerRt.Get() ||
         m_sheenLayerBitmap.Get() || m_roundedClipLayer.Get() ||
@@ -355,8 +362,10 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
 
     m_brushCache.clear();
     m_backgroundCapture.Reset();
-    m_bgFinal.Reset();
-    m_compositeRt.Reset();
+    m_bgBlurFinal.Reset();
+    m_bgOverlayFinal.Reset();
+    m_bgBlurRt.Reset();
+    m_bgOverlayRt.Reset();
     m_blurEffect.Reset();
     m_satEffect.Reset();
     m_sheenBlurEffect.Reset();
@@ -486,7 +495,89 @@ void GlassWindow::UpdateBackgroundStyle()
 
 bool GlassWindow::CaptureBackground()
 {
-    return m_backgroundCapture.Capture(m_hWnd, m_rt.Get());
+    const bool captured = m_backgroundCapture.Capture(m_hWnd, m_rt.Get());
+    if (captured)
+    {
+        m_bgCaptureOriginScreen = m_backgroundCapture.LastClientOrigin();
+    }
+    return captured;
+}
+
+namespace
+{
+    // Ensure a cached bitmap RT still matches the render target size.
+    bool EnsureCompositeTarget(
+        ID2D1RenderTarget* source,
+        ComPtr<ID2D1BitmapRenderTarget>& target,
+        ComPtr<ID2D1Bitmap>& finalBitmap,
+        float w,
+        float h)
+    {
+        if (target)
+        {
+            D2D1_SIZE_F size = target->GetSize();
+            if (size.width != w || size.height != h)
+            {
+                target.Reset();
+                finalBitmap.Reset();
+            }
+        }
+        if (!target)
+        {
+            HRESULT hr = source->CreateCompatibleRenderTarget(D2D1::SizeF(w, h), &target);
+            if (FAILED(hr))
+            {
+                finalBitmap.Reset();
+                return false;
+            }
+            FLOAT dpiX, dpiY;
+            source->GetDpi(&dpiX, &dpiY);
+            target->SetDpi(dpiX, dpiY);
+        }
+        return true;
+    }
+
+    // Push the rounded material clip on a composite pass RT. Each pass owns
+    // its layer; the geometry is factory-level and shared.
+    bool PushRoundedClip(
+        ID2D1RenderTarget* target,
+        const MaterialFrameGeometry& materialFrame,
+        float w,
+        float h,
+        ComPtr<ID2D1RoundedRectangleGeometry>& geometry,
+        ComPtr<ID2D1Layer>& layer)
+    {
+        if (materialFrame.clipRadius <= 0.0f)
+        {
+            return false;
+        }
+        if (!geometry)
+        {
+            ComPtr<ID2D1Factory> factory;
+            target->GetFactory(&factory);
+            if (factory)
+            {
+                factory->CreateRoundedRectangleGeometry(
+                    D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
+                    &geometry);
+            }
+        }
+        if (!layer)
+        {
+            target->CreateLayer(D2D1::SizeF(w, h), &layer);
+        }
+        if (geometry && layer)
+        {
+            target->PushLayer(
+                D2D1::LayerParameters(
+                    materialFrame.clipBounds,
+                    geometry.Get(),
+                    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE),
+                layer.Get());
+            return true;
+        }
+        return false;
+    }
 }
 
 void GlassWindow::CompositeBackgroundToCache()
@@ -507,92 +598,43 @@ void GlassWindow::CompositeBackgroundToCache()
     const MaterialFrameGeometry materialFrame =
         BuildMaterialFrameGeometry(w, h, drawCornerRadius, borderOffset, borderWidth);
 
-    // Reuse bitmap render target if size matches
-    bool sizeChanged = false;
-    if (m_compositeRt)
+    // The composite is split into two cached passes: a world-anchored blur
+    // layer (A) and a window-anchored material overlay (B). Dragging shifts
+    // only A while sheen/tint/border stay glued to the window frame.
+    const bool blurReady = EnsureCompositeTarget(m_rt.Get(), m_bgBlurRt, m_bgBlurFinal, w, h);
+    const bool overlayReady = EnsureCompositeTarget(m_rt.Get(), m_bgOverlayRt, m_bgOverlayFinal, w, h);
+    if (!blurReady || !overlayReady)
     {
-        D2D1_SIZE_F size = m_compositeRt->GetSize();
-        if (size.width != w || size.height != h)
-        {
-            m_compositeRt.Reset();
-            sizeChanged = true;
-        }
-    }
-    if (!m_compositeRt)
-    {
-        HRESULT hr = m_rt->CreateCompatibleRenderTarget(
-            D2D1::SizeF(w, h), &m_compositeRt);
-        if (FAILED(hr))
-        {
-            m_bgFinal.Reset();
-            LOG_G_ERROR_NODE(
-                L"ui.glass",
-                L"background_composite_target_failed",
-                L"hr=0x%08X size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
-                hr,
-                w,
-                h,
-                scale,
-                systemScale,
-                m_hWnd);
-            return;
-        }
-        FLOAT dpiX, dpiY;
-        m_rt->GetDpi(&dpiX, &dpiY);
-        m_compositeRt->SetDpi(dpiX, dpiY);
+        m_bgBlurFinal.Reset();
+        m_bgOverlayFinal.Reset();
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_composite_target_failed",
+            L"blurReady=%d overlayReady=%d size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
+            (int)blurReady,
+            (int)overlayReady,
+            w,
+            h,
+            scale,
+            systemScale,
+            m_hWnd);
+        return;
     }
 
     // If window size changed, rebuild cached effects
-    if (sizeChanged ||
-        m_effectWinSize.width != w ||
+    if (m_effectWinSize.width != w ||
         m_effectWinSize.height != h ||
         fabsf(m_effectCornerRadius - drawCornerRadius) > 0.01f)
     {
         m_blurEffect.Reset(); m_satEffect.Reset(); m_sheenBlurEffect.Reset();
         m_sheenGsc.Reset(); m_sheenBrush.Reset();
         m_sheenLayerRt.Reset(); m_sheenLayerBitmap.Reset();
-        m_roundedClipLayer.Reset(); m_roundedClipGeometry.Reset();
+        m_roundedClipLayer.Reset(); m_roundedClipLayerOverlay.Reset();
+        m_roundedClipGeometry.Reset();
         m_effectWinSize = { w, h };
         m_effectCornerRadius = drawCornerRadius;
     }
 
-    ComPtr<ID2D1BitmapRenderTarget> bmpRt = m_compositeRt;
-    bmpRt->BeginDraw();
-    bmpRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
-    D2D1_ANTIALIAS_MODE originalAntialiasMode = bmpRt->GetAntialiasMode();
-    bmpRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-    bool roundedLayerPushed = false;
-    if (materialFrame.clipRadius > 0.0f)
-    {
-        if (!m_roundedClipGeometry)
-        {
-            ComPtr<ID2D1Factory> roundedFactory;
-            bmpRt->GetFactory(&roundedFactory);
-            if (roundedFactory)
-            {
-                roundedFactory->CreateRoundedRectangleGeometry(
-                    D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
-                    &m_roundedClipGeometry);
-            }
-        }
-        if (!m_roundedClipLayer)
-            bmpRt->CreateLayer(D2D1::SizeF(w, h), &m_roundedClipLayer);
-
-        if (m_roundedClipGeometry && m_roundedClipLayer)
-        {
-            bmpRt->PushLayer(
-                D2D1::LayerParameters(
-                    materialFrame.clipBounds,
-                    m_roundedClipGeometry.Get(),
-                    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE),
-                m_roundedClipLayer.Get());
-            roundedLayerPushed = true;
-        }
-    }
-
-    // A. Draw Blurred Desktop Screenshot (Layer 0)
-    ID2D1DeviceContext* dc = nullptr;
     int windowMode = 0;
     if (m_appCtx && m_appCtx->configService)
     {
@@ -600,17 +642,28 @@ void GlassWindow::CompositeBackgroundToCache()
     }
     auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
 
-    if (SUCCEEDED(bmpRt->QueryInterface(&dc)))
+    // ---- Pass A: blurred desktop screenshot (world-anchored) ----
+    ComPtr<ID2D1BitmapRenderTarget> blurRt = m_bgBlurRt;
+    blurRt->BeginDraw();
+    blurRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    D2D1_ANTIALIAS_MODE originalAntialiasMode = blurRt->GetAntialiasMode();
+    blurRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    const bool blurLayerPushed = PushRoundedClip(
+        blurRt.Get(), materialFrame, w, h, m_roundedClipGeometry, m_roundedClipLayer);
+
+    ID2D1DeviceContext* dc = nullptr;
+    if (SUCCEEDED(blurRt->QueryInterface(&dc)))
     {
         if (!m_blurEffect)
         {
-            HRESULT blurHr = dc->CreateEffect(CLSID_D2D1GaussianBlur, &m_blurEffect);
-            if (FAILED(blurHr))
+            HRESULT effectHr = dc->CreateEffect(CLSID_D2D1GaussianBlur, &m_blurEffect);
+            if (FAILED(effectHr))
             {
                 static ULONGLONG s_lastBlurEffectLogTick = 0;
                 if (Logger::ShouldLogEvery(s_lastBlurEffectLogTick, 5000))
                 {
-                    LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_effect_failed", L"hr=0x%08X hwnd=%p", blurHr, m_hWnd);
+                    LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_effect_failed", L"hr=0x%08X hwnd=%p", effectHr, m_hWnd);
                 }
             }
         }
@@ -650,8 +703,44 @@ void GlassWindow::CompositeBackgroundToCache()
     }
     else
     {
-        bmpRt->DrawBitmap(m_backgroundCapture.Bitmap(), D2D1::RectF(0, 0, w, h));
+        blurRt->DrawBitmap(m_backgroundCapture.Bitmap(), D2D1::RectF(0, 0, w, h));
     }
+
+    if (blurLayerPushed)
+    {
+        blurRt->PopLayer();
+    }
+    blurRt->SetAntialiasMode(originalAntialiasMode);
+
+    HRESULT blurEndHr = blurRt->EndDraw();
+    if (SUCCEEDED(blurEndHr))
+    {
+        blurRt->GetBitmap(&m_bgBlurFinal);
+    }
+    else
+    {
+        m_bgBlurFinal.Reset();
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_composite_enddraw_failed",
+            L"pass=blur hr=0x%08X size=%.0fx%.0f windowMode=%d(%s) hwnd=%p",
+            blurEndHr,
+            w,
+            h,
+            windowMode,
+            WindowModeName(windowMode),
+            m_hWnd);
+    }
+
+    // ---- Pass B: material overlay (window-anchored) ----
+    ComPtr<ID2D1BitmapRenderTarget> overlayRt = m_bgOverlayRt;
+    overlayRt->BeginDraw();
+    overlayRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
+    originalAntialiasMode = overlayRt->GetAntialiasMode();
+    overlayRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+    const bool overlayLayerPushed = PushRoundedClip(
+        overlayRt.Get(), materialFrame, w, h, m_roundedClipGeometry, m_roundedClipLayerOverlay);
 
     // B. Diagonal Specular Radial Glow (Part A of Layer 3)
     if (cfg.highlight > 0.0f)
@@ -664,10 +753,10 @@ void GlassWindow::CompositeBackgroundToCache()
         stopDataSheen[1].position = 1.0f;
         stopDataSheen[1].color = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.0f);
 
-        bmpRt->CreateGradientStopCollection(stopDataSheen, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsSheen);
+        overlayRt->CreateGradientStopCollection(stopDataSheen, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsSheen);
         if (stopsSheen)
         {
-            bmpRt->CreateRadialGradientBrush(
+            overlayRt->CreateRadialGradientBrush(
                 D2D1::RadialGradientBrushProperties(
                     D2D1::Point2F(w * 0.10f, h * 0.10f),
                     D2D1::Point2F(0.0f, 0.0f),
@@ -684,7 +773,7 @@ void GlassWindow::CompositeBackgroundToCache()
                     materialFrame.clipBounds,
                     materialFrame.clipRadius, materialFrame.clipRadius
                 );
-                bmpRt->FillRoundedRectangle(sheenRR, sheenBrush);
+                overlayRt->FillRoundedRectangle(sheenRR, sheenBrush);
                 sheenBrush->Release();
             }
             stopsSheen->Release();
@@ -702,10 +791,10 @@ void GlassWindow::CompositeBackgroundToCache()
         stopDataGlow[1].position = 1.0f;
         stopDataGlow[1].color = D2D1::ColorF(accent.r, accent.g, accent.b, 0.0f);
 
-        bmpRt->CreateGradientStopCollection(stopDataGlow, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsGlow);
+        overlayRt->CreateGradientStopCollection(stopDataGlow, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &stopsGlow);
         if (stopsGlow)
         {
-            bmpRt->CreateRadialGradientBrush(
+            overlayRt->CreateRadialGradientBrush(
                 D2D1::RadialGradientBrushProperties(
                     D2D1::Point2F(w * 0.80f, h * 0.25f),
                     D2D1::Point2F(0.0f, 0.0f),
@@ -718,7 +807,7 @@ void GlassWindow::CompositeBackgroundToCache()
             );
             if (glowBrush)
             {
-                bmpRt->FillRoundedRectangle(
+                overlayRt->FillRoundedRectangle(
                     D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
                     glowBrush);
                 glowBrush->Release();
@@ -733,13 +822,13 @@ void GlassWindow::CompositeBackgroundToCache()
     BYTE base_b = static_cast<BYTE>(25.0f + cfg.brightness * 230.0f);
 
     ID2D1SolidColorBrush* bgBrush = nullptr;
-    bmpRt->CreateSolidColorBrush(
+    overlayRt->CreateSolidColorBrush(
         D2D1::ColorF(base_r / 255.0f, base_g / 255.0f, base_b / 255.0f, cfg.opacity),
         &bgBrush
     );
     if (bgBrush)
     {
-        bmpRt->FillRoundedRectangle(
+        overlayRt->FillRoundedRectangle(
             D2D1::RoundedRect(materialFrame.clipBounds, materialFrame.clipRadius, materialFrame.clipRadius),
             bgBrush);
         bgBrush->Release();
@@ -762,10 +851,10 @@ void GlassWindow::CompositeBackgroundToCache()
             ? D2D1::ColorF(1.0f, 1.0f, 1.0f, cfg.highlight * 0.035f)
             : UIStyle::ThemeColor::WindowBorder().d2d;
 
-        bmpRt->CreateGradientStopCollection(stopDataFrame, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &frameStops);
+        overlayRt->CreateGradientStopCollection(stopDataFrame, 2, D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP, &frameStops);
         if (frameStops)
         {
-            bmpRt->CreateLinearGradientBrush(
+            overlayRt->CreateLinearGradientBrush(
                 D2D1::LinearGradientBrushProperties(
                     D2D1::Point2F(materialFrame.borderBounds.left, materialFrame.borderBounds.top),
                     D2D1::Point2F(materialFrame.borderBounds.right, materialFrame.borderBounds.bottom)),
@@ -774,7 +863,7 @@ void GlassWindow::CompositeBackgroundToCache()
             );
             if (frameBrush)
             {
-                bmpRt->DrawRoundedRectangle(
+                overlayRt->DrawRoundedRectangle(
                     D2D1::RoundedRect(
                         materialFrame.borderBounds,
                         materialFrame.borderRadius,
@@ -787,24 +876,24 @@ void GlassWindow::CompositeBackgroundToCache()
         }
     }
 
-    if (roundedLayerPushed)
+    if (overlayLayerPushed)
     {
-        bmpRt->PopLayer();
+        overlayRt->PopLayer();
     }
-    bmpRt->SetAntialiasMode(originalAntialiasMode);
+    overlayRt->SetAntialiasMode(originalAntialiasMode);
 
-    HRESULT hr = bmpRt->EndDraw();
+    HRESULT hr = overlayRt->EndDraw();
     if (SUCCEEDED(hr))
     {
-        bmpRt->GetBitmap(&m_bgFinal);
+        overlayRt->GetBitmap(&m_bgOverlayFinal);
     }
     else
     {
-        m_bgFinal.Reset();
+        m_bgOverlayFinal.Reset();
         LOG_G_ERROR_NODE(
             L"ui.glass",
             L"background_composite_enddraw_failed",
-            L"hr=0x%08X size=%.0fx%.0f windowMode=%d(%s) hwnd=%p",
+            L"pass=overlay hr=0x%08X size=%.0fx%.0f windowMode=%d(%s) hwnd=%p",
             hr,
             w,
             h,
@@ -820,7 +909,7 @@ void GlassWindow::CompositeBackgroundToCache()
         LOG_G_WARNING_NODE(
             L"ui.glass",
             L"background_composite_slow",
-            L"elapsedMs=%.2f thresholdMs=12.00 size=%.0fx%.0f scale=%.2f systemScale=%.2f corner=%.2f windowMode=%d(%s) finalBitmap=%d hwnd=%p",
+            L"elapsedMs=%.2f thresholdMs=12.00 size=%.0fx%.0f scale=%.2f systemScale=%.2f corner=%.2f windowMode=%d(%s) blurBitmap=%d overlayBitmap=%d hwnd=%p",
             elapsedMs,
             w,
             h,
@@ -829,7 +918,8 @@ void GlassWindow::CompositeBackgroundToCache()
             drawCornerRadius,
             windowMode,
             WindowModeName(windowMode),
-            m_bgFinal ? 1 : 0,
+            m_bgBlurFinal ? 1 : 0,
+            m_bgOverlayFinal ? 1 : 0,
             m_hWnd);
     }
 }
@@ -848,6 +938,139 @@ bool GlassWindow::RefreshBackgroundCache()
         m_bgCompositeDirty = false;
     }
     return captured;
+}
+
+void GlassWindow::EnsureBackgroundWorker()
+{
+    if (m_bgWorker)
+    {
+        // Reused window (destroyed once, shown again): Start() re-creates the
+        // thread after a Stop() and early-returns while already running.
+        m_bgWorker->Start(m_hWnd, m_bgRefreshMs);
+        return;
+    }
+    auto worker = std::make_unique<GlassBackgroundWorker>();
+    worker->Start(m_hWnd, m_bgRefreshMs);
+    m_bgWorker = std::move(worker);
+}
+
+void GlassWindow::SyncBackgroundWorkerGeometry()
+{
+    if (!m_bgWorker || !m_hWnd || !m_rt)
+    {
+        return;
+    }
+    POINT origin{ 0, 0 };
+    if (!ClientToScreen(m_hWnd, &origin))
+    {
+        return;
+    }
+    D2D1_SIZE_U pixels = m_rt->GetPixelSize();
+    FLOAT dpiX = 96.0f;
+    FLOAT dpiY = 96.0f;
+    m_rt->GetDpi(&dpiX, &dpiY);
+    m_bgWorker->UpdateGeometry(origin, (int)pixels.width, (int)pixels.height, dpiX, dpiY);
+}
+
+bool GlassWindow::ConsumeBackgroundWorkerFrame()
+{
+    if (!m_bgWorker || !m_rt)
+    {
+        return false;
+    }
+    GlassBackgroundWorker::Frame frame;
+    if (!m_bgWorker->TryConsumeFrame(frame))
+    {
+        return false;
+    }
+    if (frame.width <= 0 || frame.height <= 0 || !frame.pixels)
+    {
+        return false;
+    }
+    if (!m_backgroundCapture.IngestBuffer(
+            frame.pixels->data(),
+            frame.width,
+            frame.height,
+            frame.dpiX,
+            frame.dpiY,
+            frame.clientScreenOrigin,
+            m_rt.Get()))
+    {
+        return false;
+    }
+    m_bgCaptureOriginScreen = frame.clientScreenOrigin;
+    m_bgCaptureDirty = false;
+    m_bgCompositeDirty = true;
+    return true;
+}
+
+void GlassWindow::OnBackgroundWorkerFrame()
+{
+    if (!ConsumeBackgroundWorkerFrame())
+    {
+        return;
+    }
+    if (m_hWnd && IsWindowVisible(m_hWnd) && !IsIconic(m_hWnd))
+    {
+        InvalidateRect(m_hWnd, nullptr, FALSE);
+    }
+}
+
+void GlassWindow::DrawGlassBackground(float w, float h, float scale)
+{
+    if (m_bgBlurFinal)
+    {
+        // Shift the blurred layer opposite to the window's movement since its
+        // capture so the world behind stays glued in place between worker
+        // frames. Sheen/tint/border (window-anchored) are drawn unshifted.
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        POINT now{ 0, 0 };
+        if (m_hWnd && ClientToScreen(m_hWnd, &now) && scale > 0.0f)
+        {
+            offsetX = -(float)(now.x - m_bgCaptureOriginScreen.x) / scale;
+            offsetY = -(float)(now.y - m_bgCaptureOriginScreen.y) / scale;
+        }
+        DrawWorldAnchoredBitmap(m_bgBlurFinal.Get(), offsetX, offsetY, w, h);
+        if (m_bgOverlayFinal)
+        {
+            DrawBackgroundFullTarget(m_bgOverlayFinal.Get());
+        }
+        return;
+    }
+    if (m_backgroundCapture.Bitmap())
+    {
+        DrawBackgroundFullTarget(m_backgroundCapture.Bitmap());
+        return;
+    }
+    m_rt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
+}
+
+void GlassWindow::DrawWorldAnchoredBitmap(ID2D1Bitmap* bitmap, float offsetX, float offsetY, float w, float h)
+{
+    if (!bitmap || !m_rt) return;
+
+    if (offsetX == 0.0f && offsetY == 0.0f)
+    {
+        DrawBackgroundFullTarget(bitmap);
+        return;
+    }
+
+    // Clamp-extend fill: the shifted source leaves narrow edge columns that
+    // the next worker frame replaces; the smear stays under the blur radius
+    // and the window border, so it is not perceptible.
+    D2D1_BITMAP_BRUSH_PROPERTIES brushProps = D2D1::BitmapBrushProperties(
+        D2D1_EXTEND_MODE_CLAMP,
+        D2D1_EXTEND_MODE_CLAMP,
+        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    ComPtr<ID2D1BitmapBrush> brush;
+    if (FAILED(m_rt->CreateBitmapBrush(bitmap, brushProps, &brush)) || !brush)
+    {
+        DrawBackgroundFullTarget(bitmap);
+        return;
+    }
+    brush->SetTransform(D2D1::Matrix3x2F::Translation(offsetX, offsetY));
+    m_rt->FillRectangle(D2D1::RectF(0.0f, 0.0f, w + 1.0f, h + 1.0f), brush.Get());
 }
 
 
@@ -1040,18 +1263,7 @@ void GlassWindow::DoPaint()
             m_bgCompositeDirty = false;
         }
 
-        if (m_bgFinal)
-        {
-            DrawBackgroundFullTarget(m_bgFinal.Get());
-        }
-        else if (m_backgroundCapture.Bitmap())
-        {
-            DrawBackgroundFullTarget(m_backgroundCapture.Bitmap());
-        }
-        else
-        {
-            m_rt->Clear(UIStyle::ThemeColor::WindowClear().d2d);
-        }
+        DrawGlassBackground(w, h, scale);
     }
     const double backgroundMs = PerfNowMs() - backgroundStartMs;
 
@@ -1093,7 +1305,7 @@ void GlassWindow::DoPaint()
             WindowModeName(windowMode),
             (int)m_bgCaptureDirty,
             (int)m_bgCompositeDirty,
-            m_bgFinal ? 1 : 0,
+            m_bgBlurFinal ? 1 : 0,
             m_backgroundCapture.Bitmap() ? 1 : 0,
             (int)m_themeTransition.IsActive(),
             (int)m_animState,
@@ -1290,7 +1502,20 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                         if (m_compositor)
                             m_compositor->MarkAllDirty();
                     }
-                    MarkBackgroundDirty(L"windowpos_changed", false);
+                    if (m_bgWorker)
+                    {
+                        // Keep the worker tracking the window; the next paint
+                        // only re-composites when a fresh worker frame lands.
+                        SyncBackgroundWorkerGeometry();
+                        if (sizeChanged)
+                        {
+                            MarkBackgroundDirty(L"windowpos_size_changed", false);
+                        }
+                    }
+                    else
+                    {
+                        MarkBackgroundDirty(L"windowpos_changed", false);
+                    }
                 }
             }
 
@@ -1317,8 +1542,23 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
     case WM_EXITSIZEMOVE:
         MarkBackgroundDirty(L"exit_size_move", true);
+        SyncBackgroundWorkerGeometry();
         InvalidateRect(hWnd, nullptr, FALSE);
         return 0;
+
+    case AppMessages::GlassBackgroundFrame:
+        OnBackgroundWorkerFrame();
+        return 0;
+
+    case WM_NCDESTROY:
+        // DestroyWindow does not deliver WM_SHOWWINDOW(FALSE): stop the
+        // capture worker here so a hidden-not-deleted or destroyed window
+        // never keeps the worker capturing. Stop() is idempotent.
+        if (m_bgWorker)
+        {
+            m_bgWorker->Stop();
+        }
+        break;
 
     case WM_DWMCOMPOSITIONCHANGED:
         LOG_G_INFO_NODE(L"ui.glass", L"dwm_composition_changed", L"hwnd=%p", hWnd);
@@ -1335,7 +1575,15 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             {
                 MarkBackgroundDirty(L"window_show", true);
             }
-            if (m_bgRefreshMs > 0)
+            EnsureBackgroundWorker();
+            if (m_bgWorker)
+            {
+                m_bgWorker->SetLive(true);
+                SyncBackgroundWorkerGeometry();
+            }
+            // The worker paces its own captures; the timer only covers the
+            // rare case where the worker could not start at all.
+            if (m_bgRefreshMs > 0 && !m_bgWorker)
                 SetTimer(hWnd, 0x888, m_bgRefreshMs, nullptr);
 
             if (m_revealFirstFrameBarrier)
@@ -1366,6 +1614,10 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             m_revealRetryPending = false;
             KillTimer(hWnd, AppMessages::GlassRevealRetryTimerId);
             LOG_G_INFO_NODE(L"ui.glass", L"window_hidden", L"hwnd=%p", hWnd);
+            if (m_bgWorker)
+            {
+                m_bgWorker->SetLive(false);
+            }
             KillTimer(hWnd, 0x888);
             if (m_shadowWindow && m_animState != AnimState::Closing)
             {

@@ -112,6 +112,13 @@ private:
     int GetLabelHeight() const;
     void UpdateTextFormat();
 
+    // Cached text-format inputs: the three formats rebuild only when one of
+    // these changes instead of on every painted frame.
+    float m_textFormatFontSize = -1.0f;
+    float m_textFormatSearchFontSize = -1.0f;
+    float m_textFormatTabTextSize = -1.0f;
+    IDWriteFactory* m_textFormatFactory = nullptr;
+
     void UpdateSearch();
     void UpdateImeWindowPosition();
     void SavePopupConfig();

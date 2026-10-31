@@ -16,6 +16,8 @@
 
 using Microsoft::WRL::ComPtr;
 
+class GlassBackgroundWorker;
+
 class GlassWindow : public BaseWindow
 {
     friend class GlassBackdrop;
@@ -82,6 +84,17 @@ protected:
     float GetPhysicalCornerRadius() const;
     void SetAnimationCenter(bool fromWindowCenter);
 
+    // Background capture worker: produces desktop frames off the UI thread so
+    // dragging and live glass never serialize against the message pump.
+    void EnsureBackgroundWorker();
+    void SyncBackgroundWorkerGeometry();
+    bool ConsumeBackgroundWorkerFrame();
+    void OnBackgroundWorkerFrame();
+    // Draws the split glass background: the world-anchored blur layer
+    // (offset-compensated while dragging) plus the window-anchored overlay.
+    void DrawGlassBackground(float w, float h, float scale);
+    void DrawWorldAnchoredBitmap(ID2D1Bitmap* bitmap, float offsetX, float offsetY, float w, float h);
+
     // Compositor-based rendering (long-term)
     void SetCompositor(std::unique_ptr<Compositor> compositor)
     {
@@ -102,10 +115,16 @@ protected:
     ComPtr<IDWriteTextFormat>     m_tf;
     bool                          m_d2dHardwareAccelerationEnabled = true;
 
-    // Background capture
+    // Background capture. The composite is split into a world-anchored blur
+    // layer and a window-anchored material overlay, so dragging shifts only
+    // the blur while sheen/tint/border stay glued to the window frame.
     GlassBackgroundCapture    m_backgroundCapture;  // raw screen capture (owned collaborator)
-    ComPtr<ID2D1Bitmap>       m_bgFinal;  // pre-composited (blur + sheen + tint + border)
-    ComPtr<ID2D1BitmapRenderTarget> m_compositeRt;  // cached composite RT
+    ComPtr<ID2D1Bitmap>       m_bgBlurFinal;     // blur + saturation output
+    ComPtr<ID2D1Bitmap>       m_bgOverlayFinal;  // sheen + accent glow + tint + border
+    ComPtr<ID2D1BitmapRenderTarget> m_bgBlurRt;      // cached blur pass RT
+    ComPtr<ID2D1BitmapRenderTarget> m_bgOverlayRt;   // cached overlay pass RT
+    POINT                     m_bgCaptureOriginScreen = { 0, 0 };  // world anchor of m_bgBlurFinal
+    std::unique_ptr<GlassBackgroundWorker> m_bgWorker;   // background capture producer
     bool                      m_bgCaptureDirty = true;
     bool                      m_bgCompositeDirty = true;
 
@@ -118,6 +137,7 @@ protected:
     ComPtr<ID2D1BitmapRenderTarget>     m_sheenLayerRt;
     ComPtr<ID2D1Bitmap>                 m_sheenLayerBitmap;
     ComPtr<ID2D1Layer>                  m_roundedClipLayer;
+    ComPtr<ID2D1Layer>                  m_roundedClipLayerOverlay;
     ComPtr<ID2D1RoundedRectangleGeometry> m_roundedClipGeometry;
     D2D1_SIZE_F               m_effectWinSize = {};
     float                     m_effectCornerRadius = -1.0f;

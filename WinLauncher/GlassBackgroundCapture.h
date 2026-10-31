@@ -11,12 +11,33 @@ using Microsoft::WRL::ComPtr;
 // capture across size/DPI changes. Owns the pixel scratch buffer and the
 // throttled capture-failure logging. A failed capture leaves the previous
 // bitmap untouched so compositing can keep using the last valid cache.
+//
+// Two capture producers share the upload path:
+//   - Capture(): the synchronous UI-thread BitBlt used for the reveal frame
+//     and as a fallback when no background worker is running.
+//   - IngestBuffer(): pixel buffers produced by GlassBackgroundWorker, which
+//     captures the same region on its own thread (GDI or desktop
+//     duplication) and hands the bytes over without touching Direct2D.
 class GlassBackgroundCapture
 {
 public:
     // Captures the screen area under hwnd at the render target's pixel size.
     // Returns true only for a verified fresh capture.
     bool Capture(HWND hwnd, ID2D1HwndRenderTarget* rt);
+
+    // Uploads a worker-produced buffer as the raw background bitmap. The
+    // buffer layout matches Capture() (top-down BGRA, opaque alpha).
+    bool IngestBuffer(
+        const DWORD* pixels,
+        int width,
+        int height,
+        FLOAT dpiX,
+        FLOAT dpiY,
+        POINT clientScreenOrigin,
+        ID2D1RenderTarget* rt);
+
+    // Screen coords of the client origin for the bitmap currently held.
+    POINT LastClientOrigin() const { return m_lastOrigin; }
 
     // The last captured raw background (null when none yet or after Reset).
     ID2D1Bitmap* Bitmap() const { return m_bgCap.Get(); }
@@ -25,8 +46,12 @@ public:
     void Reset();
 
 private:
+    // Shared size/DPI validation + CopyFromMemory/CreateBitmap upload.
+    bool UploadBuffer(const DWORD* pixels, int width, int height, FLOAT dpiX, FLOAT dpiY, ID2D1RenderTarget* rt);
+
     ComPtr<ID2D1Bitmap> m_bgCap;
     std::vector<DWORD> m_pixbuf;
+    POINT m_lastOrigin = { 0, 0 };
     DWORD m_lastError = ERROR_SUCCESS;
     ULONGLONG m_lastLogTick = 0;
 };
