@@ -845,6 +845,8 @@ void GlassBackgroundWorker::ThreadLoop()
     RECT pendingRect{ 0, 0, 0, 0 };
     POINT pendingOrigin{ 0, 0 };
     FLOAT pendingDpiX = 96.0f, pendingDpiY = 96.0f;
+    unsigned publishedThisSecond = 0;
+    ULONGLONG statTick = 0;
     bool duplicationBroken = false;
     ULONGLONG duplicationRetryTick = 0;
     RECT lastCaptureRect{ 0, 0, 0, 0 };
@@ -983,6 +985,7 @@ void GlassBackgroundWorker::ThreadLoop()
                         out.blurred = true;
                         if (MapPendingBlur(*blur, out))
                         {
+                            ++publishedThisSecond;
                             Publish(std::move(out));
                         }
                     }
@@ -999,7 +1002,23 @@ void GlassBackgroundWorker::ThreadLoop()
                 // Raw fallback path: publish immediately, drop any pending.
                 hasPendingBlur = false;
                 frame.sequence = ++m_sequence;
+                ++publishedThisSecond;
                 Publish(std::move(frame));
+            }
+
+            // One sampled per-second pipeline stat so delivered frame rates
+            // are verifiable from the log instead of guessed at.
+            const ULONGLONG statNow = GetTickCount64();
+            if (statNow - statTick >= 1000)
+            {
+                if (statTick != 0)
+                {
+                    LOG_G_INFO_NODE(L"ui.glass", L"background_pipeline",
+                        L"publishedPerSec=%u hwnd=%p",
+                        publishedThisSecond, m_hwnd);
+                }
+                statTick = statNow;
+                publishedThisSecond = 0;
             }
         }
     }

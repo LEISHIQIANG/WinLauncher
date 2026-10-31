@@ -165,8 +165,9 @@ protected:
     float                     m_effectCornerRadius = -1.0f;
 
 
-    // Background refresh rate (ms). 11 = ~90 fps for live background behind the window.
-    UINT     m_bgRefreshMs = 11;
+    // Background refresh rate (ms). 8 paces a 120Hz-capable pipeline; the
+    // worker self-paces at max(this, capture cost).
+    UINT     m_bgRefreshMs = 8;
 
 protected:
     virtual ShadowSettings GetShadowSettings() const;
