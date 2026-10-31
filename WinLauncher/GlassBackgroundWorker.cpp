@@ -3,6 +3,8 @@
 #include "App/Logger.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <d2d1_1.h>
+#include <d2d1effects.h>
 #include <wrl.h>
 #include <cstring>
 
@@ -10,6 +12,8 @@ using Microsoft::WRL::ComPtr;
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dxguid.lib")
 
 // Out-of-line nested type: member structs of a class must be defined at
 // namespace scope, not inside an anonymous namespace.
@@ -31,6 +35,51 @@ struct GlassBackgroundWorker::DuplicationState
         desktopCopy.Reset();
         dup.Reset();
         monitor = nullptr;
+    }
+};
+
+// Worker-owned GPU blur pipeline: the worker blurs the captured desktop on
+// its own D3D11/D2D device and hands the FINISHED blurred pixels to the UI
+// thread, so the UI never pays for the blur during drag or live refresh.
+struct GlassBackgroundWorker::BlurState
+{
+    ComPtr<ID2D1Factory1> factory;
+    ComPtr<ID3D11Device> device;
+    ComPtr<ID3D11DeviceContext> context;
+    ComPtr<ID2D1Device> d2dDevice;
+    ComPtr<ID2D1DeviceContext> dc;
+    ComPtr<ID2D1Effect> blur;
+    ComPtr<ID2D1Effect> sat;
+    ComPtr<ID2D1Bitmap1> target;   // blur output (TARGET), capture-rect sized
+    ComPtr<ID3D11Texture2D> staging[2];  // double-buffered CPU readback
+    int stagingIndex = 0;
+    UINT width = 0;
+    UINT height = 0;
+    float sigma = -1.0f;
+    float saturation = -1.0f;
+
+    void ResetTargets()
+    {
+        target.Reset();
+        staging[0].Reset();
+        staging[1].Reset();
+        stagingIndex = 0;
+        width = 0;
+        height = 0;
+    }
+
+    void ReleaseAll()
+    {
+        ResetTargets();
+        blur.Reset();
+        sat.Reset();
+        dc.Reset();
+        d2dDevice.Reset();
+        factory.Reset();
+        context.Reset();
+        device.Reset();
+        sigma = -1.0f;
+        saturation = -1.0f;
     }
 };
 
@@ -350,6 +399,198 @@ namespace
         }
         return ExtractDuplicationSubrect(s, captureRect, frame);
     }
+
+    // Lazily create (or resize) the worker-side blur resources. The device
+    // and effects persist across frames; only the bitmaps track the size.
+    bool EnsureBlurState(
+        GlassBackgroundWorker::BlurState& s,
+        int w,
+        int h,
+        FLOAT dpiX,
+        FLOAT dpiY)
+    {
+        if (s.dc && s.width == (UINT)w && s.height == (UINT)h && s.target)
+        {
+            return true;
+        }
+        s.ResetTargets();
+
+        if (!s.dc)
+        {
+            HRESULT hr = D3D11CreateDevice(
+                nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+                &s.device, nullptr, &s.context);
+            if (FAILED(hr))
+            {
+                static ULONGLONG s_lastBlurDeviceLogTick = 0;
+                if (Logger::ShouldLogEvery(s_lastBlurDeviceLogTick, 10000))
+                {
+                    LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_device_failed",
+                        L"hr=0x%08X", hr);
+                }
+                return false;
+            }
+            ComPtr<IDXGIDevice> dxgiDevice;
+            if (FAILED(s.device->QueryInterface(IID_PPV_ARGS(&dxgiDevice))) || !dxgiDevice)
+            {
+                return false;
+            }
+            if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, IID_PPV_ARGS(&s.factory))) || !s.factory)
+            {
+                return false;
+            }
+            if (FAILED(s.factory->CreateDevice(dxgiDevice.Get(), &s.d2dDevice)) || !s.d2dDevice)
+            {
+                return false;
+            }
+            if (FAILED(s.d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &s.dc)) || !s.dc)
+            {
+                return false;
+            }
+            if (FAILED(s.dc->CreateEffect(CLSID_D2D1GaussianBlur, &s.blur)) ||
+                FAILED(s.dc->CreateEffect(CLSID_D2D1Saturation, &s.sat)) ||
+                !s.blur || !s.sat)
+            {
+                return false;
+            }
+        }
+
+        const D2D1_BITMAP_PROPERTIES1 targetProps = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            dpiX, dpiY);
+        if (FAILED(s.dc->CreateBitmap(D2D1::SizeU(w, h), nullptr, 0, &targetProps, &s.target)) || !s.target)
+        {
+            return false;
+        }
+        D3D11_TEXTURE2D_DESC stagingDesc{};
+        stagingDesc.Width = w;
+        stagingDesc.Height = h;
+        stagingDesc.MipLevels = 1;
+        stagingDesc.ArraySize = 1;
+        stagingDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        stagingDesc.SampleDesc.Count = 1;
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        for (int i = 0; i < 2; ++i)
+        {
+            if (FAILED(s.device->CreateTexture2D(&stagingDesc, nullptr, &s.staging[i])) || !s.staging[i])
+            {
+                s.target.Reset();
+                return false;
+            }
+        }
+        s.width = (UINT)w;
+        s.height = (UINT)h;
+        return true;
+    }
+
+    // Blur the raw capture on the worker's GPU device and stage the result.
+    // The CPU readback of THIS frame happens on the next cycle (see
+    // MapPendingBlur), so the GPU work overlaps the next capture instead of
+    // stalling the pipeline.
+    bool RunGpuBlur(
+        GlassBackgroundWorker::BlurState& s,
+        GlassBackgroundWorker::Frame& frame,
+        float sigma,
+        float saturation)
+    {
+        const int w = frame.width;
+        const int h = frame.height;
+        if (w <= 0 || h <= 0)
+        {
+            return false;
+        }
+        if (!EnsureBlurState(s, w, h, frame.dpiX, frame.dpiY))
+        {
+            return false;
+        }
+
+        const D2D1_BITMAP_PROPERTIES1 sourceProps = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_NONE,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            frame.dpiX, frame.dpiY);
+        ComPtr<ID2D1Bitmap1> source;
+        HRESULT hr = s.dc->CreateBitmap(
+            D2D1::SizeU(w, h), frame.pixels->data(), (UINT32)w * 4, &sourceProps, &source);
+        if (FAILED(hr) || !source)
+        {
+            return false;
+        }
+
+        if (s.sigma != sigma)
+        {
+            s.blur->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, sigma);
+            s.blur->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_HARD);
+            s.sigma = sigma;
+        }
+        if (s.saturation != saturation)
+        {
+            s.sat->SetValue(D2D1_SATURATION_PROP_SATURATION, saturation);
+            s.saturation = saturation;
+        }
+        s.blur->SetInput(0, source.Get());
+        ComPtr<ID2D1Image> blurOut;
+        s.blur->GetOutput(&blurOut);
+        if (!blurOut)
+        {
+            return false;
+        }
+        s.sat->SetInput(0, blurOut.Get());
+
+        s.dc->SetTarget(s.target.Get());
+        s.dc->BeginDraw();
+        s.dc->DrawImage(s.sat.Get());
+        HRESULT endHr = s.dc->EndDraw();
+        if (FAILED(endHr))
+        {
+            // Device loss: rebuild everything on the next frame.
+            s.ReleaseAll();
+            return false;
+        }
+
+        ComPtr<IDXGISurface> surface;
+        if (FAILED(s.target->GetSurface(&surface)) || !surface)
+        {
+            return false;
+        }
+        ComPtr<ID3D11Texture2D> tex;
+        if (FAILED(surface->QueryInterface(IID_PPV_ARGS(&tex))) || !tex)
+        {
+            return false;
+        }
+        s.context->CopyResource(s.staging[s.stagingIndex].Get(), tex.Get());
+        return true;
+    }
+
+    // Read back the previously staged blur result into the frame buffer.
+    bool MapPendingBlur(
+        GlassBackgroundWorker::BlurState& s,
+        GlassBackgroundWorker::Frame& frame)
+    {
+        const int idx = 1 - s.stagingIndex;  // staged last cycle
+        ComPtr<ID3D11Texture2D>& tex = s.staging[idx];
+        if (!tex)
+        {
+            return false;
+        }
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(s.context->Map(tex.Get(), 0, D3D11_MAP_READ, 0, &mapped)))
+        {
+            return false;
+        }
+        const int w = frame.width;
+        const int h = frame.height;
+        for (int y = 0; y < h; ++y)
+        {
+            const BYTE* srcRow = (const BYTE*)mapped.pData + (size_t)y * mapped.RowPitch;
+            DWORD* dst = frame.pixels->data() + (size_t)y * w;
+            memcpy(dst, srcRow, (size_t)w * 4);
+        }
+        s.context->Unmap(tex.Get(), 0);
+        return true;
+    }
 }
 
 GlassBackgroundWorker::~GlassBackgroundWorker()
@@ -467,9 +708,10 @@ void GlassBackgroundWorker::RequestCapture()
     }
 }
 
-void GlassBackgroundWorker::SetDragMode(bool dragging)
+void GlassBackgroundWorker::SetGlassParams(float blurSigma, float saturation)
 {
-    m_dragging.store(dragging);
+    m_blurSigma.store(blurSigma);
+    m_blurSaturation.store(saturation);
     if (m_wakeEvent)
     {
         SetEvent(m_wakeEvent);
@@ -594,6 +836,15 @@ void GlassBackgroundWorker::ThreadLoop()
     {
         duplication = std::make_unique<DuplicationState>();
     }
+    auto blur = std::make_unique<BlurState>();
+    bool blurBroken = false;
+    ULONGLONG blurRetryTick = 0;
+    // Pipelined readback: cycle N submits the GPU blur and publishes cycle
+    // N-1's staged result, so the CPU never waits on the GPU mid-cycle.
+    bool hasPendingBlur = false;
+    RECT pendingRect{ 0, 0, 0, 0 };
+    POINT pendingOrigin{ 0, 0 };
+    FLOAT pendingDpiX = 96.0f, pendingDpiY = 96.0f;
     bool duplicationBroken = false;
     ULONGLONG duplicationRetryTick = 0;
     RECT lastCaptureRect{ 0, 0, 0, 0 };
@@ -601,9 +852,7 @@ void GlassBackgroundWorker::ThreadLoop()
 
     while (!m_stop.load())
     {
-        DWORD timeout = m_live.load()
-            ? (m_dragging.load() ? kDragRefreshMs : m_refreshMs)
-            : 500;
+        const DWORD timeout = m_live.load() ? m_refreshMs : 500;
         WaitForSingleObject(m_wakeEvent, timeout);
         if (m_stop.load())
         {
@@ -620,8 +869,7 @@ void GlassBackgroundWorker::ThreadLoop()
         }
 
         const RECT windowRect = WindowRectScreen(g.clientScreenOrigin, g.width, g.height);
-        const RECT captureRect = EffectiveCaptureRect(
-            windowRect, m_dragging.load() ? kDragCaptureMarginPx : 0);
+        const RECT captureRect = EffectiveCaptureRect(windowRect, 0);
 
         Frame frame;
         frame.width = captureRect.right - captureRect.left;
@@ -679,13 +927,84 @@ void GlassBackgroundWorker::ThreadLoop()
 
         if (produced)
         {
-            frame.sequence = ++m_sequence;
             lastCaptureRect = captureRect;
             haveLastCapture = true;
-            Publish(std::move(frame));
+
+            // Worker-side GPU blur: the UI thread never pays for the blur,
+            // so dragging and live refresh keep the full cadence.
+            const float sigma = m_blurSigma.load();
+            const ULONGLONG blurNow = GetTickCount64();
+            bool blurOk = false;
+            if (sigma > 0.0f && (!blurBroken || blurNow >= blurRetryTick))
+            {
+                const double blurStartMs = PerfNowMs();
+                if (RunGpuBlur(*blur, frame, sigma, m_blurSaturation.load()))
+                {
+                    blurOk = true;
+                    blurBroken = false;
+                    const double blurMs = PerfNowMs() - blurStartMs;
+                    static ULONGLONG s_lastBlurLogTick = 0;
+                    if (ShouldLogPerf(s_lastBlurLogTick, blurMs, 8.0))
+                    {
+                        LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_slow",
+                            L"elapsedMs=%.2f thresholdMs=8.00 size=%dx%d hwnd=%p",
+                            blurMs, frame.width, frame.height, m_hwnd);
+                    }
+                }
+                else
+                {
+                    blurBroken = true;  // publish raw; UI composites as fallback
+                    blurRetryTick = blurNow + 10000;
+                    LOG_G_WARNING_NODE(L"ui.glass", L"background_blur_disabled",
+                        L"reason=worker_blur_failed hwnd=%p", m_hwnd);
+                }
+            }
+
+            if (blurOk)
+            {
+                // Publish the previous cycle's staged blur (its GPU work is
+                // long done, so the map does not stall); carry this cycle's
+                // metadata forward for the next publish.
+                if (hasPendingBlur)
+                {
+                    const int pw = pendingRect.right - pendingRect.left;
+                    const int ph = pendingRect.bottom - pendingRect.top;
+                    if (pw == frame.width && ph == frame.height)
+                    {
+                        GlassBackgroundWorker::Frame out;
+                        out.pixels = frame.pixels;  // reuse the raw buffer
+                        out.width = pw;
+                        out.height = ph;
+                        out.dpiX = pendingDpiX;
+                        out.dpiY = pendingDpiY;
+                        out.clientScreenOrigin = pendingOrigin;
+                        out.captureRect = pendingRect;
+                        out.sequence = ++m_sequence;
+                        out.blurred = true;
+                        if (MapPendingBlur(*blur, out))
+                        {
+                            Publish(std::move(out));
+                        }
+                    }
+                }
+                pendingRect = captureRect;
+                pendingOrigin = g.clientScreenOrigin;
+                pendingDpiX = frame.dpiX;
+                pendingDpiY = frame.dpiY;
+                hasPendingBlur = true;
+                blur->stagingIndex = 1 - blur->stagingIndex;
+            }
+            else
+            {
+                // Raw fallback path: publish immediately, drop any pending.
+                hasPendingBlur = false;
+                frame.sequence = ++m_sequence;
+                Publish(std::move(frame));
+            }
         }
     }
 
+    blur->ReleaseAll();
     if (duplication)
     {
         duplication->ReleaseSession();

@@ -343,10 +343,12 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
 {
     bool hadResources =
         m_backgroundCapture.Bitmap() || m_bgBlurFinal.Get() || m_bgOverlayFinal.Get() ||
+        m_bgBlurGpuFinal.Get() ||
         m_bgBlurRt.Get() || m_bgOverlayRt.Get() ||
         m_blurEffect.Get() || m_satEffect.Get() || m_sheenBlurEffect.Get() ||
         m_sheenGsc.Get() || m_sheenBrush.Get() || m_sheenLayerRt.Get() ||
         m_sheenLayerBitmap.Get() || m_roundedClipLayer.Get() ||
+        m_roundedClipLayerOverlay.Get() || m_hwndClipLayer.Get() ||
         m_roundedClipGeometry.Get() || (includeRenderTarget && m_rt.Get());
 
     if (hadResources)
@@ -364,9 +366,15 @@ void GlassWindow::ResetBackgroundResources(const wchar_t* reason, bool includeRe
     m_backgroundCapture.Reset();
     m_bgBlurFinal.Reset();
     m_bgOverlayFinal.Reset();
+    m_bgBlurGpuFinal.Reset();
+    m_hwndClipLayer.Reset();
     m_bgBlurRt.Reset();
     m_bgOverlayRt.Reset();
     m_blurEffect.Reset();
+    m_overlayKeySize = {};
+    m_overlayKeyDpi = 0.0f;
+    m_overlayKeyTheme = -1;
+    m_overlayKeyWindowMode = -1;
     m_satEffect.Reset();
     m_sheenBlurEffect.Reset();
     m_sheenGsc.Reset();
@@ -433,6 +441,7 @@ void GlassWindow::UpdateTheme()
         // bleeds through the painted frame as a dark edge seam.
         ApplySystemBackdrop();
     }
+    PushWorkerGlassParams();
     m_bgCompositeDirty = true;
     if (m_compositor)
     {
@@ -478,6 +487,7 @@ void GlassWindow::UpdateBackgroundStyle()
         windowMode = m_appCtx->configService->GetWindowMode();
     }
     ApplySystemBackdrop();
+    PushWorkerGlassParams();
 
     m_bgCompositeDirty = true;
     LOG_G_INFO_NODE(
@@ -602,17 +612,13 @@ void GlassWindow::CompositeBackgroundToCache()
     // layer (A) and a window-anchored material overlay (B). Dragging shifts
     // only A while sheen/tint/border stay glued to the window frame.
     const bool blurReady = EnsureCompositeTarget(m_rt.Get(), m_bgBlurRt, m_bgBlurFinal, w, h);
-    const bool overlayReady = EnsureCompositeTarget(m_rt.Get(), m_bgOverlayRt, m_bgOverlayFinal, w, h);
-    if (!blurReady || !overlayReady)
+    if (!blurReady)
     {
         m_bgBlurFinal.Reset();
-        m_bgOverlayFinal.Reset();
         LOG_G_ERROR_NODE(
             L"ui.glass",
             L"background_composite_target_failed",
-            L"blurReady=%d overlayReady=%d size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
-            (int)blurReady,
-            (int)overlayReady,
+            L"blurReady=0 size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
             w,
             h,
             scale,
@@ -749,10 +755,68 @@ void GlassWindow::CompositeBackgroundToCache()
     }
 
     // ---- Pass B: material overlay (window-anchored) ----
+    CompositeOverlayToCache(w, h);
+
+    double elapsedMs = PerfNowMs() - compositeStartMs;
+    static ULONGLONG s_lastCompositeLogTick = 0;
+    if (ShouldLogPerf(s_lastCompositeLogTick, elapsedMs, 12.0))
+    {
+        LOG_G_WARNING_NODE(
+            L"ui.glass",
+            L"background_composite_slow",
+            L"elapsedMs=%.2f thresholdMs=12.00 size=%.0fx%.0f scale=%.2f systemScale=%.2f corner=%.2f windowMode=%d(%s) blurBitmap=%d overlayBitmap=%d hwnd=%p",
+            elapsedMs,
+            w,
+            h,
+            scale,
+            systemScale,
+            drawCornerRadius,
+            windowMode,
+            WindowModeName(windowMode),
+            m_bgBlurFinal ? 1 : 0,
+            m_bgOverlayFinal ? 1 : 0,
+            m_hWnd);
+    }
+}
+
+bool GlassWindow::CompositeOverlayToCache(float w, float h)
+{
+    if (!m_rt) return false;
+
+    float scale = GetWindowScale(m_hWnd);
+    float systemScale = GetSystemWindowScale(m_hWnd);
+    float drawCornerRadius = GetDrawCornerRadius(scale, w, h);
+    float borderOffset = (0.5f * systemScale) / scale;
+    float borderWidth = (1.0f * systemScale) / scale;
+    const MaterialFrameGeometry materialFrame =
+        BuildMaterialFrameGeometry(w, h, drawCornerRadius, borderOffset, borderWidth);
+
+    if (!EnsureCompositeTarget(m_rt.Get(), m_bgOverlayRt, m_bgOverlayFinal, w, h))
+    {
+        m_bgOverlayFinal.Reset();
+        LOG_G_ERROR_NODE(
+            L"ui.glass",
+            L"background_composite_target_failed",
+            L"pass=overlay size=%.0fx%.0f scale=%.2f systemScale=%.2f hwnd=%p",
+            w,
+            h,
+            scale,
+            systemScale,
+            m_hWnd);
+        return false;
+    }
+
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        windowMode = m_appCtx->configService->GetWindowMode();
+    }
+    auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
+
     ComPtr<ID2D1BitmapRenderTarget> overlayRt = m_bgOverlayRt;
     overlayRt->BeginDraw();
     overlayRt->Clear(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.0f));
-    originalAntialiasMode = overlayRt->GetAntialiasMode();
+    D2D1_ANTIALIAS_MODE originalAntialiasMode = overlayRt->GetAntialiasMode();
     overlayRt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
     const bool overlayLayerPushed = PushRoundedClip(
@@ -917,27 +981,40 @@ void GlassWindow::CompositeBackgroundToCache()
             WindowModeName(windowMode),
             m_hWnd);
     }
+    return m_bgOverlayFinal != nullptr;
+}
 
-    double elapsedMs = PerfNowMs() - compositeStartMs;
-    static ULONGLONG s_lastCompositeLogTick = 0;
-    if (ShouldLogPerf(s_lastCompositeLogTick, elapsedMs, 12.0))
+void GlassWindow::EnsureOverlayCache(float w, float h, float scale)
+{
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
     {
-        LOG_G_WARNING_NODE(
-            L"ui.glass",
-            L"background_composite_slow",
-            L"elapsedMs=%.2f thresholdMs=12.00 size=%.0fx%.0f scale=%.2f systemScale=%.2f corner=%.2f windowMode=%d(%s) blurBitmap=%d overlayBitmap=%d hwnd=%p",
-            elapsedMs,
-            w,
-            h,
-            scale,
-            systemScale,
-            drawCornerRadius,
-            windowMode,
-            WindowModeName(windowMode),
-            m_bgBlurFinal ? 1 : 0,
-            m_bgOverlayFinal ? 1 : 0,
-            m_hWnd);
+        windowMode = m_appCtx->configService->GetWindowMode();
     }
+    auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
+    FLOAT dpiX = 96.0f, dpiY = 96.0f;
+    m_rt->GetDpi(&dpiX, &dpiY);
+    const bool stale =
+        !m_bgOverlayFinal ||
+        m_overlayKeySize.width != w || m_overlayKeySize.height != h ||
+        m_overlayKeyDpi != dpiX ||
+        m_overlayKeyTheme != (int)UIStyle::GetThemeMode() ||
+        m_overlayKeyWindowMode != windowMode ||
+        m_overlayKeyOpacity != cfg.opacity ||
+        m_overlayKeyBrightness != cfg.brightness ||
+        m_overlayKeyHighlight != cfg.highlight;
+    if (!stale)
+    {
+        return;
+    }
+    CompositeOverlayToCache(w, h);
+    m_overlayKeySize = { w, h };
+    m_overlayKeyDpi = dpiX;
+    m_overlayKeyTheme = (int)UIStyle::GetThemeMode();
+    m_overlayKeyWindowMode = windowMode;
+    m_overlayKeyOpacity = cfg.opacity;
+    m_overlayKeyBrightness = cfg.brightness;
+    m_overlayKeyHighlight = cfg.highlight;
 }
 
 bool GlassWindow::RefreshBackgroundCache()
@@ -963,17 +1040,31 @@ void GlassWindow::EnsureBackgroundWorker()
         // Reused window (destroyed once, shown again): Start() re-creates the
         // thread after a Stop() and early-returns while already running.
         m_bgWorker->Start(m_hWnd, m_bgRefreshMs);
+        PushWorkerGlassParams();
         return;
     }
     auto worker = std::make_unique<GlassBackgroundWorker>();
     worker->Start(m_hWnd, m_bgRefreshMs);
     m_bgWorker = std::move(worker);
+    PushWorkerGlassParams();
 }
 
 void GlassWindow::SyncBackgroundWorkerGeometry()
 {
     if (!m_bgWorker || !m_hWnd || !m_rt)
     {
+        return;
+    }
+    // Acrylic mode paints the system backdrop and never consumes the
+    // captured background: keep the worker idle instead of burning GPU.
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        windowMode = m_appCtx->configService->GetWindowMode();
+    }
+    if (windowMode == 1)
+    {
+        m_bgWorker->SetLive(false);
         return;
     }
     POINT origin{ 0, 0 };
@@ -1003,6 +1094,29 @@ bool GlassWindow::ConsumeBackgroundWorkerFrame()
     {
         return false;
     }
+
+    if (frame.blurred)
+    {
+        // Worker-side GPU blur: the pixels are the finished blurred capture;
+        // upload and draw, no UI-thread composite at all.
+        if (!UploadBlurBitmap(
+                frame.pixels->data(),
+                frame.width,
+                frame.height,
+                frame.dpiX,
+                frame.dpiY,
+                frame.captureRect))
+        {
+            return false;
+        }
+        m_blurFromWorker = true;
+        m_bgCaptureDirty = false;
+        m_bgCompositeDirty = false;
+        return true;
+    }
+
+    // Raw fallback frame: the UI thread runs the legacy composite path.
+    m_blurFromWorker = false;
     if (!m_backgroundCapture.IngestBuffer(
             frame.pixels->data(),
             frame.width,
@@ -1033,8 +1147,102 @@ void GlassWindow::OnBackgroundWorkerFrame()
     }
 }
 
+void GlassWindow::PushWorkerGlassParams()
+{
+    if (!m_bgWorker)
+    {
+        return;
+    }
+    int windowMode = 0;
+    if (m_appCtx && m_appCtx->configService)
+    {
+        windowMode = m_appCtx->configService->GetWindowMode();
+    }
+    auto& cfg = UIStyle::ThemeColor::ConfigFor(UIStyle::GetThemeMode(), windowMode);
+    m_bgWorker->SetGlassParams(cfg.blur, cfg.saturation);
+}
+
+bool GlassWindow::UploadBlurBitmap(
+    const DWORD* pixels,
+    int width,
+    int height,
+    FLOAT dpiX,
+    FLOAT dpiY,
+    const RECT& captureRect)
+{
+    if (!pixels || width <= 0 || height <= 0 || !m_rt)
+    {
+        return false;
+    }
+    if (m_bgBlurGpuFinal)
+    {
+        D2D1_SIZE_U size = m_bgBlurGpuFinal->GetPixelSize();
+        FLOAT bmpDpiX = 96.0f, bmpDpiY = 96.0f;
+        m_bgBlurGpuFinal->GetDpi(&bmpDpiX, &bmpDpiY);
+        if (size.width != (UINT32)width || size.height != (UINT32)height ||
+            fabsf(bmpDpiX - dpiX) > 0.5f || fabsf(bmpDpiY - dpiY) > 0.5f)
+        {
+            m_bgBlurGpuFinal.Reset();
+        }
+    }
+    if (m_bgBlurGpuFinal)
+    {
+        HRESULT copyHr = m_bgBlurGpuFinal->CopyFromMemory(nullptr, pixels, width * 4);
+        if (FAILED(copyHr))
+        {
+            m_bgBlurGpuFinal.Reset();
+        }
+    }
+    if (!m_bgBlurGpuFinal)
+    {
+        D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpiX, dpiY);
+        if (FAILED(m_rt->CreateBitmap(D2D1::SizeU(width, height), pixels, width * 4, &props, &m_bgBlurGpuFinal)))
+        {
+            m_bgBlurGpuFinal.Reset();
+            return false;
+        }
+    }
+    m_bgWorkerCaptureRect = captureRect;
+    return true;
+}
+
 void GlassWindow::DrawGlassBackground(float w, float h, float scale)
 {
+    if (m_blurFromWorker && m_bgBlurGpuFinal)
+    {
+        // Worker-blurred capture covers the capture rect. Draw it world-
+        // anchored under the rounded clip; the window-anchored overlay and
+        // the content go on top. No UI-thread blur happens on this path.
+        EnsureOverlayCache(w, h, scale);
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        POINT now{ 0, 0 };
+        if (m_hWnd && ClientToScreen(m_hWnd, &now) && scale > 0.0f)
+        {
+            offsetX = (float)(m_bgWorkerCaptureRect.left - now.x) / scale;
+            offsetY = (float)(m_bgWorkerCaptureRect.top - now.y) / scale;
+        }
+        float drawScale = GetWindowScale(m_hWnd);
+        float systemScale = GetSystemWindowScale(m_hWnd);
+        float drawCornerRadius = GetDrawCornerRadius(drawScale, w, h);
+        float borderOffset = (0.5f * systemScale) / drawScale;
+        float borderWidth = (1.0f * systemScale) / drawScale;
+        const MaterialFrameGeometry materialFrame =
+            BuildMaterialFrameGeometry(w, h, drawCornerRadius, borderOffset, borderWidth);
+        const bool clipPushed = PushRoundedClip(
+            m_rt.Get(), materialFrame, w, h, m_roundedClipGeometry, m_hwndClipLayer);
+        DrawWorldAnchoredBitmap(m_bgBlurGpuFinal.Get(), offsetX, offsetY, w, h);
+        if (clipPushed)
+        {
+            m_rt->PopLayer();
+        }
+        if (m_bgOverlayFinal)
+        {
+            DrawBackgroundFullTarget(m_bgOverlayFinal.Get());
+        }
+        return;
+    }
     if (m_bgBlurFinal)
     {
         // Anchor to the composite's window origin: between throttled drag
@@ -1493,14 +1701,9 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         break;
 
     case WM_ENTERSIZEMOVE:
-        // Modal move loop starting: switch the capture worker to drag mode
-        // (margin-inflated rect, reduced cadence) so GDI screen reads stop
-        // contending with DWM composition while the window glides.
+        // Modal move loop starting. The worker-side blur keeps the full live
+        // cadence; this flag only throttles the legacy fallback composites.
         m_glassDragging = true;
-        if (m_bgWorker)
-        {
-            m_bgWorker->SetDragMode(true);
-        }
         return 0;
 
     case WM_WINDOWPOSCHANGED:
@@ -1613,9 +1816,8 @@ LRESULT GlassWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         m_glassDragging = false;
         if (m_bgWorker)
         {
-            // Back to the exact-rect live cadence; the worker refreshes the
-            // background without a synchronous UI-thread capture stall.
-            m_bgWorker->SetDragMode(false);
+            // Nudge a fresh capture; the worker refreshes the background
+            // without a synchronous UI-thread capture stall.
             SyncBackgroundWorkerGeometry();
         }
         else

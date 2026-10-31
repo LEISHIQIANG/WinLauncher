@@ -33,18 +33,22 @@ public:
         Gdi,
     };
 
-    // One captured desktop region, ready for upload on the UI thread.
+    // One captured-and-processed background, ready for the UI thread.
+    // pixels are the BLURRED capture-rect content when blurred=true (the
+    // worker runs the Gaussian blur on its own GPU device); otherwise they
+    // are the raw capture and the UI thread composites as before.
     struct Frame
     {
-        std::shared_ptr<std::vector<DWORD>> pixels;  // top-down BGRA, alpha forced opaque
+        std::shared_ptr<std::vector<DWORD>> pixels;
         int width = 0;
         int height = 0;
         FLOAT dpiX = 96.0f;
         FLOAT dpiY = 96.0f;
         POINT clientScreenOrigin = { 0, 0 };  // screen coords of the client origin at capture time
-        RECT captureRect = { 0, 0, 0, 0 };    // effective captured screen rect (margin-inflated, clamped)
+        RECT captureRect = { 0, 0, 0, 0 };    // effective captured screen rect
         unsigned sequence = 0;
         bool fromDuplication = false;
+        bool blurred = false;
     };
 
     GlassBackgroundWorker() = default;
@@ -63,29 +67,21 @@ public:
     // UI thread only: enable/disable capture while the window shows/hides.
     void SetLive(bool live);
 
-    // UI thread only: drag-mode tuning. While the user drags the window the
-    // worker captures a margin-inflated rect at a lower cadence so GDI screen
-    // reads stop contending with DWM composition, and the UI can glide the
-    // cached blur with the world-anchored offset between refreshes.
-    void SetDragMode(bool dragging);
-
-    // Margin (physical px) inflated around the window rect while dragging.
-    // Large enough that a fast drag stays inside the captured region between
-    // throttled composites, so the glide is seamless.
-    static constexpr int kDragCaptureMarginPx = 160;
-    // Capture interval while dragging (ms): ~7 fps content refresh. The blur
-    // content itself glides at full message rate via the world-anchored
-    // offset; this cadence only refreshes what changed behind the glass and
-    // keeps GDI screen reads away from DWM composition during the drag.
-    static constexpr UINT kDragRefreshMs = 150;
+    // UI thread only: push the glass material parameters for the worker-side
+    // blur (DIP sigma/saturation, matching ThemeColor::ConfigFor). The blur
+    // runs on the worker's own GPU device so the UI thread only ever uploads
+    // and draws the finished bitmap.
+    void SetGlassParams(float blurSigma, float saturation);
 
     // UI thread only: nudge the worker (theme/style changes, drag end).
     void RequestCapture();
 
-    // Opaque per-thread duplication state (D3D11/DXGI handles stay out of
-    // this header and out of every other thread). Public because the capture
-    // helpers in the implementation file operate on it.
+    // Opaque per-thread state for the DXGI duplication session and the
+    // worker-side GPU blur (D3D11/D2D handles stay out of this header and
+    // out of every other thread). Public because the capture helpers in the
+    // implementation file operate on them.
     struct DuplicationState;
+    struct BlurState;
 
     // UI thread only: take the newest pending frame (if any).
     bool TryConsumeFrame(Frame& out);
@@ -116,7 +112,8 @@ private:
     UINT m_refreshMs = 11;
     std::atomic<bool> m_stop{ false };
     std::atomic<bool> m_live{ false };
-    std::atomic<bool> m_dragging{ false };
+    std::atomic<float> m_blurSigma{ -1.0f };
+    std::atomic<float> m_blurSaturation{ 1.0f };
     HANDLE m_wakeEvent = nullptr;
     HANDLE m_thread = nullptr;
 

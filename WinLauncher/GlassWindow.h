@@ -94,6 +94,12 @@ protected:
     // (offset-compensated while dragging) plus the window-anchored overlay.
     void DrawGlassBackground(float w, float h, float scale);
     void DrawWorldAnchoredBitmap(ID2D1Bitmap* bitmap, float offsetX, float offsetY, float w, float h);
+    // Worker-side blur: push material params and consume finished blur
+    // frames so the UI thread never runs the Gaussian blur itself.
+    void PushWorkerGlassParams();
+    bool UploadBlurBitmap(const DWORD* pixels, int width, int height, FLOAT dpiX, FLOAT dpiY, const RECT& captureRect);
+    bool CompositeOverlayToCache(float w, float h);
+    void EnsureOverlayCache(float w, float h, float scale);
 
     // Compositor-based rendering (long-term)
     void SetCompositor(std::unique_ptr<Compositor> compositor)
@@ -119,15 +125,28 @@ protected:
     // layer and a window-anchored material overlay, so dragging shifts only
     // the blur while sheen/tint/border stay glued to the window frame.
     GlassBackgroundCapture    m_backgroundCapture;  // raw screen capture (owned collaborator)
-    ComPtr<ID2D1Bitmap>       m_bgBlurFinal;     // blur + saturation output
+    ComPtr<ID2D1Bitmap>       m_bgBlurFinal;     // blur + saturation output (UI composite path)
     ComPtr<ID2D1Bitmap>       m_bgOverlayFinal;  // sheen + accent glow + tint + border
+    ComPtr<ID2D1Bitmap>       m_bgBlurGpuFinal;  // worker-blurred capture (worker path)
+    RECT                      m_bgWorkerCaptureRect = { 0, 0, 0, 0 };
+    bool                      m_blurFromWorker = false;
     ComPtr<ID2D1BitmapRenderTarget> m_bgBlurRt;      // cached blur pass RT
     ComPtr<ID2D1BitmapRenderTarget> m_bgOverlayRt;   // cached overlay pass RT
+    ComPtr<ID2D1Layer>        m_hwndClipLayer;   // rounded clip for drawing blur on the hwnd RT
     POINT                     m_bgCaptureOriginScreen = { 0, 0 };  // world anchor of m_bgBlurFinal
     POINT                     m_bgCompositeWindowOrigin = { 0, 0 };  // window origin when the blur composite was built
     std::unique_ptr<GlassBackgroundWorker> m_bgWorker;   // background capture producer
     bool                      m_glassDragging = false;   // modal move loop in progress
     ULONGLONG                 m_lastDragCompositeTick = 0;
+    // Overlay cache key: the window-anchored material layer only rebuilds
+    // when one of these changes instead of on every background frame.
+    D2D1_SIZE_F               m_overlayKeySize = {};
+    FLOAT                     m_overlayKeyDpi = 0.0f;
+    int                       m_overlayKeyTheme = -1;
+    int                       m_overlayKeyWindowMode = -1;
+    float                     m_overlayKeyOpacity = -1.0f;
+    float                     m_overlayKeyBrightness = -1.0f;
+    float                     m_overlayKeyHighlight = -1.0f;
     bool                      m_bgCaptureDirty = true;
     bool                      m_bgCompositeDirty = true;
 
