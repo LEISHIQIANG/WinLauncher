@@ -1308,7 +1308,7 @@ void GlassWindow::DoPaint()
             if (m_glassDragging && m_bgBlurFinal)
             {
                 const ULONGLONG nowTick = GetTickCount64();
-                if (nowTick - m_lastDragCompositeTick < 25)
+                if (nowTick - m_lastDragCompositeTick < 140)
                 {
                     skipComposite = true;
                 }

@@ -70,10 +70,14 @@ public:
     void SetDragMode(bool dragging);
 
     // Margin (physical px) inflated around the window rect while dragging.
-    static constexpr int kDragCaptureMarginPx = 96;
-    // Capture interval while dragging (ms): ~30 fps content refresh is
-    // invisible under the blur, and the window itself glides at full rate.
-    static constexpr UINT kDragRefreshMs = 33;
+    // Large enough that a fast drag stays inside the captured region between
+    // throttled composites, so the glide is seamless.
+    static constexpr int kDragCaptureMarginPx = 160;
+    // Capture interval while dragging (ms): ~7 fps content refresh. The blur
+    // content itself glides at full message rate via the world-anchored
+    // offset; this cadence only refreshes what changed behind the glass and
+    // keeps GDI screen reads away from DWM composition during the drag.
+    static constexpr UINT kDragRefreshMs = 150;
 
     // UI thread only: nudge the worker (theme/style changes, drag end).
     void RequestCapture();

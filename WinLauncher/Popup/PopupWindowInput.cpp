@@ -933,6 +933,14 @@ LRESULT PopupWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         OnChar(hWnd, wParam);
         return 0;
 
+    case WM_CLOSE:
+        // External close requests (Alt+F4, taskbar close) must follow the
+        // same hide path as the auto-hide so the singleton stays valid for
+        // the next trigger; a plain DefWindowProc destroy would leave
+        // s_instance pointing at a dead window.
+        HideSelf(false);
+        return 0;
+
     case WM_DESTROY:
         KillTimer(hWnd, PopupWindowMessages::PageAnimationTimerId);
         KillTimer(hWnd, PopupWindowMessages::PluginSearchTimerId);

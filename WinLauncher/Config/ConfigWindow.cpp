@@ -1293,6 +1293,14 @@ LRESULT ConfigWindow::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         return 0;
     }
 
+    case WM_CLOSE:
+        // External close requests (Alt+F4, taskbar close) must take the same
+        // path as the close button: Release() resets s_instance before the
+        // destroy so the next ShowMode() builds a fresh window instead of
+        // operating on a dangling handle.
+        Release();
+        return 0;
+
     case WM_DESTROY:
         GlassWindow::HandleMessage(hWnd, uMsg, wParam, lParam);
         // s_instance is managed by Release()
