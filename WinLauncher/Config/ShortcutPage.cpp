@@ -68,6 +68,7 @@ void ShortcutPage::CancelPointerInteraction()
     ResetShortcutTargets(false);
     if (changed && m_owner)
     {
+        m_animating = true;
         m_owner->StartAnimation();
         HWND hwnd = m_owner->GetWindowHWND();
         if (hwnd) InvalidateRect(hwnd, nullptr, FALSE);
@@ -279,7 +280,10 @@ void ShortcutPage::OnMouseMove(POINT pt, bool& repaint)
             if (m_dragController.HasExceededThreshold(pt))
             {
                 if (m_dragController.StartDrag(m_owner, m_pageData, m_shortcutStates, m_scrollY, pt))
+                {
+                    m_animating = true;
                     m_dragController.UpdateCursor(m_owner ? m_owner->GetWindowHWND() : nullptr, pt);
+                }
             }
         }
         else
@@ -378,6 +382,11 @@ void ShortcutPage::OnLButtonUp(POINT pt, bool& repaint)
     if (m_dragController.HasCandidate())
     {
         MouseCaptureController::Complete(m_owner ? m_owner->GetWindowHWND() : nullptr);
+
+        // Arm the page animation pump before the controller runs: the drop
+        // path only restarts the window timer, and without this flag the
+        // settle/snap animation would die on its first tick.
+        m_animating = true;
 
         m_dragController.HandleLButtonUp(
             pt,
